@@ -1,0 +1,75 @@
+import { useState } from 'react';
+import { View, StyleSheet, Alert } from 'react-native';
+import { Link, router } from 'expo-router';
+import { MotiView } from 'moti';
+import { Screen } from '@/components/ui/Screen';
+import { Text } from '@/components/ui/Text';
+import { Input } from '@/components/ui/Input';
+import { Button } from '@/components/ui/Button';
+import { spacing } from '@/theme/tokens';
+import { useAuthStore } from '@/stores/auth';
+
+export default function LoginScreen() {
+  const signIn = useAuthStore((s) => s.signIn);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const onSubmit = async () => {
+    setLoading(true);
+    try {
+      await signIn(email.trim(), password);
+      router.replace('/(app)/(main)/chats');
+    } catch (e) {
+      Alert.alert('Sign in failed', e instanceof Error ? e.message : 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Screen>
+      <MotiView
+        from={{ opacity: 0, translateY: 12 }}
+        animate={{ opacity: 1, translateY: 0 }}
+        style={styles.form}>
+        <Text variant="h1">Welcome back</Text>
+        <Text variant="body" muted style={{ marginBottom: spacing.lg }}>
+          Sign in to continue
+        </Text>
+        <Input
+          placeholder="Email"
+          autoCapitalize="none"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+        />
+        <Input
+          placeholder="Password"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+          style={{ marginTop: spacing.md }}
+        />
+        <Button
+          label={loading ? 'Signing in…' : 'Sign in'}
+          onPress={onSubmit}
+          loading={loading}
+          style={{ marginTop: spacing.lg }}
+        />
+        <Link href="/(auth)/register" asChild>
+          <Button
+            label="Create account"
+            variant="ghost"
+            onPress={() => router.push('/(auth)/terms')}
+            style={{ marginTop: spacing.sm }}
+          />
+        </Link>
+      </MotiView>
+    </Screen>
+  );
+}
+
+const styles = StyleSheet.create({
+  form: { flex: 1, justifyContent: 'center', gap: spacing.sm },
+});

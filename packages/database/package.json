@@ -1,0 +1,25 @@
+{
+  "name": "@ai-assistant/database",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "prisma generate && tsc",
+    "db:generate": "prisma generate",
+    "postinstall": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy"
+  },
+  "dependencies": {
+    "@ai-assistant/config": "workspace:*",
+    "@prisma/client": "^6.2.0"
+  },
+  "devDependencies": {
+    "@prisma/config": "^6.2.0",
+    "@types/node": "^22.10.0",
+    "dotenv": "^17.4.2",
+    "prisma": "^6.2.0",
+    "typescript": "latest"
+  }
+}

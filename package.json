@@ -1,0 +1,27 @@
+{
+  "name": "ai-assistant-platform",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build --filter=@ai-assistant/config --filter=@ai-assistant/database --filter=@ai-assistant/auth --filter=@ai-assistant/api --filter=@ai-assistant/sdk",
+    "build:all": "turbo run build",
+    "dev": "turbo run dev --parallel",
+    "dev:api": "pnpm --filter @ai-assistant/api dev",
+    "dev:ai": "cd services/ai && .\\venv\\Scripts\\python.exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "test:integration": "pnpm --filter @ai-assistant/api test:integration",
+    "docker:up": "docker compose -f infra/docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f infra/docker/docker-compose.yml down",
+    "db:migrate": "pnpm --filter @ai-assistant/database db:migrate:deploy",
+    "db:generate": "pnpm --filter @ai-assistant/database db:generate",
+    "env:setup": "node scripts/env-setup.mjs",
+    "postinstall": "pnpm --filter @ai-assistant/config build && pnpm --filter @ai-assistant/sdk build && pnpm --filter @ai-assistant/database db:generate",
+    "mobile:android": "pnpm --filter @ai-assistant/mobile android"
+  },
+  "devDependencies": {
+    "prettier": "latest",
+    "turbo": "latest"
+  },
+  "packageManager": "pnpm@9.0.0"
+}
