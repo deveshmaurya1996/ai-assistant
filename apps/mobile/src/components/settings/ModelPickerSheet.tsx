@@ -9,7 +9,8 @@ import { Check } from 'lucide-react-native';
 import { Text } from '@/components/ui/Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/tokens';
-import { getModels, type ModelsResponse } from '@/lib/api';
+import type { ModelInfo } from '@ai-assistant/sdk';
+import { getModels } from '@/lib/api';
 import { dismissBottomSheet } from '@/lib/bottom-sheet';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -20,7 +21,7 @@ export const ModelPickerSheet = forwardRef<BottomSheetModalType>(function ModelP
   const { colors } = useTheme();
   const preferredModel = useSettingsStore((s) => s.preferredModel);
   const setPreferredModel = useSettingsStore((s) => s.setPreferredModel);
-  const [models, setModels] = useState<ModelsResponse['models']>([]);
+  const [models, setModels] = useState<ModelInfo[]>([]);
 
   useEffect(() => {
     getModels().then((data) => setModels(data.models));
@@ -37,6 +38,13 @@ export const ModelPickerSheet = forwardRef<BottomSheetModalType>(function ModelP
         </Text>
         {models.map((m) => {
           const selected = m.id === preferredModel;
+          const unavailable = m.available === false;
+          const subtitle =
+            m.role === 'fallback'
+              ? 'Automatic fallback when primary fails'
+              : unavailable
+                ? 'Add API key in server .env'
+                : undefined;
           return (
             <Pressable
               key={m.id}
@@ -44,9 +52,14 @@ export const ModelPickerSheet = forwardRef<BottomSheetModalType>(function ModelP
                 await setPreferredModel(m.id);
                 dismissBottomSheet(ref);
               }}
-              style={[styles.row, { borderBottomColor: colors.border }]}>
-              <Text variant="bodyMedium" style={{ flex: 1 }}>
+              style={[
+                styles.row,
+                { borderBottomColor: colors.border },
+                unavailable ? styles.rowDisabled : null,
+              ]}>
+              <Text variant="bodyMedium" style={{ flex: 1, opacity: unavailable ? 0.5 : 1 }}>
                 {m.label}
+                {subtitle ? `\n${subtitle}` : ''}
               </Text>
               {selected ? <Check color={colors.primary} size={20} /> : null}
             </Pressable>
@@ -65,4 +78,5 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  rowDisabled: { opacity: 0.85 },
 });

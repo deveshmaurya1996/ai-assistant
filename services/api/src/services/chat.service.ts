@@ -1,6 +1,12 @@
 import { prisma, Role } from '@ai-assistant/database';
+import { config as appConfig } from '@ai-assistant/config';
 import { streamAi } from '../lib/http';
 import { forbidden, notFound } from '../lib/errors';
+import {
+  parseSseBuffer,
+  type ChatErrorPayload,
+  type ChatTokenPayload,
+} from '../lib/sse';
 import { ingestConversationMemory } from './memory.service';
 
 export type ChatHistoryMessage = { role: string; content: string };
@@ -71,7 +77,7 @@ export async function processChatMessage(params: {
   text: string;
   chatSessionId?: string;
   ragEnabled?: boolean;
-  onChunk: (chunk: string, sessionId: string) => void;
+  onChunk: (chunk: string, sessionId: string) => void | Promise<void>;
   onSessionCreated?: (sessionId: string) => void;
 }) {
   const { userId, text, ragEnabled = true, onChunk, onSessionCreated } = params;
@@ -92,6 +98,17 @@ export async function processChatMessage(params: {
     take: 10,
   });
 
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { settings: true },
+  });
+  const settings = (user?.settings as Record<string, unknown> | null) ?? {};
+  const rawPreferred =
+    typeof settings.preferredModel === 'string'
+      ? settings.preferredModel
+      : appConfig.primaryModel;
+  const preferredModel = rawPreferred.trim();
+
   const stream = await streamAi('/v1/chat/stream', {
     query: text,
     rag_enabled: ragEnabled,
@@ -100,18 +117,49 @@ export async function processChatMessage(params: {
       content: m.content,
     })),
     user_id: userId,
+    preferred_model: preferredModel,
   });
 
   const reader = stream.getReader();
   const decoder = new TextDecoder('utf-8');
   let accumulated = '';
+  let sseBuffer = '';
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    const chunk = decoder.decode(value, { stream: true });
-    accumulated += chunk;
-    onChunk(chunk, sessionId);
+    sseBuffer += decoder.decode(value, { stream: true });
+
+    const { events, rest } = parseSseBuffer(sseBuffer);
+    sseBuffer = rest;
+
+    for (const ev of events) {
+      if (ev.event === 'token') {
+        const payload = JSON.parse(ev.data) as ChatTokenPayload;
+        if (payload.content) {
+          accumulated += payload.content;
+          await onChunk(payload.content, sessionId);
+        }
+      } else if (ev.event === 'error') {
+        const payload = JSON.parse(ev.data) as ChatErrorPayload;
+        const message = payload.message ?? 'Stream error';
+        accumulated += `\n[${message}]\n`;
+        await onChunk(`\n[${message}]\n`, sessionId);
+      }
+    }
+  }
+
+  if (sseBuffer.trim()) {
+    const { events } = parseSseBuffer(`${sseBuffer}\n\n`);
+    for (const ev of events) {
+      if (ev.event === 'token') {
+        const payload = JSON.parse(ev.data) as ChatTokenPayload;
+        if (payload.content) {
+          accumulated += payload.content;
+          await onChunk(payload.content, sessionId);
+        }
+      }
+    }
   }
 
   const assistantMessage = await prisma.message.create({

@@ -1,15 +1,16 @@
-import os
-import asyncio
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from memory.rag_service import RAGService
-from models.router import stream_completion
+from models.registry import get_models_catalog
+from models import media
 from agents.supervisor import run_agent
+from api.chat import router as chat_router
 
 router = APIRouter()
+router.include_router(chat_router)
 
 
 class DocumentItem(BaseModel):
@@ -27,14 +28,6 @@ class MemoryIngestRequest(BaseModel):
     user_id: str
 
 
-class ChatStreamRequest(BaseModel):
-    query: str
-    rag_enabled: bool = True
-    chat_history: List[Dict[str, str]] = Field(default_factory=list)
-    user_id: Optional[str] = None
-    preferred_model: Optional[str] = None
-
-
 class AgentRunRequest(BaseModel):
     agent_type: str
     task: str
@@ -45,29 +38,19 @@ class AgentRunRequest(BaseModel):
 class SpeakRequest(BaseModel):
     text: str
     user_id: Optional[str] = None
+    voice: Optional[str] = None
 
 
-def _build_messages(
-    chat_history: List[Dict[str, str]], context_str: str, query: str
-) -> List[Dict[str, str]]:
-    system_instruction = (
-        "You are a helpful AI Assistant. Use retrieved context when relevant."
-    )
-    if context_str:
-        system_instruction += f"\n\nRetrieved Context:\n{context_str}"
+class ImageGenerateRequest(BaseModel):
+    prompt: str
+    width: int = 1024
+    height: int = 1024
+    user_id: Optional[str] = None
 
-    formatted = [{"role": "system", "content": system_instruction}]
-    for msg in chat_history:
-        if msg.get("role") != "system":
-            formatted.append(
-                {
-                    "role": msg.get("role", "user"),
-                    "content": msg.get("content", ""),
-                }
-            )
-    if not chat_history or chat_history[-1].get("content") != query:
-        formatted.append({"role": "user", "content": query})
-    return formatted
+
+@router.get("/models")
+def list_models():
+    return get_models_catalog()
 
 
 @router.post("/kb/ingest")
@@ -112,31 +95,6 @@ def memory_search(query: str, user_id: str, limit: int = 5):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/chat/stream")
-def chat_stream(payload: ChatStreamRequest):
-    context_str = ""
-    if payload.rag_enabled:
-        try:
-            rag = RAGService()
-            items = rag.search_context(
-                payload.query, limit=3, user_id=payload.user_id
-            )
-            if items:
-                context_str = "\n".join(
-                    f"- {item['text']}" for item in items
-                )
-        except Exception as e:
-            print(f"RAG warning: {e}")
-
-    messages = _build_messages(payload.chat_history, context_str, payload.query)
-
-    async def generate():
-        async for chunk in stream_completion(messages, payload.preferred_model):
-            yield chunk
-
-    return StreamingResponse(generate(), media_type="text/event-stream")
-
-
 @router.post("/agents/run")
 def agents_run(payload: AgentRunRequest):
     result = run_agent(payload.agent_type, payload.task, payload.context)
@@ -146,41 +104,31 @@ def agents_run(payload: AgentRunRequest):
 @router.post("/voice/transcribe")
 async def voice_transcribe(file: UploadFile = File(...)):
     content = await file.read()
-    text = f"[Transcription placeholder for {len(content)} bytes of audio]"
-    if os.getenv("OPENAI_API_KEY"):
-        try:
-            import tempfile
-            import litellm
-
-            with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
-                tmp.write(content)
-                tmp.flush()
-                response = litellm.transcription(
-                    model="whisper-1",
-                    file=open(tmp.name, "rb"),
-                )
-                text = response.text
-        except Exception as e:
-            text = f"[Whisper error: {e}]"
+    name = file.filename or "audio.m4a"
+    try:
+        text = media.transcribe_audio(content, name)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
     return {"text": text}
 
 
 @router.post("/voice/speak")
 async def voice_speak(payload: SpeakRequest):
-    audio_bytes = b""
-    if os.getenv("OPENAI_API_KEY"):
-        try:
-            import litellm
-
-            response = litellm.speech(
-                model="tts-1",
-                input=payload.text,
-                voice="alloy",
-            )
-            audio_bytes = response.content
-        except Exception:
-            audio_bytes = b""
+    audio_bytes = media.synthesize_speech(payload.text, voice=payload.voice)
     return StreamingResponse(
         iter([audio_bytes]),
         media_type="audio/mpeg",
     )
+
+
+@router.post("/image/generate")
+def image_generate(payload: ImageGenerateRequest):
+    try:
+        image_bytes = media.generate_image(
+            payload.prompt,
+            width=payload.width,
+            height=payload.height,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    return StreamingResponse(iter([image_bytes]), media_type="image/jpeg")

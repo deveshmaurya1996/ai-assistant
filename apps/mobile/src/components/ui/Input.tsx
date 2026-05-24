@@ -2,11 +2,13 @@ import { TextInput, StyleSheet, type TextInputProps } from 'react-native';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radii, spacing, typography } from '@/theme/tokens';
 
-export function Input(props: TextInputProps) {
-  const { colors } = useTheme();
+export function Input({ style, ...props }: TextInputProps) {
+  const { colors, colorScheme } = useTheme();
   return (
     <TextInput
       placeholderTextColor={colors.textMuted}
+      keyboardAppearance={colorScheme === 'dark' ? 'dark' : 'light'}
+      selectionColor={colors.primary}
       style={[
         styles.input,
         typography.body,
@@ -15,7 +17,7 @@ export function Input(props: TextInputProps) {
           borderColor: colors.border,
           color: colors.text,
         },
-        props.style,
+        style,
       ]}
       {...props}
     />

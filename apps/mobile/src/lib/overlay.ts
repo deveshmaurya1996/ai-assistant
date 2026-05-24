@@ -1,4 +1,5 @@
-import { NativeModules, Platform, Linking } from 'react-native';
+import { Platform, Linking } from 'react-native';
+import { requireNativeModule } from 'expo-modules-core';
 
 type OverlayModule = {
   showBubble?: () => Promise<void>;
@@ -8,8 +9,16 @@ type OverlayModule = {
   requestOverlayPermission?: () => Promise<void>;
 };
 
-const NativeOverlay: OverlayModule | undefined =
-  NativeModules.AssistantOverlay ?? NativeModules.OverlayModule;
+function getOverlayModule(): OverlayModule | undefined {
+  if (Platform.OS !== 'android') return undefined;
+  try {
+    return requireNativeModule<OverlayModule>('AssistantOverlay');
+  } catch {
+    return undefined;
+  }
+}
+
+const NativeOverlay = getOverlayModule();
 
 export async function canDrawOverlays(): Promise<boolean> {
   if (Platform.OS !== 'android') return false;
@@ -55,6 +64,11 @@ export async function setBubbleState(
 
 export async function toggleOverlay(enabled: boolean): Promise<void> {
   if (enabled) {
+    const granted = await canDrawOverlays();
+    if (!granted) {
+      await requestOverlayPermission();
+      return;
+    }
     await showOverlayBubble();
   } else {
     await hideOverlayBubble();

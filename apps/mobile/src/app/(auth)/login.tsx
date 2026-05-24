@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
 import { Link, router } from 'expo-router';
-import { MotiView } from 'moti';
 import { Screen } from '@/components/ui/Screen';
+import { FadeIn } from '@/components/motion/FadeIn';
 import { Text } from '@/components/ui/Text';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { spacing } from '@/theme/tokens';
+import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton';
 import { useAuthStore } from '@/stores/auth';
 
 export default function LoginScreen() {
@@ -29,10 +30,7 @@ export default function LoginScreen() {
 
   return (
     <Screen>
-      <MotiView
-        from={{ opacity: 0, translateY: 12 }}
-        animate={{ opacity: 1, translateY: 0 }}
-        style={styles.form}>
+      <FadeIn style={styles.form}>
         <Text variant="h1">Welcome back</Text>
         <Text variant="body" muted style={{ marginBottom: spacing.lg }}>
           Sign in to continue
@@ -57,6 +55,7 @@ export default function LoginScreen() {
           loading={loading}
           style={{ marginTop: spacing.lg }}
         />
+        <GoogleSignInButton />
         <Link href="/(auth)/register" asChild>
           <Button
             label="Create account"
@@ -65,7 +64,7 @@ export default function LoginScreen() {
             style={{ marginTop: spacing.sm }}
           />
         </Link>
-      </MotiView>
+      </FadeIn>
     </Screen>
   );
 }

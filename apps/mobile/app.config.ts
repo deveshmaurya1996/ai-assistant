@@ -18,6 +18,7 @@ const config: ExpoConfig = {
   },
   android: {
     package: 'com.aiassistant.app',
+    softwareKeyboardLayoutMode: 'resize',
     permissions: [
       'android.permission.RECORD_AUDIO',
       'android.permission.POST_NOTIFICATIONS',

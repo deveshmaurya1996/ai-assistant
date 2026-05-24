@@ -47,37 +47,41 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   lastTranscript: null,
 
   hydrate: async () => {
-    const [
-      termsAccepted,
-      termsVersion,
-      backgroundVoice,
-      autoSend,
-      defaultRag,
-      overlay,
-      model,
-      transcript,
-    ] = await Promise.all([
-      SecureStore.getItemAsync(KEYS.termsAccepted),
-      SecureStore.getItemAsync(KEYS.termsVersion),
-      SecureStore.getItemAsync(KEYS.backgroundVoice),
-      SecureStore.getItemAsync(KEYS.autoSendVoice),
-      SecureStore.getItemAsync(KEYS.defaultRag),
-      SecureStore.getItemAsync(KEYS.overlayEnabled),
-      SecureStore.getItemAsync(KEYS.preferredModel),
-      SecureStore.getItemAsync(KEYS.lastTranscript),
-    ]);
+    try {
+      const [
+        termsAccepted,
+        termsVersion,
+        backgroundVoice,
+        autoSend,
+        defaultRag,
+        overlay,
+        model,
+        transcript,
+      ] = await Promise.all([
+        SecureStore.getItemAsync(KEYS.termsAccepted),
+        SecureStore.getItemAsync(KEYS.termsVersion),
+        SecureStore.getItemAsync(KEYS.backgroundVoice),
+        SecureStore.getItemAsync(KEYS.autoSendVoice),
+        SecureStore.getItemAsync(KEYS.defaultRag),
+        SecureStore.getItemAsync(KEYS.overlayEnabled),
+        SecureStore.getItemAsync(KEYS.preferredModel),
+        SecureStore.getItemAsync(KEYS.lastTranscript),
+      ]);
 
-    set({
-      hydrated: true,
-      termsAcceptedAt:
-        termsVersion === TERMS_VERSION && termsAccepted ? termsAccepted : null,
-      backgroundVoiceEnabled: backgroundVoice !== 'false',
-      autoSendAfterTranscribe: autoSend === 'true',
-      defaultRagEnabled: defaultRag !== 'false',
-      overlayEnabled: overlay === 'true',
-      preferredModel: model,
-      lastTranscript: transcript,
-    });
+      set({
+        hydrated: true,
+        termsAcceptedAt:
+          termsVersion === TERMS_VERSION && termsAccepted ? termsAccepted : null,
+        backgroundVoiceEnabled: backgroundVoice !== 'false',
+        autoSendAfterTranscribe: autoSend === 'true',
+        defaultRagEnabled: defaultRag !== 'false',
+        overlayEnabled: overlay === 'true',
+        preferredModel: model,
+        lastTranscript: transcript,
+      });
+    } catch {
+      set({ hydrated: true });
+    }
   },
 
   acceptTerms: async () => {

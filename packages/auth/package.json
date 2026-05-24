@@ -9,7 +9,8 @@
   "dependencies": {
     "@ai-assistant/config": "workspace:*",
     "@ai-assistant/database": "workspace:*",
-    "better-auth": "^1.2.0"
+    "@better-auth/expo": "1.6.11",
+    "better-auth": "1.6.11"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

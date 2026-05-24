@@ -37,7 +37,10 @@ export async function streamAi(
 ): Promise<ReadableStream<Uint8Array>> {
   const res = await fetch(getAiServiceUrl(path), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    },
     body: JSON.stringify(body),
   });
 

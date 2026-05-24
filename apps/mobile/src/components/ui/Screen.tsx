@@ -1,5 +1,11 @@
 import { type ReactNode } from 'react';
-import { ScrollView, View, type ViewStyle } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  View,
+  type ViewStyle,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '@/theme/ThemeProvider';
 import { useResponsive } from '@/theme/useResponsive';
@@ -33,15 +39,20 @@ export function Screen({ children, scroll, padded = true, style }: Props) {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
-      {scroll ? (
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1, paddingBottom: 120 }}
-          keyboardShouldPersistTaps="handled">
-          {content}
-        </ScrollView>
-      ) : (
-        content
-      )}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
+        {scroll ? (
+          <ScrollView
+            contentContainerStyle={{ flexGrow: 1, paddingBottom: 120 }}
+            keyboardShouldPersistTaps="handled">
+            {content}
+          </ScrollView>
+        ) : (
+          content
+        )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

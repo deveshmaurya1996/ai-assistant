@@ -1,6 +1,5 @@
 import { View, StyleSheet, Pressable, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { MotiView } from 'moti';
 import * as Haptics from 'expo-haptics';
 import { MessageSquare, Mic, Settings, Sparkles } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,7 +28,7 @@ export function FloatingDockTabBar({ activeIndex, navigate }: MainTabBarProps) {
         { paddingBottom: Math.max(insets.bottom, layout.dockBottomOffset) },
       ]}
       pointerEvents="box-none">
-      <Pressable
+      {/* <Pressable
         onPress={() => {
           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           openVoiceSheet();
@@ -38,7 +37,7 @@ export function FloatingDockTabBar({ activeIndex, navigate }: MainTabBarProps) {
         <View style={[styles.micBtn, { backgroundColor: colors.primary }]}>
           <Mic color={colors.onPrimary} size={28} />
         </View>
-      </Pressable>
+      </Pressable> */}
 
       <View style={styles.dockShadow}>
         {Platform.OS === 'ios' ? (
@@ -86,12 +85,11 @@ function DockInner({
 
   return (
     <View style={styles.dockInner}>
-      <MotiView
-        animate={{ left: `${activeIndex * tabWidth}%` }}
-        transition={{ type: 'spring', damping: 18, stiffness: 200 }}
+      <View
         style={[
           styles.indicator,
           {
+            left: `${activeIndex * tabWidth}%`,
             width: `${tabWidth}%`,
             backgroundColor: colors.primaryMuted,
           },

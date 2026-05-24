@@ -1,7 +1,7 @@
 import { View, StyleSheet } from 'react-native';
-import { Plus } from 'lucide-react-native';
-import { DrawerToggleButton } from '@react-navigation/drawer';
+import { Menu, Plus } from 'lucide-react-native';
 import { Text } from '@/components/ui/Text';
+import { useDrawerNavigation } from '@/hooks/useDrawerNavigation';
 import { useTheme } from '@/theme/ThemeProvider';
 import { layout, spacing } from '@/theme/tokens';
 import { PressableScale } from '@/components/motion/PressableScale';
@@ -13,15 +13,16 @@ type Props = {
 
 export function AppHeader({ title, onNewChat }: Props) {
   const { colors } = useTheme();
+  const { openDrawer } = useDrawerNavigation();
 
   return (
     <View style={[styles.header, { borderBottomColor: colors.border }]}>
-      <View style={styles.menuSlot}>
-        <DrawerToggleButton
-          tintColor={colors.text}
-          accessibilityLabel="Open menu"
-        />
-      </View>
+      <PressableScale
+        onPress={openDrawer}
+        accessibilityLabel="Open menu"
+        style={styles.menuSlot}>
+        <Menu color={colors.text} size={24} />
+      </PressableScale>
       <Text variant="h2" style={styles.title}>
         {title}
       </Text>

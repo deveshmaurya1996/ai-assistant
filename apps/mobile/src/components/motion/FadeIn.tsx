@@ -1,19 +1,19 @@
-import { MotiView } from 'moti';
 import type { ReactNode } from 'react';
+import { type ViewStyle } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
 export function FadeIn({
   children,
   delay = 0,
+  style,
 }: {
   children: ReactNode;
   delay?: number;
+  style?: ViewStyle;
 }) {
   return (
-    <MotiView
-      from={{ opacity: 0, translateY: 8 }}
-      animate={{ opacity: 1, translateY: 0 }}
-      transition={{ type: 'timing', duration: 350, delay }}>
+    <Animated.View entering={FadeInDown.delay(delay).duration(350)} style={style}>
       {children}
-    </MotiView>
+    </Animated.View>
   );
 }

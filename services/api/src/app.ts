@@ -10,6 +10,7 @@ import { memoryRoutes } from './routes/memory.routes';
 import { automationRoutes } from './routes/automation.routes';
 import { settingsRoutes } from './routes/settings.routes';
 import { voiceRoutes } from './routes/voice.routes';
+import { imageRoutes } from './routes/image.routes';
 import { setupSocketIO } from './socket';
 import { startAutomationWorker } from './workers/automation.worker';
 
@@ -59,6 +60,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(automationRoutes, { prefix: '/automations' });
   app.register(settingsRoutes, { prefix: '/settings' });
   app.register(voiceRoutes, { prefix: '/voice' });
+  app.register(imageRoutes, { prefix: '/image' });
 
   setupSocketIO(app);
   startAutomationWorker();

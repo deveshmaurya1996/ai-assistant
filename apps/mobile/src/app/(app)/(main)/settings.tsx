@@ -22,7 +22,12 @@ import {
   openAppSettings,
   type PermissionStatus,
 } from '@/features/voice/requestVoicePermissions';
-import { toggleOverlay, canDrawOverlays } from '@/lib/overlay';
+import {
+  toggleOverlay,
+  canDrawOverlays,
+  requestOverlayPermission,
+} from '@/lib/overlay';
+import { promptOverlayPermissionIfNeeded } from '@/lib/overlay-prompt';
 import {
   formatMicPermissionStatus,
   formatOverlayPermission,
@@ -119,6 +124,12 @@ export default function SettingsScreen() {
             description="Show bubble over other apps (Android dev build)"
             value={overlayEnabled}
             onValueChange={async (v) => {
+              if (v) {
+                const granted = await canDrawOverlays();
+                if (!granted) {
+                  await promptOverlayPermissionIfNeeded();
+                }
+              }
               await setOverlayEnabled(v);
               await toggleOverlay(v);
               const ok = await canDrawOverlays();
@@ -128,6 +139,16 @@ export default function SettingsScreen() {
           <Text variant="caption" muted style={{ marginTop: spacing.xs }}>
             Overlay permission: {overlayStatus}
           </Text>
+          <Button
+            label="Grant overlay permission"
+            variant="secondary"
+            style={{ marginTop: spacing.sm }}
+            onPress={async () => {
+              await requestOverlayPermission();
+              const ok = await canDrawOverlays();
+              setOverlayStatus(ok ? 'Granted' : 'Not granted');
+            }}
+          />
         </SettingsSection>
 
         <SettingsSection title="Chat">

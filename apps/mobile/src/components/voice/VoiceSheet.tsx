@@ -1,12 +1,12 @@
-import { forwardRef, useCallback, useEffect } from 'react';
+import { forwardRef, useCallback } from 'react';
 import { View, StyleSheet } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetView,
   type BottomSheetModal as BottomSheetModalType,
 } from '@gorhom/bottom-sheet';
-import { MotiView } from 'moti';
 import { Mic, Square } from 'lucide-react-native';
+import { PulseRing } from '@/components/motion/PulseRing';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -37,9 +37,10 @@ export const VoiceSheet = forwardRef<BottomSheetModalType, Props>(
       }
     }, [stopAndTranscribe, setLastTranscript, onTranscript, ref]);
 
-    useEffect(() => {
-      void startRecording();
-    }, [startRecording]);
+    const handleCancel = useCallback(async () => {
+      await cancel();
+      dismissBottomSheet(ref);
+    }, [cancel, ref]);
 
     const label =
       status === 'processing'
@@ -55,6 +56,14 @@ export const VoiceSheet = forwardRef<BottomSheetModalType, Props>(
         ref={ref}
         snapPoints={['40%']}
         enablePanDownToClose
+        onChange={(index) => {
+          if (index >= 0) {
+            void startRecording();
+          }
+        }}
+        onDismiss={() => {
+          void cancel();
+        }}
         backgroundStyle={{ backgroundColor: colors.surface }}
         handleIndicatorStyle={{ backgroundColor: colors.border }}>
         <BottomSheetView style={styles.content}>
@@ -66,14 +75,7 @@ export const VoiceSheet = forwardRef<BottomSheetModalType, Props>(
           </Text>
 
           <View style={styles.micArea}>
-            {isRecording ? (
-              <MotiView
-                from={{ scale: 1, opacity: 0.6 }}
-                animate={{ scale: 1.2, opacity: 0.2 }}
-                transition={{ type: 'timing', duration: 800, loop: true }}
-                style={[styles.pulse, { backgroundColor: colors.primary }]}
-              />
-            ) : null}
+            {isRecording ? <PulseRing color={colors.primary} /> : null}
             <PressableScale
               onPress={isRecording ? handleStop : startRecording}
               disabled={status === 'processing'}>
@@ -92,7 +94,7 @@ export const VoiceSheet = forwardRef<BottomSheetModalType, Props>(
           </Text>
 
           <View style={styles.actions}>
-            <Button label="Cancel" variant="ghost" onPress={cancel} />
+            <Button label="Cancel" variant="ghost" onPress={handleCancel} />
           </View>
         </BottomSheetView>
       </BottomSheetModal>

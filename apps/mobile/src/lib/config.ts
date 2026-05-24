@@ -18,3 +18,6 @@ function readApiUrl(): string {
 export const API_URL = readApiUrl();
 
 export const AUTH_CALLBACK_URL = 'ai-assistant://auth/callback';
+
+export const GOOGLE_AUTH_ENABLED =
+  process.env.EXPO_PUBLIC_GOOGLE_AUTH_ENABLED !== 'false';

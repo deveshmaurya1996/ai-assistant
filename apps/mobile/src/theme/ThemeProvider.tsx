@@ -32,14 +32,12 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const systemScheme = useSystemColorScheme();
   const [mode, setModeState] = useState<ThemeMode>('system');
-  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    SecureStore.getItemAsync(THEME_KEY).then((stored) => {
+    void SecureStore.getItemAsync(THEME_KEY).then((stored) => {
       if (stored === 'light' || stored === 'dark' || stored === 'system') {
         setModeState(stored);
       }
-      setReady(true);
     });
   }, []);
 
@@ -61,8 +59,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }),
     [mode, colorScheme, setMode]
   );
-
-  if (!ready) return null;
 
   return (
     <ThemeContext.Provider value={value}>

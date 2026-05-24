@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import { AssistantClient } from '@ai-assistant/sdk';
+import { AssistantClient, type ModelInfo, type ModelsResponse } from '@ai-assistant/sdk';
 import { API_URL } from './config';
 
 const SESSION_KEY = 'better-auth.session_token';
@@ -12,7 +12,7 @@ export type ChatMessage = Awaited<
 export type ChatSession = Awaited<
   ReturnType<AssistantClient['listSessions']>
 >[number];
-export type ModelsResponse = Awaited<ReturnType<AssistantClient['getModels']>>;
+export type { ModelInfo, ModelsResponse };
 export type AssistantSocket = ReturnType<AssistantClient['connectSocket']>;
 export type SessionInfo = NonNullable<
   Awaited<ReturnType<AssistantClient['getSession']>>
@@ -35,13 +35,29 @@ export function transcribeVoice(
   return apiClient.transcribeVoice(audioUri, mimeType);
 }
 
+const SESSION_FETCH_MS = 8_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Session request timed out')), ms);
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
 export async function loadStoredSession() {
   const token = await SecureStore.getItemAsync(SESSION_KEY);
-  if (token) {
-    apiClient.setSessionCookie(`better-auth.session_token=${token}`);
-    return apiClient.getSession();
-  }
-  return null;
+  if (!token) return null;
+
+  apiClient.setSessionCookie(`better-auth.session_token=${token}`);
+  return withTimeout(apiClient.getSession(), SESSION_FETCH_MS);
 }
 
 export async function persistSession() {

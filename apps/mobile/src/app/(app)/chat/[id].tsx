@@ -5,8 +5,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ActivityIndicator,
 } from 'react-native';
-import { FlashList, type ListRenderItem } from '@shopify/flash-list';
+import {
+  FlashList,
+  type FlashListRef,
+  type ListRenderItem,
+} from '@shopify/flash-list';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, Mic, Send } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -36,6 +41,8 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const listRef = useRef<FlashListRef<ChatMessage>>(null);
   const socketRef = useRef<AssistantSocket | null>(null);
 
   useEffect(() => {
@@ -53,6 +60,12 @@ export default function ChatScreen() {
     socket.on('chat:end', (data) => {
       setMessages((prev) => [...prev, data.message]);
       setStreaming('');
+      setIsGenerating(false);
+    });
+
+    socket.on('chat:error', () => {
+      setStreaming('');
+      setIsGenerating(false);
     });
 
     return () => {
@@ -70,6 +83,7 @@ export default function ChatScreen() {
       };
       setMessages((prev) => [...prev, optimistic]);
       setStreaming('');
+      setIsGenerating(true);
       socketRef.current.emit('chat:message', {
         text,
         chatSessionId: id,
@@ -86,19 +100,26 @@ export default function ChatScreen() {
     emitMessage(text);
   };
 
-  const displayMessages: ChatMessage[] = streaming
-    ? [
-        ...messages,
-        {
-          id: STREAMING_MESSAGE_ID,
-          role: 'ASSISTANT',
-          content: streaming,
-        },
-      ]
-    : messages;
+  const displayMessages: ChatMessage[] =
+    streaming || isGenerating
+      ? [
+          ...messages,
+          {
+            id: STREAMING_MESSAGE_ID,
+            role: 'ASSISTANT',
+            content: streaming,
+          },
+        ]
+      : messages;
+
+  useEffect(() => {
+    if (!streaming && !isGenerating) return;
+    listRef.current?.scrollToEnd({ animated: true });
+  }, [streaming, isGenerating, displayMessages.length]);
 
   const renderMessage: ListRenderItem<ChatMessage> = ({ item }) => {
     const isUser = isUserMessage(item);
+    const isStreamingBubble = item.id === STREAMING_MESSAGE_ID;
     return (
       <View
         style={[
@@ -110,9 +131,13 @@ export default function ChatScreen() {
             borderWidth: isUser ? 0 : 1,
           },
         ]}>
-        <Text style={{ color: isUser ? colors.onPrimary : colors.text }}>
-          {item.content}
-        </Text>
+        {isStreamingBubble && !item.content && isGenerating ? (
+          <ActivityIndicator color={colors.textMuted} />
+        ) : (
+          <Text style={{ color: isUser ? colors.onPrimary : colors.text }}>
+            {item.content}
+          </Text>
+        )}
       </View>
     );
   };
@@ -120,7 +145,8 @@ export default function ChatScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.container, { backgroundColor: colors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
       <View
         style={[
           styles.topBar,
@@ -139,7 +165,9 @@ export default function ChatScreen() {
       </View>
 
       <FlashList
+        ref={listRef}
         data={displayMessages}
+        extraData={`${streaming}|${isGenerating}`}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         style={styles.messageList}

@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 import { View, StyleSheet, Pressable, ScrollView } from 'react-native';
-import { DrawerContentScrollView } from '@react-navigation/drawer';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useDrawerNavigation } from '@/hooks/useDrawerNavigation';
 import {
@@ -56,6 +56,7 @@ function NavRow({
 }
 
 export function DrawerContent() {
+  const insets = useSafeAreaInsets();
   const { closeDrawer } = useDrawerNavigation();
   const { colors, mode, setMode } = useTheme();
   const session = useAuthStore((s) => s.session);
@@ -92,8 +93,13 @@ export function DrawerContent() {
   };
 
   return (
-    <DrawerContentScrollView
-      contentContainerStyle={{ flex: 1, backgroundColor: colors.surface }}>
+    <ScrollView
+      contentContainerStyle={{
+        flexGrow: 1,
+        backgroundColor: colors.surface,
+        paddingTop: insets.top,
+        paddingBottom: insets.bottom,
+      }}>
       <View style={[styles.profile, { borderBottomColor: colors.border }]}>
         <View style={[styles.avatar, { backgroundColor: colors.primaryMuted }]}>
           <Text variant="h2" style={{ color: colors.primary }}>
@@ -168,7 +174,7 @@ export function DrawerContent() {
           v{Constants.expoConfig?.version ?? '1.0.0'}
         </Text>
       </View>
-    </DrawerContentScrollView>
+    </ScrollView>
   );
 }
 

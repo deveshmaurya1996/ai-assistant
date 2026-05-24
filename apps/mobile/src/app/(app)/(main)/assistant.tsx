@@ -1,7 +1,7 @@
 import { View, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
-import { MotiView } from 'moti';
 import { Mic } from 'lucide-react-native';
+import { FadeIn } from '@/components/motion/FadeIn';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -37,16 +37,13 @@ export default function AssistantScreen() {
     <Screen scroll>
       <AppHeader title="Assistant" />
       <View style={styles.body}>
-        <MotiView
-          from={{ scale: 0.95, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: 'spring' }}>
+        <FadeIn>
           <PressableScale onPress={handleVoice}>
             <View style={[styles.micHero, { backgroundColor: colors.primary }]}>
               <Mic color={colors.onPrimary} size={56} />
             </View>
           </PressableScale>
-        </MotiView>
+        </FadeIn>
         <Text variant="h2" style={{ textAlign: 'center', marginTop: spacing.lg }}>
           Tap to speak
         </Text>

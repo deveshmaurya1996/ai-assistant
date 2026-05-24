@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   useAudioRecorder,
   useAudioRecorderState,
@@ -7,6 +7,8 @@ import {
 } from 'expo-audio';
 import { transcribeVoice } from '@/lib/api';
 import { useSettingsStore } from '@/stores/settings';
+import { setBubbleState } from '@/lib/overlay';
+import { mimeFromUri } from './mimeFromUri';
 import { requestMicPermission, requestNotificationPermission } from './requestVoicePermissions';
 
 export type VoiceRecorderStatus = 'idle' | 'recording' | 'processing' | 'error';
@@ -41,31 +43,41 @@ export function useVoiceRecorder() {
     await recorder.prepareToRecordAsync();
     recorder.record();
     setStatus('recording');
+    void setBubbleState('listening');
     return true;
   }, [recorder, backgroundVoice]);
 
   const stopAndTranscribe = useCallback(async () => {
-    if (!recorderState.isRecording) {
+    const wasRecording = status === 'recording' || recorderState.isRecording;
+    if (!wasRecording) {
+      setStatus('error');
+      setError('Recording did not start — check microphone permission');
       return null;
     }
 
     setStatus('processing');
+    void setBubbleState('processing');
     try {
-      await recorder.stop();
+      if (recorderState.isRecording) {
+        await recorder.stop();
+      }
+
       const uri = recorder.uri;
       if (!uri) {
         throw new Error('No recording file');
       }
 
-      const result = await transcribeVoice(uri);
+      const result = await transcribeVoice(uri, mimeFromUri(uri));
       setStatus('idle');
+      void setBubbleState('idle');
       return result.text;
     } catch (e) {
       setStatus('error');
+      void setBubbleState('idle');
       setError(e instanceof Error ? e.message : 'Transcription failed');
       return null;
     }
-  }, [recorder, recorderState.isRecording]);
+  }, [recorder, recorderState.isRecording, status]);
 
   const cancel = useCallback(async () => {
     if (recorderState.isRecording) {
@@ -73,6 +85,7 @@ export function useVoiceRecorder() {
     }
     setStatus('idle');
     setError(null);
+    void setBubbleState('idle');
   }, [recorder, recorderState.isRecording]);
 
   return {
