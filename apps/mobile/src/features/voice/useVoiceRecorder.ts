@@ -5,7 +5,7 @@ import {
   RecordingPresets,
   setAudioModeAsync,
 } from 'expo-audio';
-import { transcribeVoice } from '@/lib/api';
+import { transcribeVoice } from '@/lib/transcribe-voice';
 import { useSettingsStore } from '@/stores/settings';
 import { setBubbleState } from '@/lib/overlay';
 import { mimeFromUri } from './mimeFromUri';

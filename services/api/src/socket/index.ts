@@ -1,14 +1,11 @@
 import { Server, Socket } from 'socket.io';
 import { FastifyInstance } from 'fastify';
 import { AppError } from '../lib/errors';
+import { enforceSocketRateLimits, getClientIp } from '../lib/rate-limit';
 import { getRequestSession, headersFromSocketHandshake } from '../utils/session';
+import type { ChatOutgoingPayload } from '@ai-assistant/types';
 import { processChatMessage } from '../services/chat.service';
-
-interface ChatMessageData {
-  text: string;
-  chatSessionId?: string;
-  ragEnabled?: boolean;
-}
+import { registerVoiceTurnHandlers } from './voice-turn';
 
 function extractToken(socket: Socket): string | undefined {
   const fromAuth = socket.handshake.auth?.token as string | undefined;
@@ -39,8 +36,9 @@ export function setupSocketIO(fastify: FastifyInstance) {
       return true;
     };
 
-    resolveUser(extractToken(socket)).catch((err) => {
+    const authReady = resolveUser(extractToken(socket)).catch((err) => {
       fastify.log.warn({ err }, 'Socket handshake auth failed');
+      return false;
     });
 
     socket.on('authenticate', async (token: string) => {
@@ -50,7 +48,10 @@ export function setupSocketIO(fastify: FastifyInstance) {
       }
     });
 
-    socket.on('chat:message', async (data: ChatMessageData) => {
+    registerVoiceTurnHandlers(socket, fastify, () => userId);
+
+    socket.on('chat:message', async (data: ChatOutgoingPayload) => {
+      await authReady;
       if (!userId) {
         socket.emit('chat:error', { error: 'Unauthorized. Please authenticate first.' });
         return;
@@ -62,41 +63,57 @@ export function setupSocketIO(fastify: FastifyInstance) {
       }
 
       try {
-        const result = await processChatMessage({
-          userId,
-          text: data.text.trim(),
-          chatSessionId: data.chatSessionId,
-          ragEnabled: data.ragEnabled,
-          onSessionCreated: (sessionId) => {
-            socket.emit('chat:session_created', { chatSessionId: sessionId });
-          },
-          onChunk: (chunk, sessionId) => {
-            socket.emit('chat:chunk', { chunk, chatSessionId: sessionId });
-          },
-        });
-
-        socket.emit('chat:message_saved', { message: result.userMessage });
-        socket.emit('chat:end', {
-          message: result.assistantMessage,
-          chatSessionId: result.sessionId,
-        });
+        const clientIp = getClientIp(socket.handshake.headers);
+        enforceSocketRateLimits(clientIp, userId, 'chat:message');
       } catch (err) {
         const message =
-          err instanceof AppError
-            ? err.message
-            : err instanceof Error
-              ? err.message
-              : 'Unknown error';
-        const details = err instanceof AppError ? err.details : undefined;
-
-        fastify.log.error({ err, userId, socketId: socket.id }, 'chat:message failed');
-
-        socket.emit('chat:error', {
-          error: 'An error occurred while communicating with the AI service.',
-          details: message,
-          ...(details !== undefined && { debug: details }),
-        });
+          err instanceof AppError ? err.message : 'Too many requests. Please try again later.';
+        socket.emit('chat:error', { error: message, details: message });
+        return;
       }
+
+      void (async () => {
+        try {
+          const result = await processChatMessage({
+            userId,
+            text: data.text.trim(),
+            chatSessionId: data.chatSessionId,
+            ragEnabled: data.ragEnabled,
+            source: 'socket',
+            onSessionCreated: (sessionId) => {
+              socket.emit('chat:session_created', { chatSessionId: sessionId });
+            },
+            onChunk: (chunk, sessionId) => {
+              socket.emit('chat:chunk', { chunk, chatSessionId: sessionId });
+            },
+            onTitleUpdated: (sessionId, title) => {
+              socket.emit('chat:title_updated', { chatSessionId: sessionId, title });
+            },
+          });
+
+          socket.emit('chat:message_saved', { message: result.userMessage });
+          socket.emit('chat:end', {
+            message: result.assistantMessage,
+            chatSessionId: result.sessionId,
+          });
+        } catch (err) {
+          const message =
+            err instanceof AppError
+              ? err.message
+              : err instanceof Error
+                ? err.message
+                : 'Unknown error';
+          const details = err instanceof AppError ? err.details : undefined;
+
+          fastify.log.error({ err, userId, socketId: socket.id }, 'chat:message failed');
+
+          socket.emit('chat:error', {
+            error: message,
+            details: message,
+            ...(details !== undefined && { debug: details }),
+          });
+        }
+      })();
     });
   });
 

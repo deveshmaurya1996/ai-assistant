@@ -7,6 +7,7 @@ export async function chatRoutes(fastify: FastifyInstance) {
 
   fastify.get('/sessions', ChatController.listSessions);
   fastify.post('/sessions', ChatController.createSession);
+  fastify.get('/sessions/:id', ChatController.getSession);
   fastify.get('/sessions/:id/messages', ChatController.getSessionMessages);
   fastify.delete('/sessions/:id', ChatController.deleteSession);
 }

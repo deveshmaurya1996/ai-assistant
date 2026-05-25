@@ -1,0 +1,30 @@
+load('./config.tilt', 'enabled_services', 'is_enabled', 'COMPOSE_PROJECT', 'any_enabled', 'PROFILE_CORE', 'PORTS', 'port_url')
+
+INFRA_LABELS = ['infra']
+DATABASE_LABELS = ['database']
+CORE_COMPOSE = 'infra/docker/compose.core.yml'
+
+def infra():
+    enabled = enabled_services()
+    if not any_enabled(PROFILE_CORE, enabled):
+        return
+
+    docker_compose(CORE_COMPOSE, project_name=COMPOSE_PROJECT, env_file='.env')
+
+    if is_enabled('postgres', enabled):
+        dc_resource(
+            'postgres',
+            new_name='postgres-db',
+            labels=DATABASE_LABELS,
+            infer_links=False,
+        )
+
+    if is_enabled('qdrant', enabled):
+        dc_resource(
+            'qdrant',
+            labels=INFRA_LABELS,
+            links=[link(port_url('qdrant'), 'Qdrant :' + str(PORTS['qdrant']))],
+        )
+
+    if is_enabled('redis', enabled):
+        dc_resource('redis', labels=INFRA_LABELS)

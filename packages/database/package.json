@@ -9,7 +9,8 @@
     "postinstall": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
-    "db:migrate:deploy": "prisma migrate deploy"
+    "db:migrate:deploy": "prisma migrate deploy",
+    "studio": "prisma studio --browser none --hostname 127.0.0.1"
   },
   "dependencies": {
     "@ai-assistant/config": "workspace:*",

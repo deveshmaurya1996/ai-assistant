@@ -1,10 +1,6 @@
-export type ApiErrorDetails =
-  | string
-  | number
-  | boolean
-  | null
-  | ApiErrorDetails[]
-  | { [key: string]: ApiErrorDetails };
+import type { ApiErrorBody, ApiErrorDetails } from '@ai-assistant/types';
+
+export type { ApiErrorDetails };
 
 export class ApiError extends Error {
   constructor(
@@ -20,7 +16,7 @@ export class ApiError extends Error {
 export async function parseApiError(res: Response): Promise<ApiError> {
   const text = await res.text();
   try {
-    const json = JSON.parse(text) as { error?: string; details?: ApiErrorDetails };
+    const json = JSON.parse(text) as ApiErrorBody;
     return new ApiError(
       res.status,
       json.error ?? res.statusText,

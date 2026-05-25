@@ -14,6 +14,7 @@ import {
 import * as SplashScreen from 'expo-splash-screen';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { VoiceProvider } from '@/context/VoiceContext';
+import { hydrateAuthStorage } from '@/lib/secure-storage';
 import { useSettingsStore } from '@/stores/settings';
 
 SplashScreen.preventAutoHideAsync();
@@ -29,6 +30,7 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
+    void hydrateAuthStorage();
     void hydrateSettings();
   }, [hydrateSettings]);
 

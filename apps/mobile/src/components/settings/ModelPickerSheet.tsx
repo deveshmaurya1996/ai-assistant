@@ -10,7 +10,7 @@ import { Text } from '@/components/ui/Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/tokens';
 import type { ModelInfo } from '@ai-assistant/sdk';
-import { getModels } from '@/lib/api';
+import { apiClient } from '@/lib/api-client';
 import { dismissBottomSheet } from '@/lib/bottom-sheet';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -24,7 +24,7 @@ export const ModelPickerSheet = forwardRef<BottomSheetModalType>(function ModelP
   const [models, setModels] = useState<ModelInfo[]>([]);
 
   useEffect(() => {
-    getModels().then((data) => setModels(data.models));
+    apiClient.getModels().then((data) => setModels(data.models));
   }, []);
 
   return (

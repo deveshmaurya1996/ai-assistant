@@ -1,0 +1,35 @@
+load(
+    './config.tilt',
+    'enabled_services',
+    'is_enabled',
+    'SERVICE_BUILD_IGNORE',
+    'PORTS',
+    'port_url',
+    'port_env',
+)
+
+SERVICE_LABELS = ['services']
+DEV_SCRIPT = 'scripts/dev.mjs'
+
+def ai_service():
+    enabled = enabled_services()
+    if not is_enabled('ai', enabled):
+        return
+
+    local_resource(
+        'ai',
+        serve_cmd='node ' + DEV_SCRIPT + ' serve ai',
+        deps=[
+            DEV_SCRIPT,
+            'tilt_config.json',
+            'scripts/with-env.mjs',
+            '.env',
+            'services/ai',
+        ],
+        env=port_env(),
+        ignore=SERVICE_BUILD_IGNORE,
+        allow_parallel=True,
+        labels=SERVICE_LABELS,
+        resource_deps=['qdrant', 'redis'],
+        links=[link(port_url('ai'), 'AI :' + str(PORTS['ai']))],
+    )

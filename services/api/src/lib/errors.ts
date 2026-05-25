@@ -28,6 +28,10 @@ export function badRequest(message: string, details?: unknown): AppError {
   return new AppError(400, message, details);
 }
 
+export function tooManyRequests(message = 'Too many requests'): AppError {
+  return new AppError(429, message);
+}
+
 export function sendError(reply: FastifyReply, error: unknown) {
   if (error instanceof AppError) {
     return reply.code(error.statusCode).send({

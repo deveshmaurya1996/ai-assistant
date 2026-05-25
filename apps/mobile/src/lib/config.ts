@@ -1,19 +1,26 @@
 import Constants from 'expo-constants';
 
-const DEFAULT_API_URL = 'http://10.0.2.2:3000';
+const DEFAULT_API_PORT = 3000;
+const DEV_API_HOST = 'localhost';
+
+function getApiPort(): number {
+  const raw = process.env.EXPO_PUBLIC_API_PORT?.trim();
+  if (!raw) return DEFAULT_API_PORT;
+  const port = Number(raw);
+  return Number.isFinite(port) && port > 0 ? port : DEFAULT_API_PORT;
+}
 
 function readApiUrl(): string {
-  const fromEnv = process.env.EXPO_PUBLIC_API_URL?.trim();
-  if (fromEnv) return fromEnv;
+  const explicit = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (explicit) return explicit;
 
   const fromExtra = Constants.expoConfig?.extra?.apiUrl;
   if (typeof fromExtra === 'string' && fromExtra.length > 0) {
     return fromExtra;
   }
 
-  return DEFAULT_API_URL;
+  return `http://${DEV_API_HOST}:${getApiPort()}`;
 }
-
 
 export const API_URL = readApiUrl();
 

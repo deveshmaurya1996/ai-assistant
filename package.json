@@ -3,20 +3,22 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "turbo run build --filter=@ai-assistant/config --filter=@ai-assistant/database --filter=@ai-assistant/auth --filter=@ai-assistant/api --filter=@ai-assistant/sdk",
+    "build": "turbo run build --filter=@ai-assistant/config --filter=@ai-assistant/types --filter=@ai-assistant/telemetry --filter=@ai-assistant/events --filter=@ai-assistant/database --filter=@ai-assistant/auth --filter=@ai-assistant/api --filter=@ai-assistant/sdk",
     "build:all": "turbo run build",
     "dev": "turbo run dev --parallel",
-    "dev:api": "pnpm --filter @ai-assistant/api dev",
-    "dev:ai": "cd services/ai && .\\venv\\Scripts\\python.exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000",
+    "tilt:up": "node scripts/ports.mjs up",
+    "tilt:down": "tilt down",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "test:integration": "pnpm --filter @ai-assistant/api test:integration",
-    "docker:up": "docker compose -f infra/docker/docker-compose.yml up -d",
-    "docker:down": "docker compose -f infra/docker/docker-compose.yml down",
+    "docker:up": "docker compose -p ai-assistant --env-file .env -f infra/docker/compose.core.yml up -d",
+    "docker:up:monitoring": "docker compose -p ai-assistant -f infra/docker/compose.core.yml -f infra/docker/compose.monitoring.yml up -d",
+    "docker:up:full": "docker compose -p ai-assistant -f infra/docker/compose.dev.yml up -d",
+    "docker:down": "docker compose -p ai-assistant -f infra/docker/compose.dev.yml down",
     "db:migrate": "pnpm --filter @ai-assistant/database db:migrate:deploy",
     "db:generate": "pnpm --filter @ai-assistant/database db:generate",
     "env:setup": "node scripts/env-setup.mjs",
-    "postinstall": "pnpm --filter @ai-assistant/config build && pnpm --filter @ai-assistant/sdk build && pnpm --filter @ai-assistant/database db:generate",
+    "postinstall": "pnpm --filter @ai-assistant/config build && pnpm --filter @ai-assistant/types build && pnpm --filter @ai-assistant/telemetry build && pnpm --filter @ai-assistant/events build && pnpm --filter @ai-assistant/sdk build && pnpm --filter @ai-assistant/database db:generate",
     "mobile:android": "pnpm --filter @ai-assistant/mobile android"
   },
   "devDependencies": {
@@ -25,3 +27,5 @@
   },
   "packageManager": "pnpm@9.0.0"
 }
+
+

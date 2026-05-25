@@ -1,0 +1,34 @@
+{
+  "name": "@ai-assistant/types",
+  "version": "1.0.0",
+  "description": "Shared TypeScript types for API contracts and clients",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./chat": {
+      "types": "./dist/chat.d.ts",
+      "import": "./dist/chat.js",
+      "require": "./dist/chat.js",
+      "default": "./dist/chat.js"
+    },
+    "./socket": {
+      "types": "./dist/socket.d.ts",
+      "import": "./dist/socket.js",
+      "require": "./dist/socket.js",
+      "default": "./dist/socket.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.3"
+  }
+}

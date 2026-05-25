@@ -1,0 +1,5 @@
+
+include:
+  - path: compose.core.yml
+  - path: compose.monitoring.yml
+  - path: compose.ai.yml

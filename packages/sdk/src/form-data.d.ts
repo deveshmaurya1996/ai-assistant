@@ -1,8 +1,8 @@
-import type { UploadFilePayload } from './types';
+import type { UploadFilePayload } from '@ai-assistant/types';
 
 declare global {
   interface FormData {
-    append(name: string, value: string | Blob | UploadFilePayload): void;
+    append(name: string, value: string | Blob | File | UploadFilePayload): void;
   }
 }
 

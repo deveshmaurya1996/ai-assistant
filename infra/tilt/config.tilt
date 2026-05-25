@@ -1,0 +1,200 @@
+# Shared service profile resolution for tilt up -- --services=api,ai|core|full
+# Port keys live in tilt_config.json (https://docs.tilt.dev/tiltfile_config.html).
+config.define_string_list('services')
+config.define_string('tilt-port')
+config.define_string('api-port')
+config.define_string('ai-port')
+config.define_string('studio-port')
+config.define_string('mobile-port')
+config.define_string('web-port')
+config.define_string('postgres-port')
+config.define_string('redis-port')
+config.define_string('qdrant-port')
+
+# Single config.parse() for the whole run (https://docs.tilt.dev/tiltfile_config.html).
+TILT_CFG = config.parse()
+
+COMPOSE_PROJECT = 'ai-assistant'
+
+PROFILE_CORE = [
+    'postgres',
+    'redis',
+    'qdrant',
+]
+
+PROFILE_DATABASE_TOOLS = [
+    'prisma-studio',
+]
+
+PROFILE_MONITORING = [
+    'prometheus',
+    'grafana',
+    'loki',
+    'promtail',
+    'otel-collector',
+]
+
+PROFILE_LANGFUSE = [
+    'langfuse-postgres',
+    'langfuse-clickhouse',
+    'langfuse-redis',
+    'langfuse',
+]
+
+PROFILE_APPS = [
+    'web',
+    'mobile',
+]
+
+PROFILE_SERVICES = [
+    'api',
+    'ai',
+]
+
+# Default tilt up: core infra + api + ai + mobile (Expo web, fresh cache).
+PROFILE_API_AI = PROFILE_CORE + PROFILE_DATABASE_TOOLS + PROFILE_SERVICES + ['mobile']
+
+PROFILE_FULL = (
+    PROFILE_CORE
+    + PROFILE_MONITORING
+    + PROFILE_LANGFUSE
+    + PROFILE_SERVICES
+    + PROFILE_APPS
+)
+
+def _merge_unique(base, items):
+    seen = {}
+    out = []
+    for item in base:
+        if item not in seen:
+            seen[item] = True
+            out.append(item)
+    for item in items:
+        if item not in seen:
+            seen[item] = True
+            out.append(item)
+    return out
+
+def list_contains_any(haystack, needles):
+    for n in needles:
+        if n in haystack:
+            return True
+    return False
+
+def any_enabled(names, enabled):
+    for name in names:
+        if name in enabled:
+            return True
+    return False
+
+def any_langfuse_selected(out_set):
+    if 'langfuse' in out_set:
+        return True
+    for s in out_set:
+        if s.startswith('langfuse'):
+            return True
+    return False
+
+def expand_services(selected):
+    if not selected:
+        return PROFILE_API_AI
+
+    out = []
+    for item in selected:
+        if item == 'core':
+            out = out + PROFILE_CORE
+        elif item == 'monitoring':
+            out = out + PROFILE_CORE + PROFILE_MONITORING
+        elif item == 'observability':
+            out = out + PROFILE_CORE + PROFILE_MONITORING + PROFILE_LANGFUSE
+        elif item == 'full':
+            out = out + PROFILE_FULL
+        elif item == 'apps':
+            out = out + PROFILE_APPS
+        else:
+            out.append(item)
+
+    out_set = _merge_unique([], out)
+
+    if list_contains_any(out_set, PROFILE_APPS):
+        out_set = _merge_unique(out_set, ['api'])
+
+    if list_contains_any(out_set, PROFILE_SERVICES) or list_contains_any(out_set, PROFILE_APPS):
+        out_set = _merge_unique(out_set, PROFILE_CORE)
+
+    if list_contains_any(out_set, PROFILE_MONITORING):
+        out_set = _merge_unique(out_set, PROFILE_MONITORING)
+
+    if any_langfuse_selected(out_set):
+        out_set = _merge_unique(out_set, PROFILE_LANGFUSE)
+
+    if 'postgres' in out_set:
+        out_set = _merge_unique(out_set, PROFILE_DATABASE_TOOLS)
+
+    return out_set
+
+def enabled_services():
+    selected = TILT_CFG.get('services', [])
+    return expand_services(selected)
+
+def is_enabled(name, enabled):
+    return name in enabled
+
+SERVICE_BUILD_IGNORE = [
+    '**/dist',
+    '**/__pycache__',
+    '**/*.pyc',
+    '**/.pytest_cache',
+    '**/tsconfig.tsbuildinfo',
+]
+
+def _port_int(key, default):
+    v = TILT_CFG.get(key, '')
+    if v == None or str(v).strip() == '':
+        return default
+    return int(str(v))
+
+PORTS = {
+    'tilt': _port_int('tilt-port', 10350),
+    'api': _port_int('api-port', 3000),
+    'ai': _port_int('ai-port', 8000),
+    'studio': _port_int('studio-port', 5556),
+    'mobile': _port_int('mobile-port', 8081),
+    'web': _port_int('web-port', 3002),
+    'postgres': _port_int('postgres-port', 5432),
+    'redis': _port_int('redis-port', 6379),
+    'qdrant': _port_int('qdrant-port', 6333),
+}
+
+def port_url(key, path=''):
+    return 'http://localhost:' + str(PORTS[key]) + path
+
+def port_env():
+    api = str(PORTS['api'])
+    ai = str(PORTS['ai'])
+    pg = str(PORTS['postgres'])
+    return {
+        'API_PORT': api,
+        'AI_PORT': ai,
+        'AI_SERVICE_URL': 'http://localhost:' + ai,
+        'PRISMA_STUDIO_PORT': str(PORTS['studio']),
+        'EXPO_DEV_PORT': str(PORTS['mobile']),
+        'WEB_PORT': str(PORTS['web']),
+        'PORT': str(PORTS['web']),
+        'POSTGRES_PORT': pg,
+        'REDIS_PORT': str(PORTS['redis']),
+        'QDRANT_PORT': str(PORTS['qdrant']),
+        'DATABASE_URL': 'postgresql://ai_assistant:ai_assistant@localhost:' + pg + '/ai_assistant',
+        'REDIS_URL': 'redis://localhost:' + str(PORTS['redis']),
+        'QDRANT_URL': 'http://localhost:' + str(PORTS['qdrant']),
+        'NEXT_PUBLIC_API_URL': 'http://localhost:' + api,
+        'EXPO_PUBLIC_API_URL': 'http://localhost:' + api,
+        'BETTER_AUTH_URL': 'http://localhost:' + api,
+    }
+
+def apply_compose_env():
+    env = port_env()
+    for k, v in env.items():
+        os.putenv(k, v)
+
+apply_compose_env()

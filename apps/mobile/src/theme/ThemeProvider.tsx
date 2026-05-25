@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useColorScheme as useSystemColorScheme } from 'react-native';
-import * as SecureStore from 'expo-secure-store';
+import { getItemAsync, setItemAsync } from '@/lib/secure-storage';
 import { StatusBar } from 'expo-status-bar';
 import {
   palettes,
@@ -34,7 +34,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>('system');
 
   useEffect(() => {
-    void SecureStore.getItemAsync(THEME_KEY).then((stored) => {
+    void getItemAsync(THEME_KEY).then((stored) => {
       if (stored === 'light' || stored === 'dark' || stored === 'system') {
         setModeState(stored);
       }
@@ -43,7 +43,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const setMode = useCallback((next: ThemeMode) => {
     setModeState(next);
-    void SecureStore.setItemAsync(THEME_KEY, next);
+    void setItemAsync(THEME_KEY, next);
   }, []);
 
   const colorScheme: ColorScheme =

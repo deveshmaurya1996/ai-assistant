@@ -2,9 +2,9 @@ import { type ReactNode } from 'react';
 import { View, StyleSheet, Pressable, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useDrawerNavigation } from '@/hooks/useDrawerNavigation';
 import {
   MessageSquare,
+  Mic,
   Settings,
   Sparkles,
   Brain,
@@ -20,7 +20,9 @@ import { useAuthStore } from '@/stores/auth';
 import { useSettingsStore } from '@/stores/settings';
 import { spacing, radii } from '@/theme/tokens';
 import { PressableScale } from '@/components/motion/PressableScale';
+import { apiClient } from '@/lib/api-client';
 import { toggleOverlay } from '@/lib/overlay';
+import { useVoiceSessionBridge } from '@/features/voice-assistant/voiceSessionBridge';
 import type { ThemeMode } from '@/theme/tokens';
 import Constants from 'expo-constants';
 
@@ -55,14 +57,19 @@ function NavRow({
   );
 }
 
-export function DrawerContent() {
+type DrawerContentProps = {
+  navigation: { closeDrawer: () => void };
+};
+
+export function DrawerContent({ navigation }: DrawerContentProps) {
   const insets = useSafeAreaInsets();
-  const { closeDrawer } = useDrawerNavigation();
   const { colors, mode, setMode } = useTheme();
   const session = useAuthStore((s) => s.session);
   const signOut = useAuthStore((s) => s.signOut);
   const overlayEnabled = useSettingsStore((s) => s.overlayEnabled);
   const setOverlayEnabled = useSettingsStore((s) => s.setOverlayEnabled);
+  const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
+  const voiceActive = useVoiceSessionBridge((s) => s.isActive);
 
   const user = session?.user;
   const initial = user?.name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? '?';
@@ -117,23 +124,34 @@ export function DrawerContent() {
           icon={<MessageSquare color={colors.text} size={20} />}
           label="New chat"
           onPress={async () => {
-            closeDrawer();
-            const { apiClient } = await import('@/lib/api');
+            navigation.closeDrawer();
             const s = await apiClient.createSession('New Chat');
-            router.push(`/(app)/chat/${s.id}`);
+            router.push({
+              pathname: '/(app)/chat/[id]',
+              params: { id: s.id, title: s.title ?? 'New Chat' },
+            });
           }}
+        />
+        <NavRow
+          icon={<Mic color={colors.text} size={20} />}
+          label={assistantDisplayName}
+          onPress={() => {
+            navigation.closeDrawer();
+            router.push('/(app)/(main)/assistant');
+          }}
+          badge={voiceActive ? 'Active' : undefined}
         />
         <NavRow
           icon={<Settings color={colors.text} size={20} />}
           label="Settings"
           onPress={() => {
-            closeDrawer();
+            navigation.closeDrawer();
             router.push('/(app)/(main)/settings');
           }}
         />
         <NavRow
           icon={<Sparkles color={colors.text} size={20} />}
-          label="Floating assistant"
+          label="Floating overlay"
           onPress={onToggleOverlay}
           badge={overlayEnabled ? 'On' : 'Off'}
         />

@@ -1,0 +1,22 @@
+# AI Assistant — Tilt orchestration
+# Service ports from tilt_config.json (see scripts/ports.mjs ensure).
+#
+#   tilt up                          # default: core + prisma-studio + api + ai + mobile
+#   tilt up -- --services=core       # infra only
+#   tilt up -- --services=full      # everything
+
+load('./infra/tilt/infra.tilt', 'infra')
+load('./infra/tilt/database.tilt', 'database_tools')
+load('./infra/tilt/monitoring.tilt', 'monitoring')
+load('./infra/tilt/ai.tilt', 'ai_stack')
+load('./infra/tilt/api.tilt', 'api')
+load('./infra/tilt/services.tilt', 'ai_service')
+load('./infra/tilt/apps.tilt', 'apps')
+
+infra()
+database_tools()
+monitoring()
+ai_stack()
+api()
+ai_service()
+apps()

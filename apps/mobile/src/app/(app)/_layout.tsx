@@ -4,6 +4,7 @@ import { Drawer } from 'expo-router/drawer';
 import { DrawerContent } from '@/components/layout/DrawerContent';
 import { useTheme } from '@/theme/ThemeProvider';
 import { promptOverlayPermissionIfNeeded } from '@/lib/overlay-prompt';
+import { VoiceSessionHost } from '@/features/voice-assistant/VoiceSessionHost';
 
 export default function AppDrawerLayout() {
   const { colors } = useTheme();
@@ -19,8 +20,9 @@ export default function AppDrawerLayout() {
   }, []);
 
   return (
-    <Drawer
-      drawerContent={() => <DrawerContent />}
+    <VoiceSessionHost>
+      <Drawer
+      drawerContent={(props) => <DrawerContent {...props} />}
       screenOptions={{
         headerShown: false,
         drawerType: 'front',
@@ -36,5 +38,6 @@ export default function AppDrawerLayout() {
         }}
       />
     </Drawer>
+    </VoiceSessionHost>
   );
 }

@@ -12,10 +12,15 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { SwitchRow } from '@/components/ui/SwitchRow';
 import { SettingsSection } from '@/components/settings/SettingsSection';
 import { ModelPickerSheet } from '@/components/settings/ModelPickerSheet';
+import { AssistantPickerSheet } from '@/components/settings/AssistantPickerSheet';
 import { useTheme } from '@/theme/ThemeProvider';
 import type { ThemeMode } from '@/theme/tokens';
 import { spacing } from '@/theme/tokens';
-import { useSettingsStore } from '@/stores/settings';
+import {
+  useSettingsStore,
+  formatGenderLabel,
+  getPersonalityPreset,
+} from '@/stores/settings';
 import { useAuthStore } from '@/stores/auth';
 import {
   requestMicPermission,
@@ -41,19 +46,27 @@ export default function SettingsScreen() {
   const session = useAuthStore((s) => s.session);
   const signOut = useAuthStore((s) => s.signOut);
   const modelSheetRef = useRef<BottomSheetModal>(null);
+  const assistantSheetRef = useRef<BottomSheetModal>(null);
 
   const {
     preferredModel,
+    speakRepliesEnabled,
+    assistantDisplayName,
+    selectedPersonalityId,
     backgroundVoiceEnabled,
     autoSendAfterTranscribe,
     defaultRagEnabled,
     overlayEnabled,
+    setSpeakRepliesEnabled,
     setBackgroundVoice,
     setAutoSend,
     setDefaultRag,
     setOverlayEnabled,
     loadPreferredModelFromApi,
   } = useSettingsStore();
+
+  const selectedPreset = getPersonalityPreset(selectedPersonalityId);
+  const assistantSummary = `${assistantDisplayName} · ${formatGenderLabel(selectedPreset.gender)}`;
 
   const [micStatus, setMicStatus] = useState<PermissionStatus | null>(null);
   const [overlayStatus, setOverlayStatus] = useState<OverlayPermissionLabel>('Unknown');
@@ -94,6 +107,26 @@ export default function SettingsScreen() {
               </View>
             </View>
           </PressableScale>
+          <PressableScale onPress={() => assistantSheetRef.current?.present()}>
+            <View style={styles.row}>
+              <Text variant="bodyMedium">Your assistant</Text>
+              <View style={styles.rowEnd}>
+                <Text variant="caption" muted numberOfLines={1} style={{ maxWidth: 160 }}>
+                  {assistantSummary}
+                </Text>
+                <ChevronRight color={colors.textMuted} size={18} />
+              </View>
+            </View>
+          </PressableScale>
+        </SettingsSection>
+
+        <SettingsSection title="Voice behavior">
+          <SwitchRow
+            label="Speak replies"
+            description="When off, replies appear as text and overlay only"
+            value={speakRepliesEnabled}
+            onValueChange={(v) => void setSpeakRepliesEnabled(v)}
+          />
         </SettingsSection>
 
         <SettingsSection title="Voice">
@@ -120,8 +153,8 @@ export default function SettingsScreen() {
 
         <SettingsSection title="Overlay">
           <SwitchRow
-            label="Floating assistant bubble"
-            description="Show bubble over other apps (Android dev build)"
+            label="Floating overlay"
+            description="Panel over other apps when voice is active in background (Android dev build)"
             value={overlayEnabled}
             onValueChange={async (v) => {
               if (v) {
@@ -195,6 +228,7 @@ export default function SettingsScreen() {
         </SettingsSection>
       </ScrollView>
       <ModelPickerSheet ref={modelSheetRef} />
+      <AssistantPickerSheet ref={assistantSheetRef} />
     </Screen>
   );
 }

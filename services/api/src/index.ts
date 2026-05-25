@@ -1,4 +1,4 @@
-import '@ai-assistant/config/register';
+import '@ai-assistant/telemetry/register';
 import { config } from '@ai-assistant/config';
 import { buildApp } from './app';
 import { stopAutomationWorker } from './workers/automation.worker';

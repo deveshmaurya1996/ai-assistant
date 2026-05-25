@@ -1,0 +1,45 @@
+# Langfuse compose stack (not the FastAPI "ai" service — see services.tilt).
+load('./config.tilt', 'enabled_services', 'is_enabled', 'COMPOSE_PROJECT', 'any_enabled')
+
+LANGFUSE_LABELS = ['ai-observability']
+LANGFUSE_COMPOSE = 'infra/docker/compose.ai.yml'
+
+LANGFUSE_SVCS = [
+    'langfuse-postgres',
+    'langfuse-clickhouse',
+    'langfuse-redis',
+    'langfuse',
+]
+
+LANGFUSE_DEPS = [
+    'langfuse-postgres',
+    'langfuse-clickhouse',
+    'langfuse-redis',
+]
+
+def ai_stack():
+    enabled = enabled_services()
+    if not any_enabled(LANGFUSE_SVCS, enabled):
+        return
+
+    docker_compose(LANGFUSE_COMPOSE, project_name=COMPOSE_PROJECT)
+
+    if is_enabled('langfuse-postgres', enabled):
+        dc_resource('langfuse-postgres', labels=LANGFUSE_LABELS)
+
+    if is_enabled('langfuse-clickhouse', enabled):
+        dc_resource('langfuse-clickhouse', labels=LANGFUSE_LABELS)
+
+    if is_enabled('langfuse-redis', enabled):
+        dc_resource('langfuse-redis', labels=LANGFUSE_LABELS)
+
+    if is_enabled('langfuse', enabled):
+        langfuse_deps = []
+        for s in LANGFUSE_DEPS:
+            if is_enabled(s, enabled):
+                langfuse_deps.append(s)
+        dc_resource(
+            'langfuse',
+            labels=LANGFUSE_LABELS,
+            resource_deps=langfuse_deps,
+        )

@@ -4,6 +4,7 @@ import { Prisma, prisma } from '@ai-assistant/database';
 import { authenticateRequest } from '../utils/auth.middleware';
 import { requireUserId } from '../lib/auth';
 import { sendError } from '../lib/errors';
+import { EventNames, publishEvent } from '@ai-assistant/events';
 import { fetchAi } from '../lib/http';
 
 const AgentConfigSchema = z.object({
@@ -75,6 +76,13 @@ export async function agentRoutes(fastify: FastifyInstance) {
           user_id: userId,
         }),
       });
+
+      await publishEvent(EventNames.AGENT_EXECUTED, {
+        userId,
+        agentId: body.agentType,
+        status: 'completed',
+      }).catch(() => undefined);
+
       return reply.send(data);
     } catch (error) {
       return sendError(reply, error);

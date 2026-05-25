@@ -1,0 +1,42 @@
+load(
+    './config.tilt',
+    'enabled_services',
+    'is_enabled',
+    'SERVICE_BUILD_IGNORE',
+    'PORTS',
+    'port_url',
+    'port_env',
+)
+
+SERVICE_LABELS = ['services']
+DEV_SCRIPT = 'scripts/dev.mjs'
+
+def api():
+    enabled = enabled_services()
+    if not is_enabled('api', enabled):
+        return
+
+    local_resource(
+        'api',
+        'node ' + DEV_SCRIPT + ' build api',
+        serve_cmd='node ' + DEV_SCRIPT + ' serve api',
+        deps=[
+            DEV_SCRIPT,
+            'tilt_config.json',
+            'scripts/with-env.mjs',
+            '.env',
+            'services/api',
+            'packages/config',
+            'packages/database',
+            'packages/auth',
+            'packages/types',
+            'packages/telemetry',
+            'packages/events',
+        ],
+        env=port_env(),
+        ignore=SERVICE_BUILD_IGNORE,
+        allow_parallel=True,
+        labels=SERVICE_LABELS,
+        resource_deps=['postgres-db', 'redis'],
+        links=[link(port_url('api'), 'API :' + str(PORTS['api']))],
+    )

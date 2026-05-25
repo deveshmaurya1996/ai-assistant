@@ -1,41 +1,74 @@
-import { io } from 'socket.io-client';
+import { io, type Socket } from 'socket.io-client';
 import { ApiError, parseApiError } from './errors';
+import { buildAudioUploadPart } from './upload-audio';
 import type {
-  AssistantSocket,
+  AuthUser,
   ChatMessage,
   ChatSession,
+  ClientToServerEvents,
+  CreateChatSessionBody,
+  CreateChatSessionResponse,
   ModelsResponse,
+  PreferredModelUpdate,
+  ServerToClientEvents,
+  SessionInfo,
   UploadFilePayload,
-} from './types';
+  VoiceTranscriptionResponse,
+} from '@ai-assistant/types';
 
-export type * from './types';
+export type * from '@ai-assistant/types';
 export type { Socket } from 'socket.io-client';
+export type AssistantSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 export { ApiError, type ApiErrorDetails } from './errors';
 
-export type SessionInfo = {
-  user: { id: string; email: string; name: string };
-  session: { token: string };
+export type AuthCredentials = {
+  cookie: string;
+  token?: string;
 };
+
+export type AuthProvider = () => Promise<AuthCredentials | null>;
 
 export class AssistantClient {
   private baseUrl: string;
   private cookie = '';
   private sessionToken = '';
   private origin: string;
+  private authProvider?: AuthProvider;
 
   constructor(baseUrl: string, origin?: string) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.origin = origin ?? this.baseUrl;
   }
 
+  setAuthProvider(provider: AuthProvider | undefined) {
+    this.authProvider = provider;
+  }
+
+  private async resolveAuth(): Promise<void> {
+    if (!this.authProvider) return;
+    const creds = await this.authProvider();
+    if (!creds) return;
+    if (creds.cookie) {
+      this.cookie = creds.cookie;
+    }
+    if (creds.token) {
+      this.sessionToken = creds.token;
+    }
+  }
+
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    await this.resolveAuth();
+
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
       Origin: this.origin,
       ...(options.headers as Record<string, string>),
     };
     if (this.cookie) {
       headers.cookie = this.cookie;
+    }
+    const hasBody = options.body !== undefined && options.body !== null && options.body !== '';
+    if (hasBody && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
     }
 
     const res = await fetch(`${this.baseUrl}${path}`, {
@@ -115,10 +148,16 @@ export class AssistantClient {
     return this.request<ChatSession[]>('/chat/sessions');
   }
 
-  async createSession(title?: string) {
-    return this.request<{ id: string }>('/chat/sessions', {
+  async getChatSession(sessionId: string) {
+    return this.request<ChatSession>(`/chat/sessions/${sessionId}`);
+  }
+
+  async createSession(options?: string | CreateChatSessionBody) {
+    const body: CreateChatSessionBody =
+      typeof options === 'string' ? { title: options } : (options ?? {});
+    return this.request<CreateChatSessionResponse>('/chat/sessions', {
       method: 'POST',
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(body),
     });
   }
 
@@ -126,9 +165,17 @@ export class AssistantClient {
     return this.request<ChatMessage[]>(`/chat/sessions/${sessionId}/messages`);
   }
 
-  connectSocket(sessionToken: string): AssistantSocket {
+  async deleteSession(sessionId: string) {
+    return this.request<{ success: boolean }>(`/chat/sessions/${sessionId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async connectSocket(sessionToken?: string): Promise<AssistantSocket> {
+    await this.resolveAuth();
+    const token = sessionToken ?? this.sessionToken;
     return io(this.baseUrl, {
-      auth: { token: sessionToken },
+      auth: { token },
       extraHeaders: this.cookie ? { cookie: this.cookie } : undefined,
       transports: ['websocket'],
     });
@@ -139,7 +186,7 @@ export class AssistantClient {
   }
 
   async updatePreferredModel(preferredModel: string) {
-    return this.request<{ preferredModel: string }>('/settings/model', {
+    return this.request<PreferredModelUpdate>('/settings/model', {
       method: 'PATCH',
       body: JSON.stringify({ preferredModel }),
     });
@@ -148,14 +195,41 @@ export class AssistantClient {
   async transcribeVoice(
     audioUri: string,
     mimeType = 'audio/m4a'
-  ): Promise<{ text: string }> {
+  ): Promise<VoiceTranscriptionResponse> {
+    const file = await buildAudioUploadPart(audioUri, mimeType);
+    if (file instanceof Blob) {
+      const name =
+        'name' in file && typeof file.name === 'string' && file.name.length > 0
+          ? file.name
+          : mimeType.includes('webm')
+            ? 'recording.webm'
+            : 'recording.m4a';
+      return this.transcribeVoiceBlob(file, name);
+    }
+    return this.transcribeVoicePart(file);
+  }
+
+  async transcribeVoiceBlob(
+    file: Blob,
+    filename: string
+  ): Promise<VoiceTranscriptionResponse> {
     const form = new FormData();
-    const file: UploadFilePayload = {
-      uri: audioUri,
-      name: 'recording.m4a',
-      type: mimeType,
-    };
-    form.append('file', file);
+    form.append('file', file, filename);
+    return this.postVoiceTranscribeForm(form);
+  }
+
+  async transcribeVoicePart(
+    part: UploadFilePayload
+  ): Promise<VoiceTranscriptionResponse> {
+    const form = new FormData();
+    form.append('file', part);
+    return this.postVoiceTranscribeForm(form);
+  }
+
+  private async postVoiceTranscribeForm(
+    form: FormData
+  ): Promise<VoiceTranscriptionResponse> {
+    await this.resolveAuth();
 
     const headers: Record<string, string> = {
       Origin: this.origin,
@@ -175,6 +249,31 @@ export class AssistantClient {
       throw await parseApiError(res);
     }
 
-    return res.json() as Promise<{ text: string }>;
+    return res.json() as Promise<VoiceTranscriptionResponse>;
+  }
+
+  async speakVoice(text: string): Promise<ArrayBuffer> {
+    await this.resolveAuth();
+
+    const headers: Record<string, string> = {
+      Origin: this.origin,
+      'Content-Type': 'application/json',
+    };
+    if (this.cookie) {
+      headers.cookie = this.cookie;
+    }
+
+    const res = await fetch(`${this.baseUrl}/voice/speak`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ text }),
+      credentials: 'include',
+    });
+
+    if (!res.ok) {
+      throw await parseApiError(res);
+    }
+
+    return res.arrayBuffer();
   }
 }

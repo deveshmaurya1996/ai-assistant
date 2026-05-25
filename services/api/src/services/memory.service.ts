@@ -1,4 +1,5 @@
 import { prisma } from '@ai-assistant/database';
+import { EventNames, publishEvent } from '@ai-assistant/events';
 import { fetchAi } from '../lib/http';
 
 export async function ingestConversationMemory(
@@ -16,7 +17,7 @@ export async function ingestConversationMemory(
     }),
   });
 
-  await prisma.memoryItem.create({
+  const item = await prisma.memoryItem.create({
     data: {
       userId,
       type: 'CONVERSATION',
@@ -24,4 +25,10 @@ export async function ingestConversationMemory(
       metadata: { source: 'chat' },
     },
   });
+
+  await publishEvent(EventNames.MEMORY_SAVED, {
+    userId,
+    memoryItemId: item.id,
+    type: 'CONVERSATION',
+  }).catch(() => undefined);
 }

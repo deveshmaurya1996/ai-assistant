@@ -1,21 +1,57 @@
-import { prisma, Role } from '@ai-assistant/database';
+import { prisma, Role, type ChatSessionKind as PrismaChatSessionKind } from '@ai-assistant/database';
+
+type ChatSessionKind = 'text' | 'voice';
 import { config as appConfig } from '@ai-assistant/config';
-import { streamAi } from '../lib/http';
+import { fetchAi, streamAi } from '../lib/http';
 import { forbidden, notFound } from '../lib/errors';
 import {
   parseSseBuffer,
   type ChatErrorPayload,
   type ChatTokenPayload,
 } from '../lib/sse';
+import { EventNames, publishEvent } from '@ai-assistant/events';
 import { ingestConversationMemory } from './memory.service';
 
 export type ChatHistoryMessage = { role: string; content: string };
 
+const PLACEHOLDER_TITLES = new Set(['', 'new chat', 'untitled']);
+
+function toApiSessionKind(kind: PrismaChatSessionKind): ChatSessionKind {
+  return kind === 'VOICE' ? 'voice' : 'text';
+}
+
+function toPrismaSessionKind(kind?: ChatSessionKind): PrismaChatSessionKind {
+  return kind === 'voice' ? 'VOICE' : 'TEXT';
+}
+
+function serializeSession(session: {
+  id: string;
+  title: string | null;
+  kind: PrismaChatSessionKind;
+}) {
+  return {
+    id: session.id,
+    title: session.title,
+    kind: toApiSessionKind(session.kind),
+  };
+}
+
+function isPlaceholderTitle(title: string | null | undefined): boolean {
+  if (!title) return true;
+  return PLACEHOLDER_TITLES.has(title.trim().toLowerCase());
+}
+
 export async function listSessions(userId: string) {
-  return prisma.chatSession.findMany({
+  const sessions = await prisma.chatSession.findMany({
     where: { userId },
     orderBy: { updatedAt: 'desc' },
   });
+  return sessions.map(serializeSession);
+}
+
+export async function getSession(userId: string, sessionId: string) {
+  const session = await assertSessionAccess(userId, sessionId);
+  return serializeSession(session);
 }
 
 export async function getSessionMessages(userId: string, sessionId: string) {
@@ -26,13 +62,20 @@ export async function getSessionMessages(userId: string, sessionId: string) {
   });
 }
 
-export async function createSession(userId: string, title?: string) {
-  return prisma.chatSession.create({
+export async function createSession(
+  userId: string,
+  options?: { title?: string; kind?: ChatSessionKind }
+) {
+  const kind = toPrismaSessionKind(options?.kind);
+  const defaultTitle = kind === 'VOICE' ? 'Voice chat' : 'New Chat';
+  const session = await prisma.chatSession.create({
     data: {
       userId,
-      title: title?.trim() || 'New Chat',
+      title: options?.title?.trim() || defaultTitle,
+      kind,
     },
   });
+  return serializeSession(session);
 }
 
 export async function deleteSession(userId: string, sessionId: string) {
@@ -40,7 +83,7 @@ export async function deleteSession(userId: string, sessionId: string) {
   await prisma.chatSession.delete({ where: { id: sessionId } });
 }
 
-async function assertSessionAccess(userId: string, sessionId: string) {
+export async function assertSessionAccess(userId: string, sessionId: string) {
   const session = await prisma.chatSession.findUnique({ where: { id: sessionId } });
   if (!session) throw notFound('Chat session not found');
   if (session.userId !== userId) throw forbidden('Access denied to this chat session');
@@ -72,20 +115,89 @@ function toAiRole(role: Role): string {
   return 'system';
 }
 
+function parseSsePayload<T>(data: string, fallback: T): T {
+  try {
+    return JSON.parse(data) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+export async function maybeAutoTitleSession(params: {
+  userId: string;
+  sessionId: string;
+  userMessage: string;
+  assistantMessage: string;
+  preferredModel: string;
+  onTitleUpdated?: (sessionId: string, title: string) => void;
+}): Promise<void> {
+  const { userId, sessionId, userMessage, assistantMessage, preferredModel, onTitleUpdated } =
+    params;
+
+  try {
+    const session = await assertSessionAccess(userId, sessionId);
+    if (!isPlaceholderTitle(session.title)) return;
+
+    const messageCount = await prisma.message.count({
+      where: { chatSessionId: sessionId },
+    });
+    if (messageCount !== 2) return;
+
+    const { title } = await fetchAi<{ title: string }>('/v1/chat/title', {
+      method: 'POST',
+      body: JSON.stringify({
+        user_message: userMessage,
+        assistant_message: assistantMessage,
+        preferred_model: preferredModel,
+      }),
+    });
+
+    const trimmed = title?.trim();
+    if (!trimmed || isPlaceholderTitle(trimmed)) return;
+
+    await prisma.chatSession.update({
+      where: { id: sessionId },
+      data: { title: trimmed },
+    });
+
+    onTitleUpdated?.(sessionId, trimmed);
+  } catch (err) {
+    console.error(
+      '[chat] auto-title failed:',
+      err instanceof Error ? err.message : err
+    );
+  }
+}
+
 export async function processChatMessage(params: {
   userId: string;
   text: string;
   chatSessionId?: string;
   ragEnabled?: boolean;
+  source?: 'socket' | 'http';
   onChunk: (chunk: string, sessionId: string) => void | Promise<void>;
   onSessionCreated?: (sessionId: string) => void;
+  onTitleUpdated?: (sessionId: string, title: string) => void;
 }) {
-  const { userId, text, ragEnabled = true, onChunk, onSessionCreated } = params;
+  const {
+    userId,
+    text,
+    ragEnabled = true,
+    source = 'socket',
+    onChunk,
+    onSessionCreated,
+    onTitleUpdated,
+  } = params;
   const isNew = !params.chatSessionId;
   const sessionId = await resolveOrCreateSession(userId, text, params.chatSessionId);
 
   if (isNew) {
     onSessionCreated?.(sessionId);
+    publishEvent(EventNames.CHAT_STARTED, {
+      userId,
+      sessionId,
+      source,
+    }).catch(() => undefined);
   }
 
   const userMessage = await prisma.message.create({
@@ -135,13 +247,15 @@ export async function processChatMessage(params: {
 
     for (const ev of events) {
       if (ev.event === 'token') {
-        const payload = JSON.parse(ev.data) as ChatTokenPayload;
+        const payload = parseSsePayload<ChatTokenPayload>(ev.data, { content: '' });
         if (payload.content) {
           accumulated += payload.content;
           await onChunk(payload.content, sessionId);
         }
       } else if (ev.event === 'error') {
-        const payload = JSON.parse(ev.data) as ChatErrorPayload;
+        const payload = parseSsePayload<ChatErrorPayload>(ev.data, {
+          message: 'Stream error',
+        });
         const message = payload.message ?? 'Stream error';
         accumulated += `\n[${message}]\n`;
         await onChunk(`\n[${message}]\n`, sessionId);
@@ -153,7 +267,7 @@ export async function processChatMessage(params: {
     const { events } = parseSseBuffer(`${sseBuffer}\n\n`);
     for (const ev of events) {
       if (ev.event === 'token') {
-        const payload = JSON.parse(ev.data) as ChatTokenPayload;
+        const payload = parseSsePayload<ChatTokenPayload>(ev.data, { content: '' });
         if (payload.content) {
           accumulated += payload.content;
           await onChunk(payload.content, sessionId);
@@ -177,6 +291,15 @@ export async function processChatMessage(params: {
 
   ingestConversationMemory(userId, text, accumulated).catch((err) => {
     console.error('[memory] ingest failed:', err instanceof Error ? err.message : err);
+  });
+
+  void maybeAutoTitleSession({
+    userId,
+    sessionId,
+    userMessage: text,
+    assistantMessage: accumulated,
+    preferredModel,
+    onTitleUpdated,
   });
 
   return { sessionId, userMessage, assistantMessage };

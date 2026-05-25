@@ -1,75 +1,80 @@
 import { View, StyleSheet } from 'react-native';
-import { router } from 'expo-router';
-import { Mic } from 'lucide-react-native';
-import { FadeIn } from '@/components/motion/FadeIn';
+import { useSettingsStore } from '@/stores/settings';
+import { useLocalSearchParams } from 'expo-router';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
-import { Button } from '@/components/ui/Button';
 import { AppHeader } from '@/components/layout/AppHeader';
-import { Card } from '@/components/ui/Card';
+import { VoiceConversationView } from '@/components/assistant/VoiceConversationView';
+import { VoiceMicControl } from '@/components/assistant/VoiceMicControl';
 import { PressableScale } from '@/components/motion/PressableScale';
-import { useTheme } from '@/theme/ThemeProvider';
+import { useVoiceSession } from '@/features/voice-assistant/VoiceSessionProvider';
 import { spacing, radii } from '@/theme/tokens';
-import { useVoice } from '@/context/VoiceContext';
-import { useSettingsStore } from '@/stores/settings';
-import { apiClient } from '@/lib/api';
+import { useTheme } from '@/theme/ThemeProvider';
 
 export default function AssistantScreen() {
   const { colors } = useTheme();
-  const { openVoiceSheet } = useVoice();
-  const lastTranscript = useSettingsStore((s) => s.lastTranscript);
-  const setLastTranscript = useSettingsStore((s) => s.setLastTranscript);
-  const autoSend = useSettingsStore((s) => s.autoSendAfterTranscribe);
+  const { resumeSessionId } = useLocalSearchParams<{ resumeSessionId?: string }>();
+  const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
 
-  const handleVoice = () => {
-    openVoiceSheet({
-      onTranscript: async (text) => {
-        await setLastTranscript(text);
-        if (autoSend) {
-          const session = await apiClient.createSession(text.slice(0, 40));
-          router.push(`/(app)/chat/${session.id}`);
-        }
-      },
-    });
-  };
+  const {
+    phase,
+    isActive,
+    messages,
+    visibleText,
+    isStreaming,
+    isGenerating,
+    error,
+    startSession,
+    resumeSession,
+    stopSession,
+  } = useVoiceSession();
+
+  const canResume =
+    typeof resumeSessionId === 'string' &&
+    resumeSessionId.length > 0 &&
+    !isActive;
 
   return (
-    <Screen scroll>
-      <AppHeader title="Assistant" />
+    <Screen padded={false}>
+      <AppHeader title={assistantDisplayName} />
       <View style={styles.body}>
-        <FadeIn>
-          <PressableScale onPress={handleVoice}>
-            <View style={[styles.micHero, { backgroundColor: colors.primary }]}>
-              <Mic color={colors.onPrimary} size={56} />
-            </View>
-          </PressableScale>
-        </FadeIn>
-        <Text variant="h2" style={{ textAlign: 'center', marginTop: spacing.lg }}>
-          Tap to speak
-        </Text>
-        <Text variant="body" muted style={{ textAlign: 'center', marginTop: spacing.sm }}>
-          Works in-app and in the background on Android
-        </Text>
-
-        {lastTranscript ? (
-          <Card style={{ marginTop: spacing.xl }}>
-            <Text variant="label" muted>
-              LAST TRANSCRIPT
+        {isActive ? (
+          <VoiceConversationView
+            messages={messages}
+            visibleText={visibleText}
+            isStreaming={isStreaming}
+            isGenerating={isGenerating}
+            phase={phase}
+          />
+        ) : (
+          <View style={styles.idleHint}>
+            <Text variant="h2" style={{ textAlign: 'center' }}>
+              {assistantDisplayName}
             </Text>
-            <Text variant="body" style={{ marginTop: spacing.sm }}>
-              {lastTranscript}
+            <Text variant="body" muted style={{ textAlign: 'center', marginTop: spacing.sm }}>
+              Talk to {assistantDisplayName} naturally — your conversation is saved as a Voice
+              chat. On Android, replies appear in a semi-transparent overlay when the app is in
+              the background.
             </Text>
-            <Button
-              label="Continue in chat"
-              variant="secondary"
-              style={{ marginTop: spacing.md }}
-              onPress={async () => {
-                const session = await apiClient.createSession('Voice chat');
-                router.push(`/(app)/chat/${session.id}`);
-              }}
-            />
-          </Card>
-        ) : null}
+            {canResume ? (
+              <PressableScale
+                onPress={() => void resumeSession(resumeSessionId)}
+                style={styles.resumeWrap}>
+                <View style={[styles.resumeBtn, { backgroundColor: colors.primary }]}>
+                  <Text variant="body" style={{ color: colors.onPrimary }}>
+                    Continue voice chat
+                  </Text>
+                </View>
+              </PressableScale>
+            ) : null}
+          </View>
+        )}
+        <VoiceMicControl
+          phase={phase}
+          statusMessage={error}
+          onStart={() => void startSession()}
+          onStop={() => void stopSession()}
+        />
       </View>
     </Screen>
   );
@@ -78,16 +83,19 @@ export default function AssistantScreen() {
 const styles = StyleSheet.create({
   body: {
     flex: 1,
-    alignItems: 'center',
-    paddingTop: spacing.xxl,
+  },
+  idleHint: {
+    flex: 1,
+    justifyContent: 'center',
     paddingHorizontal: spacing.lg,
   },
-  micHero: {
-    width: 120,
-    height: 120,
-    borderRadius: radii.full,
-    alignItems: 'center',
-    justifyContent: 'center',
+  resumeWrap: {
+    marginTop: spacing.lg,
     alignSelf: 'center',
+  },
+  resumeBtn: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: radii.md,
   },
 });

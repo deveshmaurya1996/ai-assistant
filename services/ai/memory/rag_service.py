@@ -47,6 +47,18 @@ class RAGService:
     def ingest_documents(
         self, documents: List[Dict[str, Any]], user_id: Optional[str] = None
     ) -> List[str]:
+        from opentelemetry import trace
+
+        tracer = trace.get_tracer(__name__)
+        with tracer.start_as_current_span(
+            "rag.ingest",
+            attributes={"doc_count": len(documents), "user_id": user_id or ""},
+        ):
+            return self._ingest_documents(documents, user_id)
+
+    def _ingest_documents(
+        self, documents: List[Dict[str, Any]], user_id: Optional[str] = None
+    ) -> List[str]:
         points = []
         point_ids = []
 
@@ -73,6 +85,18 @@ class RAGService:
         return point_ids
 
     def search_context(
+        self, query: str, limit: int = 3, user_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        from opentelemetry import trace
+
+        tracer = trace.get_tracer(__name__)
+        with tracer.start_as_current_span(
+            "rag.search",
+            attributes={"limit": limit, "user_id": user_id or ""},
+        ):
+            return self._search_context(query, limit, user_id)
+
+    def _search_context(
         self, query: str, limit: int = 3, user_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         if not query.strip():

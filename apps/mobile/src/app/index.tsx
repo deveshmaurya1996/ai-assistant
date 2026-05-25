@@ -1,3 +1,4 @@
+import '@/lib/auth-session';
 import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { router, useRootNavigationState } from 'expo-router';

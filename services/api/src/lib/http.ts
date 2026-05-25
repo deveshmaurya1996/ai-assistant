@@ -1,5 +1,14 @@
 import { config, getAiServiceUrl } from '@ai-assistant/config';
+import { injectTraceHeadersFromInit } from '@ai-assistant/telemetry';
 import { AppError } from './errors';
+
+function buildAiHeaders(init?: RequestInit): Record<string, string> {
+  const headers = injectTraceHeadersFromInit(init);
+  if (!headers['Content-Type'] && !(init?.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
+  return headers;
+}
 
 export async function fetchAi<T>(
   path: string,
@@ -8,17 +17,14 @@ export async function fetchAi<T>(
   const url = getAiServiceUrl(path);
   const res = await fetch(url, {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...init?.headers,
-    },
+    headers: buildAiHeaders(init),
   });
 
   if (!res.ok) {
     const body = await res.text();
     throw new AppError(
       502,
-      `AI service error (${res.status})`,
+      `AI service error (${res.status}) [${init?.method ?? 'GET'} ${path}]`,
       body || res.statusText
     );
   }
@@ -37,16 +43,18 @@ export async function streamAi(
 ): Promise<ReadableStream<Uint8Array>> {
   const res = await fetch(getAiServiceUrl(path), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-    },
+    headers: buildAiHeaders({
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      },
+    }),
     body: JSON.stringify(body),
   });
 
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => '');
-    throw new AppError(502, `AI stream failed (${res.status})`, text);
+    throw new AppError(502, `AI stream failed (${res.status}) [POST ${path}]`, text);
   }
 
   return res.body;

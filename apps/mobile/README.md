@@ -56,14 +56,20 @@ Add to PATH: `%LOCALAPPDATA%\Android\Sdk\platform-tools`
 cp apps/mobile/.env.example apps/mobile/.env
 ```
 
-Set `EXPO_PUBLIC_API_URL` in `apps/mobile/.env`:
+Dev API URL (all targets):
 
-| Target | `EXPO_PUBLIC_API_URL` |
-|--------|------------------------|
-| **Android emulator** | `http://10.0.2.2:3000` |
-| **Physical device (Wi‑Fi)** | `http://<YOUR_PC_LAN_IP>:3000` e.g. `http://192.168.1.10:3000` |
+```env
+EXPO_PUBLIC_API_URL=http://localhost:3000
+```
 
-Find your PC IP: `ipconfig` (Windows) → IPv4 on your Wi‑Fi adapter. Phone and PC must be on the **same network**.
+On **Android** (emulator or physical device), forward ports once so `localhost` on the device reaches your PC:
+
+```powershell
+adb reverse tcp:3000 tcp:3000
+adb reverse tcp:8081 tcp:8081
+```
+
+Web and iOS simulator use `localhost` without `adb reverse`.
 
 ### 4. Enable USB / wireless debugging (physical device)
 
@@ -137,6 +143,55 @@ pnpm dev:api
 
 Check: http://localhost:3000/health → `{"status":"ok","service":"api"}`
 
+### Voice transcription (Pollinations)
+
+Android records **m4a (AAC)** for STT. If Pollinations rejects the format, install **ffmpeg** on the machine running the AI service so it can convert to WAV before transcribing.
+
+Optional: `winget install ffmpeg` (Windows), then restart the AI service.
+
+### Voice assistant (Android overlay)
+
+**API keys (root `.env`, server-side):**
+
+| Tier | Keys | Voice use |
+|------|------|-----------|
+| 1 | `OPENAI_API_KEY` and/or `GEMINI_API_KEY` | STT, chat, TTS; future Live/Realtime |
+| 3 | `POLLINATIONS_API_KEY` | Fallback STT/TTS/chat only — not realtime voice |
+
+Minimum for classic voice: **OpenAI or Pollinations** for STT+TTS, plus a chat key if not using Pollinations for text.
+
+**Troubleshooting — voice does nothing:**
+
+1. `pnpm dev:api` and `pnpm dev:ai` running
+2. Root `.env` has at least one of `OPENAI_API_KEY`, `POLLINATIONS_API_KEY`, `GEMINI_API_KEY`
+3. `apps/mobile/.env` → `EXPO_PUBLIC_API_URL=http://localhost:3000` (or your LAN IP)
+4. Custom **dev build** (not Expo Go) for the overlay native module
+5. **Microphone** and **Overlay** permissions granted
+6. Open **Assistant** tab and tap the mic to start voice
+
+**Controls (Settings / Assistant):**
+
+- **Mic (Assistant tab)** — only start/stop for voice sessions
+- **Speak replies** (Settings) — off = text + overlay only (no TTS)
+- **Your assistant** — custom name + personality (Female / Male / Neutral labels)
+- **Floating overlay** — panel when app is in background during voice
+
+**Overlay interaction:**
+
+1. Grant **Display over other apps** when prompted.
+2. During voice, overlay starts **compact** (`Name · Listening…`), grows with reply text (capped ~65% × 38% screen).
+3. **Drag** header bar or left footer dot to move; **resize** via right footer dot; **double-tap** to open app.
+4. Socket `voice:turn_*` uploads audio; HTTP `/voice/transcribe` if socket is down.
+5. Optional: `VOICE_STT_PROVIDER=deepgram` + `DEEPGRAM_API_KEY` for streaming STT (AI service).
+6. Phase 4: `VOICE_MODE=gemini-live` or `openai-realtime` when Live keys are configured.
+
+Rebuild the dev client after native overlay changes:
+
+```bash
+npx expo prebuild --clean
+pnpm mobile:android
+```
+
 ### Terminal 3 — AI service (port 8000, optional for chat/voice)
 
 ```bash
@@ -184,7 +239,8 @@ Configured in the **root** `.env` (`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`).
 | Setting | Value |
 |---------|--------|
 | Redirect URI | `http://localhost:3000/api/auth/callback/google` |
-| Mobile deep link | `ai-assistant://auth/callback` |
+| Web callback (Expo web) | `http://localhost:8081/auth/callback` (via API bridge) |
+| Native deep link | `ai-assistant://auth/callback` |
 | JS origins (dev) | `http://localhost:8081`, `http://localhost:3000` |
 
 Use the **API on port 3000**, not 8000, for auth and `EXPO_PUBLIC_API_URL`.
@@ -207,7 +263,7 @@ Works for basic UI and API calls. **Does not support** background voice recordin
 |---------|-----|
 | `adb devices` empty | Re-plug USB, re-enable wireless debugging, run `adb kill-server` then `adb start-server` |
 | Red screen / cannot load bundle | Start Metro (`pnpm --filter @ai-assistant/mobile dev`), run `adb reverse tcp:8081 tcp:8081` |
-| API errors on device | Check `EXPO_PUBLIC_API_URL` (LAN IP for physical device), `adb reverse tcp:3000 tcp:3000`, API running on :3000 |
+| API errors on device | `adb reverse tcp:3000 tcp:3000`, `EXPO_PUBLIC_API_URL=http://localhost:3000`, API running on :3000 |
 | Windows `prefab_command.bat` / path too long | Ensure root `.npmrc` has `node-linker=hoisted`, then `pnpm install` from repo root |
 | Gradle / NDK errors | Install NDK + CMake in SDK Manager; project uses Gradle **8.13** (see `android/gradle/wrapper/gradle-wrapper.properties`) |
 | Port 8081 in use | Stop other Metro instances or use `npx expo start --dev-client --port 8083` |
@@ -219,9 +275,69 @@ Works for basic UI and API calls. **Does not support** background voice recordin
 | Area | Description |
 |------|-------------|
 | **Floating dock** | Chats · Assistant · Settings + center mic |
-| **Sidebar** | Profile, new chat, theme, overlay toggle |
+| **Sidebar** | Profile, new chat, assistant shortcut, theme, overlay toggle |
 | **Settings** | Theme, model, voice, overlay, RAG, account |
 | **Terms** | Required before registration |
+
+## Voice assistant (Assistant tab)
+
+Each turn uses the **backend AI stack** (not on-device speech models):
+
+| Stage | Client | Backend |
+|-------|--------|---------|
+| Listen | `useVoiceTurnRecorder` (m4a + VAD) | — |
+| STT | `useVoiceTurnSocket` → `voice:turn_*` | API → AI `/v1/voice/transcribe` |
+| Think | `chat:message` over Socket.IO | API → AI `/v1/chat/stream` |
+| Speak | `SentenceTtsQueue` → `/voice/speak` | AI `/v1/voice/speak` |
+
+Idle auto-stop: **12s** no speech per listen, **2** silent listens, **60s** session inactivity.
+
+For production with many users, run multiple API + AI replicas behind a load balancer (see [root README](../../README.md#voice-assistant-ai-pipeline)).
+
+The **Assistant** tab runs a hands-free voice session (not the chat mic):
+
+1. Tap the large mic to **start** — creates a `Voice chat` session (`kind: voice`).
+2. Speak naturally; after each assistant reply (TTS), the mic **re-opens automatically**.
+3. Tap the mic again (stop icon) to **end** the session.
+4. Open **Chats** — the session appears with a mic icon and “Spoken conversation”.
+5. Open the voice chat to read the **transcript** (read-only, no composer).
+
+### Android overlay (background)
+
+When a voice session is active and the app is in the background, a **floating card** shows your assistant name, session state, and reply text. It starts compact and grows with content up to a capped size.
+
+| Gesture | Action |
+|---------|--------|
+| Drag **header bar** or **left dot** | Move overlay anywhere (position saved) |
+| Drag **right dot** (footer) | Resize card |
+| **Double-tap** header or card | Open app |
+| Scroll body | Read long replies |
+
+| Requirement | Notes |
+|-------------|--------|
+| Dev build | `npx expo prebuild --platform android` then `pnpm mobile:android` |
+| Permission | **Display over other apps** |
+| Foreground service | `VoiceAssistantForegroundService` |
+
+### Voice idle auto-stop
+
+The mic stops automatically when nothing is happening:
+
+- **12s** listening with no speech → ends that listen attempt
+- **2** consecutive silent listens → ends session and releases mic
+- **60s** with no activity → ends session
+
+Tap the mic to stop manually at any time.
+
+**iOS / Web:** Voice assistant works in-app; **no system overlay** on iOS or web in v1.
+
+### Database migration (voice session kind)
+
+After pulling, from repo root:
+
+```bash
+pnpm db:migrate
+```
 
 ## Verification checklist (Android)
 
@@ -229,10 +345,11 @@ Works for basic UI and API calls. **Does not support** background voice recordin
 2. Navigate all three dock tabs
 3. Open sidebar (menu icon)
 4. Create chat and send message
-5. Tap dock mic → speak → transcript
-6. Settings: change theme and preferred model
-7. Enable overlay in Settings → bubble appears over home screen
-8. Background voice: start recording, press Home, stop from notification
+5. **Assistant tab:** start voice chat → speak → see transcript → stop → open Voice chat in list
+6. **Chat mic:** tap mic in text chat → transcript fills input only (no auto-send)
+7. Settings: change theme and preferred model
+8. Voice session in background → overlay shows assistant text (grant overlay permission)
+9. Background voice: foreground notification while assistant session is active
 
 ## Project structure
 

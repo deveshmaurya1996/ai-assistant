@@ -1,6 +1,11 @@
 fastapi
 uvicorn
 python-dotenv
+httpx
+langfuse
+opentelemetry-sdk
+opentelemetry-instrumentation-fastapi
+opentelemetry-exporter-otlp-proto-http
 langgraph
 pydantic-ai
 crewai

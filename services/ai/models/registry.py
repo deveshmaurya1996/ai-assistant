@@ -35,7 +35,7 @@ MODEL_CATALOG: Dict[Capability, List[Dict[str, str]]] = {
 
 DEFAULTS: Dict[Capability, tuple[str, str]] = {
     Capability.TEXT: ("gemini/gemini-3.1-pro-preview", "pollinations/openai"),
-    Capability.TRANSCRIPTION: ("whisper-1", "pollinations/openai"),
+    Capability.TRANSCRIPTION: ("whisper-1", "pollinations/whisper-1"),
     Capability.SPEECH: ("tts-1", "pollinations/openai-audio"),
     Capability.IMAGE: ("dall-e-3", "pollinations/flux"),
 }
@@ -64,6 +64,8 @@ def _pollinations_fallback_id(capability: Capability) -> str:
         raw = os.getenv("POLLINATIONS_SPEECH_MODEL", "openai-audio").strip()
     elif capability == Capability.IMAGE:
         raw = os.getenv("POLLINATIONS_IMAGE_MODEL", "flux").strip()
+    elif capability == Capability.TRANSCRIPTION:
+        raw = os.getenv("POLLINATIONS_TRANSCRIPTION_MODEL", "whisper-1").strip()
     else:
         raw = os.getenv("POLLINATIONS_MODEL", "openai").strip()
     return raw if raw.startswith("pollinations/") else f"pollinations/{raw}"

@@ -1,0 +1,46 @@
+load('./config.tilt', 'enabled_services', 'is_enabled', 'COMPOSE_PROJECT', 'any_enabled')
+
+MONITORING_LABELS = ['monitoring']
+MONITORING_COMPOSE = 'infra/docker/compose.monitoring.yml'
+
+MONITORING_SVCS = [
+    'prometheus',
+    'grafana',
+    'loki',
+    'promtail',
+    'otel-collector',
+]
+
+def monitoring():
+    enabled = enabled_services()
+    if not any_enabled(MONITORING_SVCS, enabled):
+        return
+
+    docker_compose(MONITORING_COMPOSE, project_name=COMPOSE_PROJECT)
+
+    if is_enabled('prometheus', enabled):
+        dc_resource('prometheus', labels=MONITORING_LABELS)
+
+    if is_enabled('loki', enabled):
+        dc_resource('loki', labels=MONITORING_LABELS)
+
+    if is_enabled('otel-collector', enabled):
+        dc_resource('otel-collector', labels=MONITORING_LABELS)
+
+    if is_enabled('promtail', enabled):
+        promtail_deps = []
+        if is_enabled('loki', enabled):
+            promtail_deps = ['loki']
+        dc_resource(
+            'promtail',
+            labels=MONITORING_LABELS,
+            resource_deps=promtail_deps,
+        )
+
+    if is_enabled('grafana', enabled):
+        grafana_deps = []
+        if is_enabled('prometheus', enabled):
+            grafana_deps.append('prometheus')
+        if is_enabled('loki', enabled):
+            grafana_deps.append('loki')
+        dc_resource('grafana', labels=MONITORING_LABELS, resource_deps=grafana_deps)

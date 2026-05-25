@@ -19,7 +19,7 @@
     "dotenv": "^17.4.2"
   },
   "scripts": {
-    "build": "tsc"
+    "build": "node ../../node_modules/typescript/bin/tsc"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

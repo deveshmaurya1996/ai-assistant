@@ -1,0 +1,37 @@
+load(
+    './config.tilt',
+    'enabled_services',
+    'is_enabled',
+    'SERVICE_BUILD_IGNORE',
+    'PORTS',
+    'port_url',
+    'port_env',
+)
+
+DATABASE_LABELS = ['database']
+DEV_SCRIPT = 'scripts/dev.mjs'
+
+def database_tools():
+    enabled = enabled_services()
+    if not is_enabled('prisma-studio', enabled):
+        return
+
+    local_resource(
+        'prisma-studio',
+        serve_cmd='node ' + DEV_SCRIPT + ' serve studio',
+        deps=[
+            DEV_SCRIPT,
+            'tilt_config.json',
+            'scripts/with-env.mjs',
+            '.env',
+            'packages/database/prisma',
+            'packages/database/prisma.config.ts',
+            'packages/database/package.json',
+        ],
+        env=port_env(),
+        ignore=SERVICE_BUILD_IGNORE + ['packages/database/generated'],
+        allow_parallel=True,
+        labels=DATABASE_LABELS,
+        resource_deps=['postgres-db'],
+        links=[link(port_url('studio'), 'Prisma Studio :' + str(PORTS['studio']))],
+    )

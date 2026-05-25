@@ -1,0 +1,46 @@
+load('./config.tilt', 'enabled_services', 'is_enabled', 'SERVICE_BUILD_IGNORE', 'PORTS', 'port_url', 'port_env')
+
+APP_LABELS = ['apps']
+DEV_SCRIPT = 'scripts/dev.mjs'
+
+# Expo writes logs under .expo/ while Metro starts — must ignore or Tilt restarts in a loop.
+MOBILE_IGNORE = SERVICE_BUILD_IGNORE + [
+    '**/.expo',
+    '**/.expo/**',
+    'tilt_config.json',
+]
+
+def apps():
+    enabled = enabled_services()
+
+    if is_enabled('web', enabled):
+        local_resource(
+            'web',
+            'node scripts/with-env.mjs pnpm --filter @ai-assistant/web dev',
+            deps=['apps/web', 'packages/sdk', '.env'],
+            env=port_env(),
+            labels=APP_LABELS,
+            resource_deps=['api'],
+            links=[link(port_url('web'), 'Web :' + str(PORTS['web']))],
+        )
+
+    if is_enabled('mobile', enabled):
+        local_resource(
+            'mobile',
+            serve_cmd='node ' + DEV_SCRIPT + ' serve mobile',
+            deps=[
+                DEV_SCRIPT,
+                'scripts/with-env.mjs',
+                'apps/mobile',
+                'packages/sdk',
+                'apps/mobile/.env',
+                '.env',
+            ],
+            env=port_env(),
+            ignore=MOBILE_IGNORE,
+            allow_parallel=True,
+            auto_init=True,
+            labels=APP_LABELS,
+            resource_deps=['api'],
+            links=[link(port_url('mobile'), 'Expo web :' + str(PORTS['mobile']))],
+        )

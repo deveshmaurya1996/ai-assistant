@@ -1,146 +1,37 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import {
-  View,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ActivityIndicator,
-} from 'react-native';
-import {
-  FlashList,
-  type FlashListRef,
-  type ListRenderItem,
-} from '@shopify/flash-list';
+import { View, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, Mic, Send } from 'lucide-react-native';
+import { ArrowLeft, AudioLines } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { apiClient, type AssistantSocket, type ChatMessage } from '@/lib/api';
-import { useAuthStore } from '@/stores/auth';
-import { useSettingsStore } from '@/stores/settings';
 import { useTheme } from '@/theme/ThemeProvider';
 import { Text } from '@/components/ui/Text';
-import { Input } from '@/components/ui/Input';
-import { useVoice } from '@/context/VoiceContext';
-import { spacing, radii } from '@/theme/tokens';
+import { spacing } from '@/theme/tokens';
 import { PressableScale } from '@/components/motion/PressableScale';
-
-const STREAMING_MESSAGE_ID = 'stream';
-
-function isUserMessage(message: ChatMessage): boolean {
-  return message.role === 'USER';
-}
+import { useChatRoom } from '@/features/chat/useChatRoom';
+import { ChatMessageList } from '@/components/chat/ChatMessageList';
+import { ChatComposer } from '@/components/chat/ChatComposer';
 
 export default function ChatScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, title: titleParam, kind: kindParam } = useLocalSearchParams<{
+    id: string;
+    title?: string;
+    kind?: string;
+  }>();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const session = useAuthStore((s) => s.session);
-  const defaultRag = useSettingsStore((s) => s.defaultRagEnabled);
-  const { openVoiceSheet } = useVoice();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState('');
-  const [streaming, setStreaming] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const listRef = useRef<FlashListRef<ChatMessage>>(null);
-  const socketRef = useRef<AssistantSocket | null>(null);
 
-  useEffect(() => {
-    if (!id || !session?.session?.token) return;
-
-    void apiClient.getMessages(id).then(setMessages);
-
-    const socket = apiClient.connectSocket(session.session.token);
-    socketRef.current = socket;
-
-    socket.on('chat:chunk', (data) => {
-      setStreaming((prev) => prev + data.chunk);
-    });
-
-    socket.on('chat:end', (data) => {
-      setMessages((prev) => [...prev, data.message]);
-      setStreaming('');
-      setIsGenerating(false);
-    });
-
-    socket.on('chat:error', () => {
-      setStreaming('');
-      setIsGenerating(false);
-    });
-
-    return () => {
-      socket.disconnect();
-    };
-  }, [id, session?.session?.token]);
-
-  const emitMessage = useCallback(
-    (text: string) => {
-      if (!text.trim() || !socketRef.current || !id) return;
-      const optimistic: ChatMessage = {
-        id: `local-${Date.now()}`,
-        role: 'USER',
-        content: text,
-      };
-      setMessages((prev) => [...prev, optimistic]);
-      setStreaming('');
-      setIsGenerating(true);
-      socketRef.current.emit('chat:message', {
-        text,
-        chatSessionId: id,
-        ragEnabled: defaultRag,
-      });
-    },
-    [id, defaultRag]
-  );
-
-  const send = () => {
-    const text = input.trim();
-    if (!text) return;
-    setInput('');
-    emitMessage(text);
-  };
-
-  const displayMessages: ChatMessage[] =
-    streaming || isGenerating
-      ? [
-          ...messages,
-          {
-            id: STREAMING_MESSAGE_ID,
-            role: 'ASSISTANT',
-            content: streaming,
-          },
-        ]
-      : messages;
-
-  useEffect(() => {
-    if (!streaming && !isGenerating) return;
-    listRef.current?.scrollToEnd({ animated: true });
-  }, [streaming, isGenerating, displayMessages.length]);
-
-  const renderMessage: ListRenderItem<ChatMessage> = ({ item }) => {
-    const isUser = isUserMessage(item);
-    const isStreamingBubble = item.id === STREAMING_MESSAGE_ID;
-    return (
-      <View
-        style={[
-          styles.bubble,
-          {
-            alignSelf: isUser ? 'flex-end' : 'flex-start',
-            backgroundColor: isUser ? colors.primary : colors.surfaceElevated,
-            borderColor: colors.border,
-            borderWidth: isUser ? 0 : 1,
-          },
-        ]}>
-        {isStreamingBubble && !item.content && isGenerating ? (
-          <ActivityIndicator color={colors.textMuted} />
-        ) : (
-          <Text style={{ color: isUser ? colors.onPrimary : colors.text }}>
-            {item.content}
-          </Text>
-        )}
-      </View>
-    );
-  };
+  const {
+    title,
+    isVoice,
+    displayMessages,
+    visibleText,
+    isStreaming,
+    isGenerating,
+    send,
+  } = useChatRoom({
+    sessionId: id,
+    initialTitle: titleParam,
+    initialKind: kindParam,
+  });
 
   return (
     <KeyboardAvoidingView
@@ -159,55 +50,52 @@ export default function ChatScreen() {
         <PressableScale onPress={() => router.back()}>
           <ArrowLeft color={colors.text} size={24} />
         </PressableScale>
-        <Text variant="h2" style={{ flex: 1, marginLeft: spacing.md }}>
-          Chat
-        </Text>
+        <View style={{ flex: 1, marginLeft: spacing.md }}>
+          <Text variant="h2" numberOfLines={1}>
+            {title}
+          </Text>
+          {isVoice ? (
+            <Text variant="caption" muted>
+              Voice chat
+            </Text>
+          ) : null}
+        </View>
       </View>
 
-      <FlashList
-        ref={listRef}
-        data={displayMessages}
-        extraData={`${streaming}|${isGenerating}`}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        style={styles.messageList}
-        renderItem={renderMessage}
+      {isVoice && id ? (
+        <View
+          style={[
+            styles.voiceBanner,
+            { backgroundColor: colors.primaryMuted, borderBottomColor: colors.border },
+          ]}>
+          <AudioLines color={colors.primary} size={18} />
+          <Text variant="caption" style={{ color: colors.primary, flex: 1 }}>
+            Voice chat — type below or resume hands-free on Assistant
+          </Text>
+          <PressableScale
+            onPress={() =>
+              router.push({
+                pathname: '/(app)/(main)/assistant',
+                params: { resumeSessionId: id },
+              })
+            }>
+            <View style={[styles.resumeBtn, { backgroundColor: colors.primary }]}>
+              <Text variant="caption" style={{ color: colors.onPrimary }}>
+                Resume voice
+              </Text>
+            </View>
+          </PressableScale>
+        </View>
+      ) : null}
+
+      <ChatMessageList
+        messages={displayMessages}
+        visibleText={visibleText}
+        isStreaming={isStreaming}
+        isGenerating={isGenerating}
       />
 
-      <View
-        style={[
-          styles.inputRow,
-          {
-            borderTopColor: colors.border,
-            backgroundColor: colors.surface,
-            paddingBottom: insets.bottom + spacing.sm,
-          },
-        ]}>
-        <Pressable
-          onPress={() =>
-            openVoiceSheet({
-              onTranscript: (text) => {
-                setInput(text);
-                emitMessage(text);
-              },
-            })
-          }
-          style={[styles.micBtn, { backgroundColor: colors.primaryMuted }]}>
-          <Mic color={colors.primary} size={22} />
-        </Pressable>
-        <Input
-          value={input}
-          onChangeText={setInput}
-          placeholder="Message…"
-          multiline
-          style={styles.input}
-        />
-        <PressableScale onPress={send}>
-          <View style={[styles.send, { backgroundColor: colors.primary }]}>
-            <Send color={colors.onPrimary} size={20} />
-          </View>
-        </PressableScale>
-      </View>
+      <ChatComposer onSend={send} disabled={isGenerating} />
     </KeyboardAvoidingView>
   );
 }
@@ -221,34 +109,17 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  messageList: { flex: 1 },
-  list: { padding: spacing.md, paddingBottom: spacing.lg },
-  bubble: {
-    padding: spacing.md,
-    borderRadius: radii.lg,
-    maxWidth: '85%',
-    marginBottom: spacing.sm,
-  },
-  inputRow: {
+  voiceBanner: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    padding: spacing.md,
+    alignItems: 'center',
     gap: spacing.sm,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  input: { flex: 1, maxHeight: 120 },
-  micBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  send: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
+  resumeBtn: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 8,
   },
 });

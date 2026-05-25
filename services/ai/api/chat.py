@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 
 from memory.rag_service import RAGService
 from models.streaming import stream_completion_sse
+from models.streaming.title import generate_chat_title
+from observability import get_langfuse
 
 router = APIRouter()
 
@@ -15,6 +17,12 @@ class ChatStreamRequest(BaseModel):
     rag_enabled: bool = True
     chat_history: List[Dict[str, str]] = Field(default_factory=list)
     user_id: Optional[str] = None
+    preferred_model: Optional[str] = None
+
+
+class ChatTitleRequest(BaseModel):
+    user_message: str
+    assistant_message: str
     preferred_model: Optional[str] = None
 
 
@@ -54,6 +62,16 @@ def _retrieve_context(query: str, user_id: Optional[str]) -> str:
     return ""
 
 
+@router.post("/chat/title")
+def chat_title(payload: ChatTitleRequest):
+    title = generate_chat_title(
+        payload.user_message,
+        payload.assistant_message,
+        payload.preferred_model,
+    )
+    return {"title": title}
+
+
 @router.post("/chat/stream")
 async def chat_stream(payload: ChatStreamRequest):
     context_str = ""
@@ -65,8 +83,21 @@ async def chat_stream(payload: ChatStreamRequest):
     )
 
     async def generate():
-        async for frame in stream_completion_sse(messages, payload.preferred_model):
-            yield frame
+        langfuse = get_langfuse()
+        trace_obj = None
+        if langfuse:
+            trace_obj = langfuse.trace(
+                name="chat.stream",
+                user_id=payload.user_id,
+                input=payload.query,
+                metadata={"rag_enabled": payload.rag_enabled},
+            )
+        try:
+            async for frame in stream_completion_sse(messages, payload.preferred_model):
+                yield frame
+        finally:
+            if trace_obj:
+                trace_obj.end()
 
     return StreamingResponse(
         generate(),
