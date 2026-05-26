@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, Platform } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChatMessage, ChatSessionKind } from '@ai-assistant/sdk';
 import { apiClient } from '@/lib/api-client';
 import { getSocketSessionToken } from '@/lib/auth-cookies';
@@ -10,21 +9,27 @@ import { useChatSocketStream } from './useChatSocketStream';
 import { buildStreamingMessages } from './buildStreamingMessages';
 
 type UseChatRoomOptions = {
-  sessionId: string;
+  sessionId?: string | null;
   initialTitle?: string;
   initialKind?: string;
+  onSessionCreated?: (sessionId: string) => void;
+  onExchangeComplete?: (sessionId: string) => void;
 };
 
 export function useChatRoom({
   sessionId,
   initialTitle,
   initialKind,
+  onSessionCreated,
+  onExchangeComplete,
 }: UseChatRoomOptions) {
   const session = useAuthStore((s) => s.session);
   const sessionToken = session ? getSocketSessionToken() : undefined;
   const defaultRag = useSettingsStore((s) => s.defaultRagEnabled);
+  const hasSessionId = Boolean(sessionId);
+  const hadSessionOnMount = useRef(hasSessionId);
 
-  const [title, setTitle] = useState(initialTitle ?? 'Chat');
+  const [title, setTitle] = useState(initialTitle ?? (hasSessionId ? 'Chat' : 'New chat'));
   const [kind, setKind] = useState<ChatSessionKind>(
     initialKind === 'voice' ? 'voice' : 'text'
   );
@@ -39,8 +44,10 @@ export function useChatRoom({
     emitMessage,
   } = useChatSocketStream({
     sessionToken,
-    sessionId,
-    enabled: Boolean(sessionId && sessionToken),
+    sessionId: sessionId ?? null,
+    enabled: Boolean(sessionToken),
+    onSessionCreated,
+    onExchangeComplete,
     onTitleUpdated: setTitle,
   });
 
@@ -53,14 +60,9 @@ export function useChatRoom({
         setTitle(chatSession.title);
       }
     } catch (err) {
-      const message = formatApiError(err);
+      // Keep optimistic title/kind from route when metadata refresh fails (offline, etc.)
       if (__DEV__) {
-        console.warn('[useChatRoom] refreshSessionMeta failed:', message, err);
-      }
-      if (Platform.OS === 'web') {
-        window.alert(`Could not load chat: ${message}`);
-      } else {
-        Alert.alert('Could not load chat', message);
+        console.warn('[useChatRoom] refreshSessionMeta failed:', formatApiError(err), err);
       }
     }
   }, [sessionId]);
@@ -76,6 +78,12 @@ export function useChatRoom({
 
     setKind(initialKind === 'voice' ? 'voice' : 'text');
     if (initialTitle) setTitle(initialTitle);
+
+    if (!hadSessionOnMount.current) {
+      hadSessionOnMount.current = true;
+      void refreshSessionMeta();
+      return;
+    }
 
     void loadMessages();
     void refreshSessionMeta();
@@ -103,6 +111,7 @@ export function useChatRoom({
     title,
     kind,
     isVoice,
+    isCompose: !hasSessionId,
     messages,
     displayMessages,
     visibleText,

@@ -29,7 +29,8 @@ export default function ChatsScreen() {
     setRefreshing(true);
     try {
       const data = await apiClient.listSessions();
-      setSessions(data);
+      const visible = data.filter((s) => (s.messageCount ?? 0) > 0);
+      setSessions(visible);
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Could not load chats';
       Alert.alert('Error', message);
@@ -44,12 +45,8 @@ export default function ChatsScreen() {
     }, [load])
   );
 
-  const createChat = async () => {
-    const session = await apiClient.createSession('New Chat');
-    router.push({
-      pathname: '/(app)/chat/[id]',
-      params: { id: session.id, title: session.title ?? 'New Chat' },
-    });
+  const createChat = () => {
+    router.push('/(app)/chat/compose');
   };
 
   const openChat = (item: ChatSession) => {

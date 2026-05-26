@@ -32,12 +32,13 @@ const config: ExpoConfig = {
     'expo-router',
     'expo-dev-client',
     'expo-secure-store',
+    '@siteed/audio-studio',
     [
       'expo-audio',
       {
         microphonePermission:
           'AI Assistant needs microphone access to record voice for transcription.',
-        enableBackgroundRecording: true,
+        enableBackgroundRecording: false,
       },
     ],
     [

@@ -1,5 +1,6 @@
 import { View, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Sparkles } from 'lucide-react-native';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
@@ -14,9 +15,15 @@ export default function WelcomeScreen() {
   return (
     <Screen style={styles.center}>
       <FadeIn>
-        <View style={[styles.iconWrap, { backgroundColor: colors.primaryMuted }]}>
-          <Sparkles color={colors.primary} size={48} />
-        </View>
+        <LinearGradient
+          colors={[colors.primary, colors.primaryMuted]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.iconGradient}>
+          <View style={[styles.iconWrap, { backgroundColor: colors.surface }]}>
+            <Sparkles color={colors.primary} size={48} />
+          </View>
+        </LinearGradient>
       </FadeIn>
       <FadeIn delay={150}>
         <Text variant="h1" style={styles.title}>
@@ -40,6 +47,11 @@ export default function WelcomeScreen() {
 
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', gap: spacing.lg },
+  iconGradient: {
+    padding: 3,
+    borderRadius: 52,
+    alignSelf: 'center',
+  },
   iconWrap: {
     width: 96,
     height: 96,

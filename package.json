@@ -25,7 +25,13 @@
     "prettier": "latest",
     "turbo": "latest"
   },
-  "packageManager": "pnpm@9.0.0"
+  "packageManager": "pnpm@9.0.0",
+  "pnpm": {
+    "overrides": {
+      "uuid": "^14.0.0"
+    },
+    "patchedDependencies": {
+      "@siteed/audio-studio@3.2.0": "patches/@siteed__audio-studio@3.2.0.patch"
+    }
+  }
 }
-
-

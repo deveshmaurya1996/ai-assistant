@@ -1,14 +1,16 @@
 import { useCallback, useRef } from 'react';
+import { useSharedAudioRecorder } from '@siteed/audio-studio';
+import { requireMicPermission } from '@/features/voice/requestVoicePermissions';
+import { buildAssistantRecordingConfig } from '@/features/voice/studio/recordingConfig';
 import {
-  useAudioRecorder,
-  useAudioRecorderState,
-  setAudioModeAsync,
-} from 'expo-audio';
-import { VOICE_TRANSCRIBE_RECORDING } from '@/features/voice/voiceRecordingOptions';
-import { mimeFromUri } from '@/features/voice/mimeFromUri';
-import { requestMicPermission } from '@/features/voice/requestVoicePermissions';
+  isSpeechFromDataPoints,
+  latestDataPoints,
+} from '@/features/voice/studio/analysis';
+import {
+  recordingFileUri,
+  recordingMimeType,
+} from '@/features/voice/studio/recordingUri';
 
-const SILENCE_DB = -48;
 const SILENCE_MS = 800;
 const MIN_RECORD_MS = 700;
 const MAX_RECORD_MS = 20_000;
@@ -21,18 +23,8 @@ export type RecordOutcome =
   | { kind: 'cancelled' };
 
 export function useVoiceTurnRecorder() {
-  const recorder = useAudioRecorder(VOICE_TRANSCRIBE_RECORDING);
-  const recorderState = useAudioRecorderState(recorder, POLL_MS);
+  const studio = useSharedAudioRecorder();
   const cancelledRef = useRef(false);
-
-  const startRecording = useCallback(async () => {
-    const status = recorder.getStatus();
-    if (status.isRecording) {
-      await recorder.stop();
-    }
-    await recorder.prepareToRecordAsync();
-    recorder.record();
-  }, [recorder]);
 
   const recordUntilSilence = useCallback(
     async (options?: {
@@ -41,20 +33,18 @@ export function useVoiceTurnRecorder() {
     }): Promise<RecordOutcome> => {
       cancelledRef.current = false;
 
-      const mic = await requestMicPermission();
-      if (mic !== 'granted') {
-        throw new Error('Microphone permission is required');
-      }
-
-      await setAudioModeAsync({
-        allowsRecording: true,
-        allowsBackgroundRecording: options?.backgroundRecording ?? true,
-        playsInSilentMode: true,
-        shouldPlayInBackground: true,
-      });
-
       try {
-        await startRecording();
+        if (studio.isRecording) {
+          await studio.stopRecording();
+        }
+
+        await requireMicPermission();
+        const config = buildAssistantRecordingConfig(
+          async () => {},
+          options?.backgroundRecording ?? true
+        );
+        await studio.prepareRecording(config);
+        await studio.startRecording(config);
       } catch (error) {
         throw new Error(
           error instanceof Error
@@ -77,8 +67,9 @@ export function useVoiceTurnRecorder() {
           }
 
           const elapsed = Date.now() - startedAt;
-          const metering = recorder.getStatus().metering;
-          options?.onMetering?.(metering);
+          const points = latestDataPoints(studio.analysisData?.dataPoints);
+          const last = points[points.length - 1];
+          options?.onMetering?.(last?.dB);
 
           if (!heardSpeech && elapsed >= LISTEN_IDLE_MS) {
             endedIdle = true;
@@ -87,7 +78,7 @@ export function useVoiceTurnRecorder() {
             return;
           }
 
-          if (typeof metering === 'number' && metering > SILENCE_DB) {
+          if (isSpeechFromDataPoints(points)) {
             heardSpeech = true;
             silenceSince = null;
           } else if (heardSpeech) {
@@ -109,8 +100,9 @@ export function useVoiceTurnRecorder() {
         }, POLL_MS);
       });
 
-      if (recorder.getStatus().isRecording) {
-        await recorder.stop();
+      let result = null;
+      if (studio.isRecording) {
+        result = await studio.stopRecording();
       }
 
       if (cancelledRef.current) {
@@ -121,27 +113,29 @@ export function useVoiceTurnRecorder() {
         return { kind: 'idle' };
       }
 
-      const uri = recorder.uri;
+      if (!result) {
+        return { kind: 'idle' };
+      }
+
+      const uri = recordingFileUri(result);
       if (!uri) {
         return { kind: 'idle' };
       }
 
-      return { uri, mime: mimeFromUri(uri), kind: 'audio' };
+      return { uri, mime: recordingMimeType(result), kind: 'audio' };
     },
-    [recorder, startRecording]
+    [studio]
   );
 
   const cancelRecording = useCallback(async () => {
     cancelledRef.current = true;
-    if (recorder.getStatus().isRecording) {
-      await recorder.stop();
+    if (studio.isRecording) {
+      await studio.stopRecording();
     }
-  }, [recorder]);
+  }, [studio]);
 
   return {
-    isRecording: recorderState.isRecording,
     recordUntilSilence,
     cancelRecording,
-    recorder,
   };
 }

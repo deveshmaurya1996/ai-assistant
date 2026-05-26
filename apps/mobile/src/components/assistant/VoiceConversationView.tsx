@@ -11,7 +11,23 @@ type Props = {
   isStreaming: boolean;
   isGenerating?: boolean;
   phase: VoiceAssistantPhase;
+  contentPaddingBottom?: number;
 };
+
+function emptyHintForPhase(phase: VoiceAssistantPhase): string {
+  switch (phase) {
+    case 'listening':
+      return 'Listening… speak when ready';
+    case 'transcribing':
+      return 'Processing your speech…';
+    case 'waiting_for_ai':
+      return 'Thinking…';
+    case 'speaking':
+      return 'Speaking…';
+    default:
+      return 'Your conversation will appear here';
+  }
+}
 
 export function VoiceConversationView({
   messages,
@@ -19,18 +35,15 @@ export function VoiceConversationView({
   isStreaming,
   isGenerating = false,
   phase,
+  contentPaddingBottom,
 }: Props) {
+  const emptyHint = emptyHintForPhase(phase);
+
   if (messages.length === 0) {
     return (
-      <View style={styles.empty}>
-        <Text variant="body" muted style={{ textAlign: 'center' }}>
-          {phase === 'listening'
-            ? 'Listening… speak when ready'
-            : phase === 'transcribing'
-              ? 'Processing your speech…'
-              : phase === 'waiting_for_ai'
-                ? 'Thinking…'
-                : 'Your conversation will appear here'}
+      <View style={[styles.empty, contentPaddingBottom ? { paddingBottom: contentPaddingBottom } : null]}>
+        <Text variant="body" muted style={styles.emptyText}>
+          {emptyHint}
         </Text>
       </View>
     );
@@ -42,6 +55,7 @@ export function VoiceConversationView({
       visibleText={visibleText}
       isStreaming={isStreaming}
       isGenerating={isGenerating}
+      contentPaddingBottom={contentPaddingBottom}
     />
   );
 }
@@ -52,5 +66,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.xl,
+  },
+  emptyText: {
+    textAlign: 'center',
   },
 });

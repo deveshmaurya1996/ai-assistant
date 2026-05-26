@@ -14,7 +14,7 @@ export function SettingsSection({
   return (
     <View style={styles.wrap}>
       <Text variant="label" muted style={styles.title}>
-        {title.toUpperCase()}
+        {title}
       </Text>
       <Card>{children}</Card>
     </View>

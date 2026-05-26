@@ -8,6 +8,8 @@ type Options = {
   sessionToken: string | undefined;
   sessionId?: string | null;
   enabled?: boolean;
+  onSessionCreated?: (sessionId: string) => void;
+  onExchangeComplete?: (sessionId: string) => void;
   onTitleUpdated?: (title: string) => void;
   onStreamTargetChange?: (fullText: string) => void;
   onError?: (message: string) => void;
@@ -25,6 +27,8 @@ export function useChatSocketStream({
   sessionToken,
   sessionId,
   enabled = true,
+  onSessionCreated,
+  onExchangeComplete,
   onTitleUpdated,
   onStreamTargetChange,
   onError,
@@ -38,9 +42,13 @@ export function useChatSocketStream({
   const streamRef = useRef(stream);
   streamRef.current = stream;
 
+  const onSessionCreatedRef = useRef(onSessionCreated);
+  const onExchangeCompleteRef = useRef(onExchangeComplete);
   const onTitleUpdatedRef = useRef(onTitleUpdated);
   const onStreamTargetChangeRef = useRef(onStreamTargetChange);
   const onErrorRef = useRef(onError);
+  onSessionCreatedRef.current = onSessionCreated;
+  onExchangeCompleteRef.current = onExchangeComplete;
   onTitleUpdatedRef.current = onTitleUpdated;
   onStreamTargetChangeRef.current = onStreamTargetChange;
   onErrorRef.current = onError;
@@ -83,6 +91,7 @@ export function useChatSocketStream({
         streamRef.current.reset();
         setIsGenerating(false);
         onStreamTargetChangeRef.current?.(data.message.content);
+        onExchangeCompleteRef.current?.(data.chatSessionId);
       });
 
       connected.on('chat:error', (payload) => {
@@ -95,6 +104,11 @@ export function useChatSocketStream({
         if (!matchesSession(data.chatSessionId, sessionIdRef.current)) return;
         onTitleUpdatedRef.current?.(data.title);
       });
+
+      connected.on('chat:session_created', (data) => {
+        sessionIdRef.current = data.chatSessionId;
+        onSessionCreatedRef.current?.(data.chatSessionId);
+      });
     })();
 
     return () => {
@@ -106,17 +120,24 @@ export function useChatSocketStream({
 
   const emitMessage = useCallback((text: string, ragEnabled: boolean) => {
     if (!text.trim() || !socketRef.current) return false;
-    const filterId = sessionIdRef.current;
-    if (!filterId) return false;
 
     streamRef.current.reset();
     setIsGenerating(true);
 
-    socketRef.current.emit('chat:message', {
+    const filterId = sessionIdRef.current;
+    const payload: {
+      text: string;
+      ragEnabled: boolean;
+      chatSessionId?: string;
+    } = {
       text: text.trim(),
-      chatSessionId: filterId,
       ragEnabled,
-    });
+    };
+    if (filterId) {
+      payload.chatSessionId = filterId;
+    }
+
+    socketRef.current.emit('chat:message', payload);
     return true;
   }, []);
 

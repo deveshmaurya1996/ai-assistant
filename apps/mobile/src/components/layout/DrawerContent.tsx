@@ -20,7 +20,6 @@ import { useAuthStore } from '@/stores/auth';
 import { useSettingsStore } from '@/stores/settings';
 import { spacing, radii } from '@/theme/tokens';
 import { PressableScale } from '@/components/motion/PressableScale';
-import { apiClient } from '@/lib/api-client';
 import { toggleOverlay } from '@/lib/overlay';
 import { useVoiceSessionBridge } from '@/features/voice-assistant/voiceSessionBridge';
 import type { ThemeMode } from '@/theme/tokens';
@@ -123,13 +122,9 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
         <NavRow
           icon={<MessageSquare color={colors.text} size={20} />}
           label="New chat"
-          onPress={async () => {
+          onPress={() => {
             navigation.closeDrawer();
-            const s = await apiClient.createSession('New Chat');
-            router.push({
-              pathname: '/(app)/chat/[id]',
-              params: { id: s.id, title: s.title ?? 'New Chat' },
-            });
+            router.push('/(app)/chat/compose');
           }}
         />
         <NavRow

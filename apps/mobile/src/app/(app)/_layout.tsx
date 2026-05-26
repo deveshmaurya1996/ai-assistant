@@ -37,6 +37,13 @@ export default function AppDrawerLayout() {
           swipeEnabled: false,
         }}
       />
+      <Drawer.Screen
+        name="chat/compose"
+        options={{
+          drawerItemStyle: { display: 'none' },
+          swipeEnabled: false,
+        }}
+      />
     </Drawer>
     </VoiceSessionHost>
   );

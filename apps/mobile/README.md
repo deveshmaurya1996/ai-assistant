@@ -4,6 +4,18 @@ Expo React Native client with floating dock navigation, drawer sidebar, full set
 
 > **This app requires a development build** (`expo-dev-client`). Expo Go does not include the overlay module or background voice APIs.
 
+### Audio stack
+
+| Package | Role |
+|---------|------|
+| **@siteed/audio-studio** | Recording, live analysis (VAD/waveform data), AAC output |
+| **VoiceEqualizer** (in-app) | ChatGPT/Gemini-style animated bars (Reanimated) |
+| **expo-audio** `~56.0.10` | TTS playback only |
+
+After adding or upgrading audio-studio / Skia, rebuild the dev client: `npx expo prebuild --clean` then `pnpm mobile:android`.
+
+**Expo SDK 56:** `@siteed/audio-studio@3.2.0` needs a small Kotlin patch for `Promise.reject` (see `patches/@siteed__audio-studio@3.2.0.patch` at repo root). Remove the patch when upstream ships a fix.
+
 ---
 
 ## Prerequisites
@@ -167,11 +179,12 @@ Minimum for classic voice: **OpenAI or Pollinations** for STT+TTS, plus a chat k
 3. `apps/mobile/.env` → `EXPO_PUBLIC_API_URL=http://localhost:3000` (or your LAN IP)
 4. Custom **dev build** (not Expo Go) for the overlay native module
 5. **Microphone** and **Overlay** permissions granted
-6. Open **Assistant** tab and tap the mic to start voice
+6. Open **Assistant** tab and tap the assistant button (Sparkles) to start
 
 **Controls (Settings / Assistant):**
 
-- **Mic (Assistant tab)** — only start/stop for voice sessions
+- **Assistant button (Assistant tab)** — start voice sessions; chat transcript above; waveform footer while listening
+- **Keep listening** (Settings) — when on, assistant stays active and does not auto-end on silence; when off, voice chat ends after inactivity
 - **Speak replies** (Settings) — off = text + overlay only (no TTS)
 - **Your assistant** — custom name + personality (Female / Male / Neutral labels)
 - **Floating overlay** — panel when app is in background during voice
@@ -253,7 +266,7 @@ Use the **API on port 3000**, not 8000, for auth and `EXPO_PUBLIC_API_URL`.
 pnpm --filter @ai-assistant/mobile dev
 ```
 
-Works for basic UI and API calls. **Does not support** background voice recording or the overlay bubble — use a dev build for those features.
+Works for basic UI and API calls. **Does not support** assistant keep-listening in the background or the overlay bubble — use a dev build for those features.
 
 ---
 
@@ -296,9 +309,9 @@ For production with many users, run multiple API + AI replicas behind a load bal
 
 The **Assistant** tab runs a hands-free voice session (not the chat mic):
 
-1. Tap the large mic to **start** — creates a `Voice chat` session (`kind: voice`).
-2. Speak naturally; after each assistant reply (TTS), the mic **re-opens automatically**.
-3. Tap the mic again (stop icon) to **end** the session.
+1. Tap the large **assistant button** (Sparkles) to **start** — creates a `Voice chat` session (`kind: voice`).
+2. Speak naturally; chat messages appear above; a **waveform** in the dock-safe footer animates while listening.
+3. Tap **End conversation** to **end** the session.
 4. Open **Chats** — the session appears with a mic icon and “Spoken conversation”.
 5. Open the voice chat to read the **transcript** (read-only, no composer).
 
@@ -321,13 +334,13 @@ When a voice session is active and the app is in the background, a **floating ca
 
 ### Voice idle auto-stop
 
-The mic stops automatically when nothing is happening:
+When **Keep listening** is **off** in Settings, the session ends automatically when nothing is happening:
 
 - **12s** listening with no speech → ends that listen attempt
-- **2** consecutive silent listens → ends session and releases mic
+- **2** consecutive silent listens → ends session
 - **60s** with no activity → ends session
 
-Tap the mic to stop manually at any time.
+When **Keep listening** is **on**, the assistant stays active until you tap **End conversation**. You can still end manually at any time.
 
 **iOS / Web:** Voice assistant works in-app; **no system overlay** on iOS or web in v1.
 
@@ -345,11 +358,29 @@ pnpm db:migrate
 2. Navigate all three dock tabs
 3. Open sidebar (menu icon)
 4. Create chat and send message
-5. **Assistant tab:** start voice chat → speak → see transcript → stop → open Voice chat in list
-6. **Chat mic:** tap mic in text chat → transcript fills input only (no auto-send)
+5. **Assistant tab:** tap assistant button → speak → chat + waveform footer → End conversation → open Voice chat in list
+6. **Chat mic:** tap mic → circular visualizer around button, stop in center → tap stop → transcript fills input (no auto-send)
 7. Settings: change theme and preferred model
 8. Voice session in background → overlay shows assistant text (grant overlay permission)
-9. Background voice: foreground notification while assistant session is active
+9. **Keep listening** on: assistant session stays active after long silence; foreground notification while session is active. Off: session ends after inactivity
+
+## Voice UI architecture
+
+Recording and live waveforms use [@siteed/audio-studio](https://www.npmjs.com/package/@siteed/audio-studio) (`AudioRecorderProvider` + `useSharedAudioRecorder` with `enableProcessing`). Visualization uses [@siteed/audio-ui](https://www.npmjs.com/package/@siteed/audio-ui) `WaveformPreview` (Skia).
+
+| Layer | Path | Role |
+|-------|------|------|
+| Provider | `VoiceSessionHost` | `AudioRecorderProvider` wrapper |
+| Studio config | `features/voice/studio/recordingConfig.ts` | Chat vs assistant recording presets |
+| Live analysis | `features/voice/studio/useStudioVoiceAnalysis.ts` | `analysisData.dataPoints` → level + VAD |
+| Capture | `features/voice/capture/useVoiceCapture.ts` | Chat record lifecycle |
+| Chat dictation | `features/voice/capture/useChatDictation.ts` | Tap-to-toggle → HTTP transcribe |
+| Chat mic UI | `components/voice/ChatVoiceMic.tsx` | Orb + studio waveform bars |
+| Assistant start | `components/assistant/AssistantStartButton.tsx` | Sparkles button (idle) |
+| Assistant footer | `components/assistant/AssistantActiveFooter.tsx` | `StudioWaveform` + End |
+| Waveform | `components/voice/StudioWaveform.tsx` | Skia `WaveformPreview` |
+| Playback | `lib/voice-playback.ts` | expo-audio TTS |
+| Assistant session | `features/voice-assistant/*` | Hands-free loop (socket STT, chat, TTS) |
 
 ## Project structure
 
@@ -358,8 +389,7 @@ src/
   app/           Expo Router routes
   theme/         Design tokens + ThemeProvider
   components/    UI kit, layout, voice, settings
-  features/      Voice permissions + recorder hook
+  features/      voice/ (capture, metering), voice-assistant/
   stores/        Auth + settings (Zustand)
-  context/       Voice bottom sheet provider
 modules/overlay/ Native Android overlay module
 ```

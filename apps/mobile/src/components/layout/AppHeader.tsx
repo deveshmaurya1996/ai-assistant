@@ -1,4 +1,4 @@
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
 import { Menu, Plus } from 'lucide-react-native';
 import { Text } from '@/components/ui/Text';
 import { useDrawerNavigation } from '@/hooks/useDrawerNavigation';
@@ -16,7 +16,24 @@ export function AppHeader({ title, onNewChat }: Props) {
   const { openDrawer } = useDrawerNavigation();
 
   return (
-    <View style={[styles.header, { borderBottomColor: colors.border }]}>
+    <View
+      style={[
+        styles.header,
+        {
+          borderBottomColor: colors.border,
+          backgroundColor: colors.surface,
+          ...Platform.select({
+            ios: {
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.04,
+              shadowRadius: 4,
+            },
+            android: { elevation: 1 },
+            default: {},
+          }),
+        },
+      ]}>
       <PressableScale
         onPress={openDrawer}
         accessibilityLabel="Open menu"

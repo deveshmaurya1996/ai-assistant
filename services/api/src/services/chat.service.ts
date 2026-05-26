@@ -28,11 +28,13 @@ function serializeSession(session: {
   id: string;
   title: string | null;
   kind: PrismaChatSessionKind;
+  _count?: { messages: number };
 }) {
   return {
     id: session.id,
     title: session.title,
     kind: toApiSessionKind(session.kind),
+    messageCount: session._count?.messages ?? 0,
   };
 }
 
@@ -45,6 +47,7 @@ export async function listSessions(userId: string) {
   const sessions = await prisma.chatSession.findMany({
     where: { userId },
     orderBy: { updatedAt: 'desc' },
+    include: { _count: { select: { messages: true } } },
   });
   return sessions.map(serializeSession);
 }

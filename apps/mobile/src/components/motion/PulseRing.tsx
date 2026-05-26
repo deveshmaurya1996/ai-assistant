@@ -10,11 +10,14 @@ import Animated, {
 
 type Props = {
   color: string;
+  size?: number;
+  opacity?: number;
 };
 
-export function PulseRing({ color }: Props) {
+export function PulseRing({ color, size = 120, opacity: baseOpacity = 0.6 }: Props) {
   const scale = useSharedValue(1);
-  const opacity = useSharedValue(0.6);
+  const opacity = useSharedValue(baseOpacity);
+  const radius = size / 2;
 
   useEffect(() => {
     scale.value = withRepeat(
@@ -22,8 +25,12 @@ export function PulseRing({ color }: Props) {
       -1,
       true
     );
-    opacity.value = withRepeat(withTiming(0.2, { duration: 800 }), -1, true);
-  }, [opacity, scale]);
+    opacity.value = withRepeat(
+      withTiming(baseOpacity * 0.35, { duration: 800 }),
+      -1,
+      true
+    );
+  }, [baseOpacity, opacity, scale]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -32,7 +39,16 @@ export function PulseRing({ color }: Props) {
 
   return (
     <Animated.View
-      style={[styles.pulse, { backgroundColor: color }, animatedStyle]}
+      style={[
+        styles.pulse,
+        {
+          width: size,
+          height: size,
+          borderRadius: radius,
+          backgroundColor: color,
+        },
+        animatedStyle,
+      ]}
     />
   );
 }
@@ -40,8 +56,5 @@ export function PulseRing({ color }: Props) {
 const styles = StyleSheet.create({
   pulse: {
     position: 'absolute',
-    width: 120,
-    height: 120,
-    borderRadius: 60,
   },
 });

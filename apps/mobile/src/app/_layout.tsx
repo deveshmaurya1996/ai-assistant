@@ -13,7 +13,6 @@ import {
 } from '@expo-google-fonts/inter';
 import * as SplashScreen from 'expo-splash-screen';
 import { ThemeProvider } from '@/theme/ThemeProvider';
-import { VoiceProvider } from '@/context/VoiceContext';
 import { hydrateAuthStorage } from '@/lib/secure-storage';
 import { useSettingsStore } from '@/stores/settings';
 
@@ -52,14 +51,12 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>
         <BottomSheetModalProvider>
-          <VoiceProvider>
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="index" />
-              <Stack.Screen name="(auth)" />
-              <Stack.Screen name="(app)" />
-              <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
-            </Stack>
-          </VoiceProvider>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="(auth)" />
+            <Stack.Screen name="(app)" />
+            <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
+          </Stack>
         </BottomSheetModalProvider>
       </ThemeProvider>
     </GestureHandlerRootView>

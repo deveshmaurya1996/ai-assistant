@@ -83,7 +83,7 @@ type SettingsState = {
   speakRepliesEnabled: boolean;
   assistantDisplayName: string;
   selectedPersonalityId: PersonalityId;
-  backgroundVoiceEnabled: boolean;
+  assistantContinuousListening: boolean;
   autoSendAfterTranscribe: boolean;
   defaultRagEnabled: boolean;
   overlayEnabled: boolean;
@@ -95,7 +95,7 @@ type SettingsState = {
   setSpeakRepliesEnabled: (v: boolean) => Promise<void>;
   setAssistantDisplayName: (name: string) => Promise<void>;
   setSelectedPersonalityId: (id: PersonalityId) => Promise<void>;
-  setBackgroundVoice: (v: boolean) => Promise<void>;
+  setAssistantContinuousListening: (v: boolean) => Promise<void>;
   setAutoSend: (v: boolean) => Promise<void>;
   setDefaultRag: (v: boolean) => Promise<void>;
   setOverlayEnabled: (v: boolean) => Promise<void>;
@@ -125,7 +125,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   speakRepliesEnabled: true,
   assistantDisplayName: 'Assistant',
   selectedPersonalityId: 'assistant',
-  backgroundVoiceEnabled: true,
+  assistantContinuousListening: true,
   autoSendAfterTranscribe: false,
   defaultRagEnabled: true,
   overlayEnabled: false,
@@ -173,7 +173,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         speakRepliesEnabled: speakReplies !== 'false',
         selectedPersonalityId: personalityId,
         assistantDisplayName: normalizeDisplayName(assistantName, personalityId),
-        backgroundVoiceEnabled: backgroundVoice !== 'false',
+        assistantContinuousListening: backgroundVoice !== 'false',
         autoSendAfterTranscribe: autoSend === 'true',
         defaultRagEnabled: defaultRag !== 'false',
         overlayEnabled: overlay === 'true',
@@ -219,9 +219,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     });
   },
 
-  setBackgroundVoice: async (v) => {
+  setAssistantContinuousListening: async (v) => {
     await setItemAsync(KEYS.backgroundVoice, String(v));
-    set({ backgroundVoiceEnabled: v });
+    set({ assistantContinuousListening: v });
   },
 
   setAutoSend: async (v) => {

@@ -87,9 +87,9 @@ export function useVoiceTurnSocket(socketRef: RefObject<AssistantSocket | null>)
   }, []);
 
   const transcribeViaSocket = useCallback(
-    async (chatSessionId: string, audioUri: string): Promise<string | null> => {
+    async (chatSessionId: string | null, audioUri: string): Promise<string | null> => {
       const socket = socketRef.current;
-      if (!socket?.connected) {
+      if (!chatSessionId || !socket?.connected) {
         const result = await transcribeVoice(audioUri, mimeFromUri(audioUri));
         return result.text.trim() || null;
       }

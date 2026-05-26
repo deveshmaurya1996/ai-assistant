@@ -17,6 +17,7 @@ import { buildStreamingMessages } from '@/features/chat/buildStreamingMessages';
 import { useVoiceOverlaySync } from './useVoiceOverlaySync';
 import { useVoiceTurnSocket } from './useVoiceTurnSocket';
 import { useVoiceSessionBridge } from './voiceSessionBridge';
+import { useStudioVoiceAnalysis } from '@/features/voice/studio/useStudioVoiceAnalysis';
 
 export type VoiceAssistantPhase =
   | 'idle'
@@ -39,7 +40,9 @@ export function useVoiceAssistantSession() {
   const session = useAuthStore((s) => s.session);
   const sessionToken = session ? getSocketSessionToken() : undefined;
   const defaultRag = useSettingsStore((s) => s.defaultRagEnabled);
-  const backgroundVoice = useSettingsStore((s) => s.backgroundVoiceEnabled);
+  const assistantContinuousListening = useSettingsStore(
+    (s) => s.assistantContinuousListening
+  );
   const speakRepliesEnabled = useSettingsStore((s) => s.speakRepliesEnabled);
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
   const registerHandlers = useVoiceSessionBridge((s) => s.registerHandlers);
@@ -47,8 +50,8 @@ export function useVoiceAssistantSession() {
 
   const [phase, setPhase] = useState<VoiceAssistantPhase>('idle');
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
   const stoppedRef = useRef(true);
   const loopRunningRef = useRef(false);
   const latestAssistantRef = useRef('');
@@ -59,6 +62,14 @@ export function useVoiceAssistantSession() {
   const stopSessionRef = useRef<(opts?: StopSessionOptions) => Promise<void>>(async () => {});
 
   const { recordUntilSilence, cancelRecording } = useVoiceTurnRecorder();
+
+  const isListening = phase === 'listening';
+  const {
+    meteringLevel,
+    meteringDecibels,
+    dataPoints: meteringDataPoints,
+    isSpeechDetected: speechDetected,
+  } = useStudioVoiceAnalysis(isListening);
 
   const {
     messages,
@@ -88,6 +99,22 @@ export function useVoiceAssistantSession() {
   });
 
   const { transcribeViaSocket, attachListeners } = useVoiceTurnSocket(socketRef);
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  const ensureVoiceSession = useCallback(async (): Promise<string> => {
+    if (sessionIdRef.current) return sessionIdRef.current;
+
+    const session = await apiClient.createSession({
+      title: `Voice chat with ${assistantDisplayName}`,
+      kind: 'voice',
+    });
+    sessionIdRef.current = session.id;
+    setSessionId(session.id);
+    return session.id;
+  }, [assistantDisplayName]);
 
   useEffect(() => {
     if (!sessionToken) return;
@@ -124,6 +151,23 @@ export function useVoiceAssistantSession() {
       await stopVoiceAssistantService();
 
       resetStream();
+
+      const sid = sessionIdRef.current;
+      if (sid) {
+        try {
+          const msgs = await apiClient.getMessages(sid);
+          if (msgs.length === 0) {
+            await apiClient.deleteSession(sid);
+          }
+        } catch (deleteErr) {
+          if (__DEV__) {
+            console.warn('[voice] delete empty session failed:', deleteErr);
+          }
+        }
+      }
+      sessionIdRef.current = null;
+      setSessionId(null);
+
       if (opts?.idleMessage) {
         setError(opts.idleMessage);
       }
@@ -138,6 +182,7 @@ export function useVoiceAssistantSession() {
 
   useEffect(() => {
     if (phase === 'idle' || phase === 'stopping') return;
+    if (assistantContinuousListening) return;
 
     const timer = setInterval(() => {
       if (stoppedRef.current || loopRunningRef.current === false) return;
@@ -149,7 +194,7 @@ export function useVoiceAssistantSession() {
     }, 2000);
 
     return () => clearInterval(timer);
-  }, [phase]);
+  }, [phase, assistantContinuousListening]);
 
   const markActivity = useCallback(() => {
     lastActivityRef.current = Date.now();
@@ -185,22 +230,28 @@ export function useVoiceAssistantSession() {
   );
 
   const handleIdleTurn = useCallback(async (): Promise<boolean> => {
+    if (assistantContinuousListening) {
+      return false;
+    }
     consecutiveIdleTurnsRef.current += 1;
     if (consecutiveIdleTurnsRef.current >= MAX_IDLE_TURNS) {
       await stopSessionRef.current({ idleMessage: IDLE_END_MESSAGE });
       return true;
     }
     return false;
-  }, []);
+  }, [assistantContinuousListening]);
 
   const runConversationLoop = useCallback(
-    async (sid: string) => {
+    async () => {
       if (loopRunningRef.current || stoppedRef.current) return;
       loopRunningRef.current = true;
 
       while (!stoppedRef.current) {
         try {
-          if (Date.now() - lastActivityRef.current >= SESSION_IDLE_MS) {
+          if (
+            !assistantContinuousListening &&
+            Date.now() - lastActivityRef.current >= SESSION_IDLE_MS
+          ) {
             await stopSessionRef.current({
               idleMessage: 'Voice chat ended — inactive',
             });
@@ -215,9 +266,8 @@ export function useVoiceAssistantSession() {
           setError(null);
 
           const outcome = await recordUntilSilence({
-            backgroundRecording: backgroundVoice,
+            backgroundRecording: assistantContinuousListening,
           });
-
           if (stoppedRef.current) break;
 
           if (outcome.kind === 'cancelled') {
@@ -230,12 +280,22 @@ export function useVoiceAssistantSession() {
           }
 
           setPhase('transcribing');
-          const text = await transcribeViaSocket(sid, outcome.uri);
+          const text = await transcribeViaSocket(sessionIdRef.current, outcome.uri);
 
           if (stoppedRef.current) break;
           if (!text) {
             if (await handleIdleTurn()) break;
             continue;
+          }
+
+          let sid: string;
+          try {
+            sid = await ensureVoiceSession();
+          } catch (e) {
+            if (!stoppedRef.current) {
+              setError(e instanceof Error ? e.message : 'Could not start voice chat');
+            }
+            break;
           }
 
           markActivity();
@@ -309,7 +369,7 @@ export function useVoiceAssistantSession() {
       }
     },
     [
-      backgroundVoice,
+      assistantContinuousListening,
       speakRepliesEnabled,
       defaultRag,
       recordUntilSilence,
@@ -320,11 +380,12 @@ export function useVoiceAssistantSession() {
       socketRef,
       handleIdleTurn,
       markActivity,
+      ensureVoiceSession,
     ]
   );
 
   const beginVoiceLoop = useCallback(
-    async (sid: string, existingMessages?: ChatMessage[]) => {
+    async (existingId?: string, existingMessages?: ChatMessage[]) => {
       setError(null);
       if (existingMessages) {
         setMessages(existingMessages);
@@ -336,7 +397,8 @@ export function useVoiceAssistantSession() {
       consecutiveIdleTurnsRef.current = 0;
       lastActivityRef.current = Date.now();
       latestAssistantRef.current = '';
-      setSessionId(sid);
+      sessionIdRef.current = existingId ?? null;
+      setSessionId(existingId ?? null);
       setPhase('listening');
 
       try {
@@ -344,7 +406,7 @@ export function useVoiceAssistantSession() {
       } catch (serviceError) {
         console.warn('Voice foreground service unavailable:', serviceError);
       }
-      void runConversationLoop(sid);
+      void runConversationLoop();
     },
     [runConversationLoop, resetStream, setMessages]
   );
@@ -353,17 +415,13 @@ export function useVoiceAssistantSession() {
     if (phase !== 'idle') return;
 
     try {
-      const session = await apiClient.createSession({
-        title: `Voice chat with ${assistantDisplayName}`,
-        kind: 'voice',
-      });
-      await beginVoiceLoop(session.id);
+      await beginVoiceLoop();
     } catch (e) {
       stoppedRef.current = true;
       setPhase('idle');
       setError(e instanceof Error ? e.message : 'Could not start voice chat');
     }
-  }, [phase, beginVoiceLoop, assistantDisplayName]);
+  }, [phase, beginVoiceLoop]);
 
   const resumeSession = useCallback(
     async (existingId: string) => {
@@ -415,6 +473,10 @@ export function useVoiceAssistantSession() {
     isGenerating,
     sessionId,
     error,
+    meteringLevel,
+    meteringDecibels,
+    meteringDataPoints,
+    isSpeechDetected: speechDetected,
     startSession,
     resumeSession,
     stopSession: () => stopSession(),

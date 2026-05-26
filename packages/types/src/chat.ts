@@ -12,6 +12,7 @@ export interface ChatSession {
   id: string;
   title: string | null;
   kind: ChatSessionKind;
+  messageCount?: number;
 }
 
 export interface CreateChatSessionResponse {

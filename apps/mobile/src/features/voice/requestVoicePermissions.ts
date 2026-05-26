@@ -14,6 +14,13 @@ export async function requestMicPermission(): Promise<PermissionStatus> {
   return result.granted ? 'granted' : 'denied';
 }
 
+export async function requireMicPermission(): Promise<void> {
+  const status = await requestMicPermission();
+  if (status !== 'granted') {
+    throw new Error('Microphone permission is required');
+  }
+}
+
 export async function requestNotificationPermission(): Promise<PermissionStatus> {
   if (Platform.OS !== 'android' || Platform.Version < 33) {
     return 'granted';

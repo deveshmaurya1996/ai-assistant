@@ -38,7 +38,6 @@ import {
   formatOverlayPermission,
   type OverlayPermissionLabel,
 } from '@/lib/permissions';
-import { API_URL } from '@/lib/config';
 import { PressableScale } from '@/components/motion/PressableScale';
 
 export default function SettingsScreen() {
@@ -53,12 +52,12 @@ export default function SettingsScreen() {
     speakRepliesEnabled,
     assistantDisplayName,
     selectedPersonalityId,
-    backgroundVoiceEnabled,
+    assistantContinuousListening,
     autoSendAfterTranscribe,
     defaultRagEnabled,
     overlayEnabled,
     setSpeakRepliesEnabled,
-    setBackgroundVoice,
+    setAssistantContinuousListening,
     setAutoSend,
     setDefaultRag,
     setOverlayEnabled,
@@ -131,10 +130,10 @@ export default function SettingsScreen() {
 
         <SettingsSection title="Voice">
           <SwitchRow
-            label="Background recording"
-            description="Record while app is minimized (Android)"
-            value={backgroundVoiceEnabled}
-            onValueChange={(v) => void setBackgroundVoice(v)}
+            label="Keep listening"
+            description="Assistant stays active and keeps listening between turns. When off, voice chat ends after inactivity."
+            value={assistantContinuousListening}
+            onValueChange={(v) => void setAssistantContinuousListening(v)}
           />
           <SwitchRow
             label="Auto-send after transcribe"
@@ -208,23 +207,20 @@ export default function SettingsScreen() {
           />
         </SettingsSection>
 
-        <SettingsSection title="Legal">
+        <SettingsSection title="About">
+          <Text variant="bodyMedium">AI Assistant</Text>
+          <Text variant="caption" muted style={{ marginTop: spacing.xs }}>
+            Version {Constants.expoConfig?.version ?? '1.0.0'}
+          </Text>
           <Button
             label="Terms & Privacy"
             variant="secondary"
+            style={{ marginTop: spacing.md }}
             onPress={() => router.push('/(auth)/terms')}
           />
-        </SettingsSection>
-
-        <SettingsSection title="About">
-          <Text variant="caption" muted>
-            Version {Constants.expoConfig?.version ?? '1.0.0'}
+          <Text variant="caption" muted style={{ marginTop: spacing.md }}>
+            © {new Date().getFullYear()} AI Assistant
           </Text>
-          {__DEV__ ? (
-            <Text variant="caption" muted style={{ marginTop: spacing.xs }}>
-              API: {API_URL}
-            </Text>
-          ) : null}
         </SettingsSection>
       </ScrollView>
       <ModelPickerSheet ref={modelSheetRef} />
