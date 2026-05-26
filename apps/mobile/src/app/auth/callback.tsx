@@ -2,13 +2,16 @@ import { useEffect, useRef } from 'react';
 import { ActivityIndicator, Platform, View } from 'react-native';
 import * as Linking from 'expo-linking';
 import { router, useLocalSearchParams } from 'expo-router';
+import { fetchSession } from '@/lib/auth-client';
+import {
+  applyOAuthCookieFromUrl,
+  applyOAuthCookieParam,
+} from '@/lib/auth-cookies';
 import { useAuthStore } from '@/stores/auth';
-import { authSession } from '@/lib/auth-session';
 import { useTheme } from '@/theme/ThemeProvider';
 
 export default function AuthCallbackScreen() {
   const { colors } = useTheme();
-  const hydrate = useAuthStore((s) => s.hydrate);
   const params = useLocalSearchParams<{ cookie?: string }>();
   const handled = useRef(false);
 
@@ -20,26 +23,21 @@ export default function AuthCallbackScreen() {
       handled.current = true;
 
       if (typeof params.cookie === 'string' && params.cookie.length > 0) {
-        await authSession.applyOAuthCookieParam(params.cookie);
+        await applyOAuthCookieParam(params.cookie);
       } else if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        await authSession.applyOAuthUrl(window.location.href);
+        await applyOAuthCookieFromUrl(window.location.href);
       } else {
-        await authSession.applyOAuthUrl(incomingUrl);
+        await applyOAuthCookieFromUrl(incomingUrl);
       }
 
-      const session = await authSession.refresh();
-      if (session?.session) {
+      const session = await fetchSession();
+      if (session) {
         useAuthStore.setState({ session, loading: false });
         router.replace('/(app)/(main)/chats');
         return;
       }
-      await hydrate();
-      const latest = useAuthStore.getState().session;
-      if (latest?.session) {
-        router.replace('/(app)/(main)/chats');
-      } else {
-        router.replace('/(auth)/login');
-      }
+
+      router.replace('/(auth)/login');
     };
 
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -55,7 +53,7 @@ export default function AuthCallbackScreen() {
     });
 
     return () => subscription.remove();
-  }, [hydrate, params.cookie]);
+  }, [params.cookie]);
 
   return (
     <View

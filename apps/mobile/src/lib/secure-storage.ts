@@ -3,11 +3,7 @@ import type { AuthStorage } from './secure-storage.types';
 
 export type { AuthStorage } from './secure-storage.types';
 
-const AUTH_KEYS = [
-  'ai-assistant_cookie',
-  'ai-assistant_session_data',
-  'better-auth.session_token',
-] as const;
+const AUTH_KEYS = ['ai-assistant_cookie', 'ai-assistant_session_data'] as const;
 
 const webStorage: AuthStorage = {
   getItem(key: string): string | null {

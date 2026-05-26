@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AssistantSocket, ChatChunkPayload, ChatMessage } from '@ai-assistant/sdk';
 import { apiClient } from '@/lib/api-client';
+import { getSocketSessionToken } from '@/lib/auth-cookies';
 import { useAuthStore } from '@/stores/auth';
 import { useSettingsStore } from '@/stores/settings';
 import { formatChatStepError, formatUserVoiceError } from '@/lib/format-ai-error';
@@ -35,7 +36,8 @@ type StopSessionOptions = {
 };
 
 export function useVoiceAssistantSession() {
-  const sessionToken = useAuthStore((s) => s.session?.session?.token);
+  const session = useAuthStore((s) => s.session);
+  const sessionToken = session ? getSocketSessionToken() : undefined;
   const defaultRag = useSettingsStore((s) => s.defaultRagEnabled);
   const backgroundVoice = useSettingsStore((s) => s.backgroundVoiceEnabled);
   const speakRepliesEnabled = useSettingsStore((s) => s.speakRepliesEnabled);

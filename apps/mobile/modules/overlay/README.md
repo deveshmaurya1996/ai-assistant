@@ -22,16 +22,19 @@ Requires Expo development build (`npx expo prebuild` + `expo run:android`).
 |-------|------|
 | Listening / thinking (no reply) | **Compact** — ~160×72dp pill |
 | Reply text arrives | **Auto** — fixed ~58% × 32% screen |
-| Manual resize | Drag **white pill** (bottom-right) — up to ~94% × 85% |
-| Saved layout | Position and manual size persist |
+| Resize | Drag **corner arc** (bottom-right) — width/height up to ~70% × 50% screen |
+| Expand shortcut | Single-tap corner arc toggles default ↔ max size |
+| Saved layout | Position and size persist |
 
 ## Interaction
 
-- **Drag** — touch and drag the **status/header bar** to move the overlay (position is saved).
-- **Resize** — drag the **white pill** on the bottom-right to grow or shrink (not locked after auto-expand).
+- **Move** — drag the **header row** (status dot + title) to reposition (saved on release).
+- **Resize** — drag the **corner arc** (~10dp outside the card, bottom-right); release saves size.
+- **Expand shortcut** — quick tap the corner arc (no drag) toggles larger / default size.
+- **Status dot** (header, left) — **red** listening, **green** thinking/speaking, **yellow** idle.
 - **Appearance** — semi-transparent card (~50% opacity) so content behind remains visible.
 - **Scroll** — long assistant replies scroll inside the card body.
-- **Open app** — double-tap the header bar or card body (`REORDER_TO_FRONT` + `CLEAR_TOP`).
+- **Open app** — double-tap anywhere on the overlay (header, body, or card) to launch the app (`REORDER_TO_FRONT` + `CLEAR_TOP`).
 
 ## Voice idle auto-stop (JS)
 
@@ -49,7 +52,7 @@ When a voice session is active:
 ## Native (Kotlin)
 
 - `AssistantOverlayModule` — Expo module `AssistantOverlay`
-- `AssistantOverlayView` — scrollable card, drag, corner resize, double-tap launch
+- `AssistantOverlayView` — scrollable card, header drag-move, corner drag-resize, status dot, double-tap launch
 - `OverlayWindowManager` — window lifecycle + persisted layout + size tiers
 - `VoiceAssistantForegroundService` — keeps session alive in background
 

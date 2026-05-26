@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Alert, Platform } from 'react-native';
 import type { ChatMessage, ChatSessionKind } from '@ai-assistant/sdk';
 import { apiClient } from '@/lib/api-client';
+import { getSocketSessionToken } from '@/lib/auth-cookies';
+import { formatApiError } from '@/lib/format-ai-error';
 import { useAuthStore } from '@/stores/auth';
 import { useSettingsStore } from '@/stores/settings';
 import { useChatSocketStream } from './useChatSocketStream';
@@ -18,13 +21,13 @@ export function useChatRoom({
   initialKind,
 }: UseChatRoomOptions) {
   const session = useAuthStore((s) => s.session);
+  const sessionToken = session ? getSocketSessionToken() : undefined;
   const defaultRag = useSettingsStore((s) => s.defaultRagEnabled);
 
   const [title, setTitle] = useState(initialTitle ?? 'Chat');
   const [kind, setKind] = useState<ChatSessionKind>(
     initialKind === 'voice' ? 'voice' : 'text'
   );
-
   const isVoice = kind === 'voice';
 
   const {
@@ -35,9 +38,9 @@ export function useChatRoom({
     isGenerating,
     emitMessage,
   } = useChatSocketStream({
-    sessionToken: session?.session?.token,
+    sessionToken,
     sessionId,
-    enabled: Boolean(sessionId && session?.session?.token),
+    enabled: Boolean(sessionId && sessionToken),
     onTitleUpdated: setTitle,
   });
 
@@ -49,8 +52,16 @@ export function useChatRoom({
       if (chatSession.title) {
         setTitle(chatSession.title);
       }
-    } catch {
-      // keep optimistic kind from route
+    } catch (err) {
+      const message = formatApiError(err);
+      if (__DEV__) {
+        console.warn('[useChatRoom] refreshSessionMeta failed:', message, err);
+      }
+      if (Platform.OS === 'web') {
+        window.alert(`Could not load chat: ${message}`);
+      } else {
+        Alert.alert('Could not load chat', message);
+      }
     }
   }, [sessionId]);
 
