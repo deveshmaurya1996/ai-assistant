@@ -1,0 +1,25 @@
+{
+  "name": "@ai-assistant/tool-schema",
+  "version": "1.0.0",
+  "description": "Central tool schema registry for validation, AI, and UI",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc"
+  },
+  "dependencies": {
+    "@ai-assistant/types": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "~6.0.3"
+  }
+}

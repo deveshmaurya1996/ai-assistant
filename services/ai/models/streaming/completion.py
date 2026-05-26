@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import AsyncIterator, Dict, List, Optional
+from typing import AsyncIterator, Dict, List, Optional, Tuple
 
 from models.registry import Capability, litellm_kwargs, model_is_available, resolve_models
 from models.streaming.litellm_stream import iter_litellm_tokens
@@ -63,3 +63,44 @@ async def stream_completion_sse(
 
     yield sse_error(f"All models failed: {last_error}")
     yield sse_done()
+
+
+async def complete_text(
+    messages: List[Dict[str, str]],
+    preferred_model: Optional[str] = None,
+) -> Tuple[str, Optional[str]]:
+    models = resolve_models(Capability.TEXT, preferred_model)
+
+    if not _has_any_provider_key() or not models:
+        query = messages[-1]["content"] if messages else ""
+        context = context_from_messages(messages)
+        out = ""
+        async for token in iter_simulation_tokens(query, context):
+            out += token
+        return out.strip(), None
+
+    try:
+        import litellm
+
+        litellm.suppress_debug_info = True
+    except ImportError:
+        return "LiteLLM is not installed", None
+
+    last_error: Optional[Exception] = None
+    for model_name in models:
+        if not model_is_available(model_name):
+            continue
+        try:
+            call_kwargs = litellm_kwargs(model_name)
+            resp = await litellm.acompletion(messages=messages, stream=False, **call_kwargs)
+            text = (
+                resp.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+            )
+            return str(text).strip(), model_name
+        except Exception as exc:
+            last_error = exc
+            logger.warning("Text model %s failed: %s", model_name, exc)
+
+    return f"All models failed: {last_error}", None

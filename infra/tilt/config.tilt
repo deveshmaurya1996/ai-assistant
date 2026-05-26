@@ -10,6 +10,8 @@ config.define_string('web-port')
 config.define_string('postgres-port')
 config.define_string('redis-port')
 config.define_string('qdrant-port')
+config.define_string('tool-runtime-port')
+config.define_string('ai-orchestrator-port')
 
 # Single config.parse() for the whole run (https://docs.tilt.dev/tiltfile_config.html).
 TILT_CFG = config.parse()
@@ -49,6 +51,8 @@ PROFILE_APPS = [
 PROFILE_SERVICES = [
     'api',
     'ai',
+    'tool-runtime',
+    'ai-orchestrator',
 ]
 
 # Default tilt up: core infra + api + ai + mobile (Expo web, fresh cache).
@@ -146,6 +150,9 @@ SERVICE_BUILD_IGNORE = [
     '**/*.pyc',
     '**/.pytest_cache',
     '**/tsconfig.tsbuildinfo',
+    'data/wa-auth',
+    'services/api/data/wa-auth',
+    'services/whatsapp-bridge/data',
 ]
 
 def _port_int(key, default):
@@ -164,6 +171,8 @@ PORTS = {
     'postgres': _port_int('postgres-port', 5432),
     'redis': _port_int('redis-port', 6379),
     'qdrant': _port_int('qdrant-port', 6333),
+    'tool-runtime': _port_int('tool-runtime-port', 3011),
+    'ai-orchestrator': _port_int('ai-orchestrator-port', 3013),
 }
 
 def port_url(key, path=''):
@@ -173,6 +182,8 @@ def port_env():
     api = str(PORTS['api'])
     ai = str(PORTS['ai'])
     pg = str(PORTS['postgres'])
+    toolrt = str(PORTS['tool-runtime'])
+    orch = str(PORTS['ai-orchestrator'])
     return {
         'API_PORT': api,
         'AI_PORT': ai,
@@ -187,6 +198,13 @@ def port_env():
         'DATABASE_URL': 'postgresql://ai_assistant:ai_assistant@localhost:' + pg + '/ai_assistant',
         'REDIS_URL': 'redis://localhost:' + str(PORTS['redis']),
         'QDRANT_URL': 'http://localhost:' + str(PORTS['qdrant']),
+        'TOOL_RUNTIME_PORT': toolrt,
+        'AI_ORCHESTRATOR_PORT': orch,
+        'TOOL_RUNTIME_URL': 'http://localhost:' + toolrt,
+        'AI_ORCHESTRATOR_URL': 'http://localhost:' + orch,
+        'WHATSAPP_BRIDGE_URL': 'http://localhost:' + api + '/internal/whatsapp',
+        'WHATSAPP_AUTH_DIR': 'data/wa-auth',
+        'INTERNAL_SERVICE_TOKEN': 'dev-internal-token',
         'NEXT_PUBLIC_API_URL': 'http://localhost:' + api,
         'EXPO_PUBLIC_API_URL': 'http://localhost:' + api,
         'BETTER_AUTH_URL': 'http://localhost:' + api,

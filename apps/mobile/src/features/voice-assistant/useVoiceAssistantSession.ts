@@ -76,6 +76,7 @@ export function useVoiceAssistantSession() {
     setMessages,
     socketRef,
     visibleText,
+    emitMessage,
     isStreaming,
     resetStream,
     setIsGenerating,
@@ -326,11 +327,7 @@ export function useVoiceAssistantSession() {
           setPhase('waiting_for_ai');
           setIsGenerating(true);
 
-          socket?.emit('chat:message', {
-            text,
-            chatSessionId: sid,
-            ragEnabled: defaultRag,
-          });
+          emitMessage(text, defaultRag, { source: 'voice' });
 
           try {
             const assistantMessage = await waitForAssistantReply(sid);
@@ -377,7 +374,7 @@ export function useVoiceAssistantSession() {
       waitForAssistantReply,
       resetStream,
       setIsGenerating,
-      socketRef,
+      emitMessage,
       handleIdleTurn,
       markActivity,
       ensureVoiceSession,
@@ -471,6 +468,7 @@ export function useVoiceAssistantSession() {
     visibleText,
     isStreaming,
     isGenerating,
+    socketRef,
     sessionId,
     error,
     meteringLevel,

@@ -24,6 +24,7 @@ type BetterAuthSessionPayload = {
     id: string;
     email: string;
     name: string;
+    image?: string | null;
   };
   session?: {
     token: string;
@@ -37,6 +38,7 @@ export function toSessionInfo(data: BetterAuthSessionPayload | null | undefined)
       id: data.user.id,
       email: data.user.email,
       name: data.user.name,
+      image: data.user.image ?? null,
     },
     session: {
       token: data.session.token,

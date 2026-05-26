@@ -1,8 +1,9 @@
-import Redis from 'ioredis';
-import { config } from '@ai-assistant/config';
 import type { EventName } from './names';
 import { EVENTS_CHANNEL } from './names';
 import { eventPayloadSchemas } from './schemas';
+import { createRedisClient, ensureRedisConnected } from './redis-client';
+import { publishStreamEvent } from './streams';
+import type Redis from 'ioredis';
 
 export type DomainEvent<T = unknown> = {
   name: EventName;
@@ -11,16 +12,13 @@ export type DomainEvent<T = unknown> = {
 };
 
 let publisher: Redis | null = null;
+let subscriber: Redis | null = null;
 
 function getPublisher(): Redis | null {
   if (publisher) return publisher;
   try {
-    publisher = new Redis(config.redisUrl, {
-      maxRetriesPerRequest: 1,
-      lazyConnect: true,
-    });
+    publisher = createRedisClient({ maxRetriesPerRequest: 1 });
     publisher.on('error', () => {
-      /* best-effort bus */
     });
     return publisher;
   } catch {
@@ -35,19 +33,19 @@ export async function publishEvent<T extends EventName>(
   const schema = eventPayloadSchemas[name];
   const parsed = schema.parse(payload);
 
-  const client = getPublisher();
-  if (!client) return;
-
   const event: DomainEvent = {
     name,
     payload: parsed,
     timestamp: new Date().toISOString(),
   };
 
+  await publishStreamEvent(name, parsed);
+
+  const client = getPublisher();
+  if (!client) return;
+
   try {
-    if (client.status !== 'ready') {
-      await client.connect();
-    }
+    await ensureRedisConnected(client);
     await client.publish(EVENTS_CHANNEL, JSON.stringify(event));
   } catch {
     /* best-effort — do not break request flow */
@@ -57,8 +55,18 @@ export async function publishEvent<T extends EventName>(
 export function subscribeEvents(
   handler: (event: DomainEvent) => void
 ): () => void {
-  const sub = new Redis(config.redisUrl, { maxRetriesPerRequest: null });
-  sub.subscribe(EVENTS_CHANNEL).catch(() => undefined);
+  if (subscriber) {
+    return () => {
+      /* already subscribed */
+    };
+  }
+
+  subscriber = createRedisClient({ maxRetriesPerRequest: null });
+  const sub = subscriber;
+
+  sub.on('error', () => {
+    /* best-effort */
+  });
 
   sub.on('message', (_channel, message) => {
     try {
@@ -69,8 +77,14 @@ export function subscribeEvents(
     }
   });
 
+  void ensureRedisConnected(sub)
+    .then(() => sub.subscribe(EVENTS_CHANNEL))
+    .catch((err) => {
+      console.error('[events] subscribe failed:', err instanceof Error ? err.message : err);
+    });
+
   return () => {
-    sub.unsubscribe(EVENTS_CHANNEL).catch(() => undefined);
-    sub.quit().catch(() => undefined);
+    subscriber = null;
+    void sub.quit();
   };
 }

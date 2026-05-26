@@ -11,6 +11,8 @@ const root = path.resolve(__dirname, '..');
 const PORT_ENV = {
   api: 'API_PORT',
   ai: 'AI_PORT',
+  'tool-runtime': 'TOOL_RUNTIME_PORT',
+  'ai-orchestrator': 'AI_ORCHESTRATOR_PORT',
   studio: 'PRISMA_STUDIO_PORT',
   mobile: 'EXPO_DEV_PORT',
 };
@@ -125,12 +127,33 @@ async function serveMobile() {
   );
 }
 
+async function serveAiOrchestrator() {
+  const port = portFor('ai-orchestrator');
+  const orchDir = path.join(root, 'services', 'ai-orchestrator');
+  const python = findPython();
+  const code = await new Promise((resolve, reject) => {
+    const child = spawn(
+      python,
+      ['-m', 'uvicorn', 'main:app', '--reload', '--host', '0.0.0.0', '--port', String(port)],
+      { cwd: orchDir, stdio: 'inherit', env: process.env },
+    );
+    child.on('error', reject);
+    child.on('exit', (c) => resolve(c ?? 1));
+  });
+  process.exit(code);
+}
+
 const HANDLERS = {
   api: {
     build: ['pnpm', '--filter', '@ai-assistant/api', 'build'],
     serve: () => runWithEnv(['pnpm', '--filter', '@ai-assistant/api', 'run', 'serve']),
   },
+  'tool-runtime': {
+    build: ['pnpm', '--filter', '@ai-assistant/tool-runtime', 'build'],
+    serve: () => runWithEnv(['pnpm', '--filter', '@ai-assistant/tool-runtime', 'start']),
+  },
   ai: { serve: serveAi },
+  'ai-orchestrator': { serve: serveAiOrchestrator },
   studio: { serve: serveStudio },
   mobile: { serve: serveMobile },
 };
@@ -160,7 +183,9 @@ async function main() {
     return;
   }
 
-  console.error('Usage: node scripts/dev.mjs <build|serve> <api|ai|studio|mobile>');
+  console.error(
+    'Usage: node scripts/dev.mjs <build|serve> <api|tool-runtime|ai|ai-orchestrator|studio|mobile>'
+  );
   process.exit(1);
 }
 

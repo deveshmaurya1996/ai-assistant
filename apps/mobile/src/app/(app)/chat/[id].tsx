@@ -7,6 +7,7 @@ import { Text } from '@/components/ui/Text';
 import { spacing } from '@/theme/tokens';
 import { PressableScale } from '@/components/motion/PressableScale';
 import { useChatRoom } from '@/features/chat/useChatRoom';
+import { useSaveNote } from '@/features/notes/useSaveNote';
 import { ChatMessageList } from '@/components/chat/ChatMessageList';
 import { ChatComposer } from '@/components/chat/ChatComposer';
 
@@ -18,6 +19,7 @@ export default function ChatScreen() {
   }>();
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const saveNote = useSaveNote();
 
   const {
     title,
@@ -27,6 +29,7 @@ export default function ChatScreen() {
     isStreaming,
     isGenerating,
     send,
+    savedMessageIds,
   } = useChatRoom({
     sessionId: id,
     initialTitle: titleParam,
@@ -93,6 +96,8 @@ export default function ChatScreen() {
         visibleText={visibleText}
         isStreaming={isStreaming}
         isGenerating={isGenerating}
+        savedMessageIds={savedMessageIds}
+        onSaveNote={saveNote}
       />
 
       <ChatComposer onSend={send} disabled={isGenerating} />

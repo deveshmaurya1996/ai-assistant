@@ -4,6 +4,8 @@ export interface ChatOutgoingPayload {
   text: string;
   chatSessionId?: string;
   ragEnabled?: boolean;
+  confirmed?: boolean;
+  source?: 'chat' | 'voice';
 }
 
 export interface ChatChunkPayload {
@@ -67,6 +69,48 @@ export interface VoiceErrorPayload {
   details?: string;
 }
 
+export interface ToolStartPayload {
+  executionId: string;
+  tool: string;
+}
+
+export interface ToolProgressPayload {
+  executionId: string;
+  tool: string;
+  message?: string;
+  progress?: number;
+}
+
+export interface ToolCompletePayload {
+  executionId: string;
+  tool: string;
+  result?: unknown;
+}
+
+export interface ToolFailedPayload {
+  executionId: string;
+  tool: string;
+  error?: string;
+}
+
+export interface ActionConfirmRequiredPayload {
+  executionId?: string;
+  tool: string;
+  args: Record<string, unknown>;
+  preview?: unknown;
+}
+
+export interface NotificationCreatedPayload {
+  userId?: string;
+  title: string;
+  body?: string;
+  type?: string;
+}
+
+export interface VoiceInterruptedPayload {
+  sessionId?: string;
+}
+
 export interface ServerToClientEvents {
   authenticated: (data: { userId: string }) => void;
   unauthorized: (data: { error: string }) => void;
@@ -80,6 +124,13 @@ export interface ServerToClientEvents {
   'voice:processing': (data: VoiceProcessingPayload) => void;
   'voice:final': (data: VoiceFinalPayload) => void;
   'voice:error': (data: VoiceErrorPayload) => void;
+  'tool:start': (data: ToolStartPayload) => void;
+  'tool:progress': (data: ToolProgressPayload) => void;
+  'tool:complete': (data: ToolCompletePayload) => void;
+  'tool:failed': (data: ToolFailedPayload) => void;
+  'chat:action_confirm_required': (data: ActionConfirmRequiredPayload) => void;
+  'notification:created': (data: NotificationCreatedPayload) => void;
+  'voice:interrupted': (data: VoiceInterruptedPayload) => void;
 }
 
 export interface ClientToServerEvents {
@@ -89,4 +140,6 @@ export interface ClientToServerEvents {
   'voice:turn_audio': (data: VoiceTurnAudioPayload) => void;
   'voice:turn_end': (data: VoiceTurnEndPayload) => void;
   'voice:turn_cancel': (data: VoiceTurnCancelPayload) => void;
+  'execution:cancel': (data: { executionId: string }) => void;
+  'voice:interrupt': (data: { sessionId?: string; executionId?: string }) => void;
 }

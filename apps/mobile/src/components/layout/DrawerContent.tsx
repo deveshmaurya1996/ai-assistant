@@ -2,25 +2,17 @@ import { type ReactNode } from 'react';
 import { View, StyleSheet, Pressable, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import {
-  MessageSquare,
-  Mic,
-  Settings,
-  Sparkles,
-  Brain,
-  Workflow,
-  LogOut,
-  Sun,
-  Moon,
-  Smartphone,
-} from 'lucide-react-native';
+import { LogOut } from 'lucide-react-native';
+import { DrawerColorIcon } from '@/components/layout/DrawerColorIcon';
 import { Text } from '@/components/ui/Text';
+import { UserAvatar } from '@/components/ui/UserAvatar';
 import { useTheme } from '@/theme/ThemeProvider';
 import { useAuthStore } from '@/stores/auth';
 import { useSettingsStore } from '@/stores/settings';
-import { spacing, radii } from '@/theme/tokens';
+import { spacing } from '@/theme/tokens';
 import { PressableScale } from '@/components/motion/PressableScale';
 import { toggleOverlay } from '@/lib/overlay';
+import { Routes } from '@/lib/routes';
 import { useVoiceSessionBridge } from '@/features/voice-assistant/voiceSessionBridge';
 import type { ThemeMode } from '@/theme/tokens';
 import Constants from 'expo-constants';
@@ -71,7 +63,6 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
   const voiceActive = useVoiceSessionBridge((s) => s.isActive);
 
   const user = session?.user;
-  const initial = user?.name?.[0]?.toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? '?';
 
   const cycleTheme = () => {
     const order: ThemeMode[] = ['system', 'light', 'dark'];
@@ -79,14 +70,8 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
     setMode(order[(idx + 1) % order.length]);
   };
 
-  const themeIcon =
-    mode === 'dark' ? (
-      <Moon color={colors.primary} size={20} />
-    ) : mode === 'light' ? (
-      <Sun color={colors.primary} size={20} />
-    ) : (
-      <Smartphone color={colors.primary} size={20} />
-    );
+  const themeIconName =
+    mode === 'dark' ? 'themeDark' : mode === 'light' ? 'themeLight' : 'themeSystem';
 
   const onToggleOverlay = async () => {
     const next = !overlayEnabled;
@@ -107,10 +92,13 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
         paddingBottom: insets.bottom,
       }}>
       <View style={[styles.profile, { borderBottomColor: colors.border }]}>
-        <View style={[styles.avatar, { backgroundColor: colors.primaryMuted }]}>
-          <Text variant="h2" style={{ color: colors.primary }}>
-            {initial}
-          </Text>
+        <View style={styles.avatarWrap}>
+          <UserAvatar
+            image={user?.image}
+            name={user?.name}
+            email={user?.email}
+            size={48}
+          />
         </View>
         <Text variant="bodyMedium">{user?.name ?? 'Guest'}</Text>
         <Text variant="caption" muted>
@@ -120,54 +108,64 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
 
       <ScrollView style={styles.menu}>
         <NavRow
-          icon={<MessageSquare color={colors.text} size={20} />}
+          icon={<DrawerColorIcon name="newChat" drawer />}
           label="New chat"
           onPress={() => {
             navigation.closeDrawer();
-            router.push('/(app)/chat/compose');
+            router.push(Routes.chatCompose);
           }}
         />
         <NavRow
-          icon={<Mic color={colors.text} size={20} />}
+          icon={<DrawerColorIcon name="assistant" drawer />}
           label={assistantDisplayName}
           onPress={() => {
             navigation.closeDrawer();
-            router.push('/(app)/(main)/assistant');
+            router.push(Routes.assistant);
           }}
           badge={voiceActive ? 'Active' : undefined}
         />
         <NavRow
-          icon={<Settings color={colors.text} size={20} />}
+          icon={<DrawerColorIcon name="settings" drawer />}
           label="Settings"
           onPress={() => {
             navigation.closeDrawer();
-            router.push('/(app)/(main)/settings');
+            router.push(Routes.settings);
           }}
         />
         <NavRow
-          icon={<Sparkles color={colors.text} size={20} />}
+          icon={<DrawerColorIcon name="overlay" drawer />}
           label="Floating overlay"
           onPress={onToggleOverlay}
           badge={overlayEnabled ? 'On' : 'Off'}
         />
         <NavRow
-          icon={themeIcon}
+          icon={<DrawerColorIcon name={themeIconName} drawer />}
           label={`Theme: ${mode}`}
           onPress={cycleTheme}
         />
         <NavRow
-          icon={<Brain color={colors.text} size={20} />}
-          label="Memory"
-          onPress={() => {}}
-          disabled
-          badge="Soon"
+          icon={<DrawerColorIcon name="notes" drawer />}
+          label="Notes"
+          onPress={() => {
+            navigation.closeDrawer();
+            router.push(Routes.notes);
+          }}
         />
         <NavRow
-          icon={<Workflow color={colors.text} size={20} />}
+          icon={<DrawerColorIcon name="connectApps" drawer />}
+          label="Connect Apps"
+          onPress={() => {
+            navigation.closeDrawer();
+            router.push(Routes.integrations);
+          }}
+        />
+        <NavRow
+          icon={<DrawerColorIcon name="automations" drawer />}
           label="Automations"
-          onPress={() => {}}
-          disabled
-          badge="Soon"
+          onPress={() => {
+            navigation.closeDrawer();
+            router.push(Routes.automations);
+          }}
         />
       </ScrollView>
 
@@ -175,7 +173,7 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
         <Pressable
           onPress={async () => {
             await signOut();
-            router.replace('/(auth)/welcome');
+            router.replace(Routes.welcome);
           }}
           style={styles.signOut}>
           <LogOut color={colors.danger} size={18} />
@@ -196,21 +194,18 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     borderBottomWidth: StyleSheet.hairlineWidth,
     gap: spacing.xs,
+    alignItems: 'flex-start',
   },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: radii.full,
-    alignItems: 'center',
-    justifyContent: 'center',
+  avatarWrap: {
     marginBottom: spacing.sm,
   },
-  menu: { flex: 1, padding: spacing.md },
+  menu: { flex: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   navRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
     paddingVertical: spacing.md,
+    minHeight: 44,
   },
   footer: {
     padding: spacing.lg,

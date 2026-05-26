@@ -33,3 +33,55 @@ def ai_service():
         resource_deps=['qdrant', 'redis'],
         links=[link(port_url('ai'), 'AI :' + str(PORTS['ai']))],
     )
+
+def tool_runtime_service():
+    enabled = enabled_services()
+    if not is_enabled('tool-runtime', enabled):
+        return
+
+    local_resource(
+        'tool-runtime',
+        'node ' + DEV_SCRIPT + ' build tool-runtime',
+        serve_cmd='node ' + DEV_SCRIPT + ' serve tool-runtime',
+        deps=[
+            DEV_SCRIPT,
+            'tilt_config.json',
+            'scripts/with-env.mjs',
+            '.env',
+            'services/tool-runtime',
+            'packages/integrations',
+            'packages/tool-schema',
+            'packages/permissions',
+            'packages/database',
+            'packages/config',
+        ],
+        env=port_env(),
+        ignore=SERVICE_BUILD_IGNORE,
+        allow_parallel=True,
+        labels=SERVICE_LABELS,
+        resource_deps=['postgres-db', 'redis'],
+        links=[link(port_url('tool-runtime'), 'Tool Runtime :' + str(PORTS['tool-runtime']))],
+    )
+
+def ai_orchestrator_service():
+    enabled = enabled_services()
+    if not is_enabled('ai-orchestrator', enabled):
+        return
+
+    local_resource(
+        'ai-orchestrator',
+        serve_cmd='node ' + DEV_SCRIPT + ' serve ai-orchestrator',
+        deps=[
+            DEV_SCRIPT,
+            'tilt_config.json',
+            'scripts/with-env.mjs',
+            '.env',
+            'services/ai-orchestrator',
+        ],
+        env=port_env(),
+        ignore=SERVICE_BUILD_IGNORE,
+        allow_parallel=True,
+        labels=SERVICE_LABELS,
+        resource_deps=['tool-runtime', 'ai'],
+        links=[link(port_url('ai-orchestrator'), 'AI Orchestrator :' + str(PORTS['ai-orchestrator']))],
+    )

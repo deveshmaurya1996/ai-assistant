@@ -1,13 +1,35 @@
-export { EventNames, EVENTS_CHANNEL, type EventName } from './names';
+export { EventNames, EVENTS_CHANNEL, EVENTS_STREAM_KEY, type EventName } from './names';
 export {
   ChatStartedPayloadSchema,
   AgentExecutedPayloadSchema,
   VoiceStreamPayloadSchema,
   MemorySavedPayloadSchema,
+  ToolEventPayloadSchema,
+  AutomationEventPayloadSchema,
+  WorkflowEventPayloadSchema,
+  VoiceStatePayloadSchema,
+  IntegrationEventPayloadSchema,
+  MessageReceivedPayloadSchema,
+  MemoryUpdatedPayloadSchema,
+  NotificationCreatedPayloadSchema,
   eventPayloadSchemas,
   type ChatStartedPayload,
   type AgentExecutedPayload,
   type VoiceStreamPayload,
   type MemorySavedPayload,
+  type ToolEventPayload,
+  type AutomationEventPayload,
+  type WorkflowEventPayload,
+  type VoiceStatePayload,
+  type IntegrationEventPayload,
+  type MessageReceivedPayload,
+  type MemoryUpdatedPayload,
+  type NotificationCreatedPayload,
 } from './schemas';
 export { publishEvent, subscribeEvents, type DomainEvent } from './redis-bus';
+export {
+  publishStreamEvent,
+  subscribeStreamEvents,
+  type StreamConsumerHandler,
+  type ConsumerGroupOptions,
+} from './streams';

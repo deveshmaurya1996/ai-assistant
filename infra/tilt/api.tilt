@@ -37,6 +37,6 @@ def api():
         ignore=SERVICE_BUILD_IGNORE,
         allow_parallel=True,
         labels=SERVICE_LABELS,
-        resource_deps=['postgres-db', 'redis'],
+        resource_deps=['postgres-db', 'redis', 'tool-runtime', 'ai-orchestrator'],
         links=[link(port_url('api'), 'API :' + str(PORTS['api']))],
     )

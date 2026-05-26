@@ -6,14 +6,24 @@ import type {
   ChatMessage,
   ChatSession,
   ClientToServerEvents,
+  ConnectChallenge,
   CreateChatSessionBody,
   CreateChatSessionResponse,
   ModelsResponse,
   PreferredModelUpdate,
+  Reminder,
+  Automation,
+  CreateWorkflowInput,
+  Workflow,
   ServerToClientEvents,
   SessionInfo,
+  ToolExecutionResult,
   UploadFilePayload,
+  UserConnection,
   VoiceTranscriptionResponse,
+  WhatsAppSessionStatus,
+  UserNote,
+  CreateNoteBody,
 } from '@ai-assistant/types';
 
 export type * from '@ai-assistant/types';
@@ -59,6 +69,15 @@ export class AssistantClient {
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
     await this.resolveAuth();
 
+    const method = (options.method ?? 'GET').toUpperCase();
+    let body = options.body;
+    if (
+      ['POST', 'PUT', 'PATCH'].includes(method) &&
+      (body === undefined || body === null || body === '')
+    ) {
+      body = '{}';
+    }
+
     const headers: Record<string, string> = {
       Origin: this.origin,
       ...(options.headers as Record<string, string>),
@@ -66,13 +85,15 @@ export class AssistantClient {
     if (this.cookie) {
       headers.cookie = this.cookie;
     }
-    const hasBody = options.body !== undefined && options.body !== null && options.body !== '';
-    if (hasBody && !headers['Content-Type']) {
+    const hasBody = body !== undefined && body !== null && body !== '';
+    if (hasBody) {
       headers['Content-Type'] = 'application/json';
     }
 
     const res = await fetch(`${this.baseUrl}${path}`, {
       ...options,
+      method,
+      body,
       headers,
       credentials: 'include',
     });
@@ -275,5 +296,123 @@ export class AssistantClient {
     }
 
     return res.arrayBuffer();
+  }
+
+  async listIntegrationProviders() {
+    return this.request<{ providers: unknown[]; connectors: unknown[] }>(
+      '/integrations/providers'
+    );
+  }
+
+  async listConnections(): Promise<UserConnection[]> {
+    return this.request<UserConnection[]>('/integrations/connections');
+  }
+
+  async connectProvider(provider: string): Promise<ConnectChallenge & { connectionId?: string }> {
+    return this.request(`/integrations/${provider}/connect`, { method: 'POST' });
+  }
+
+  async getWhatsAppLinkSession(connectionId: string): Promise<
+    WhatsAppSessionStatus & { connectionId: string; bridgeSessionId?: string }
+  > {
+    return this.request(`/integrations/connections/${connectionId}/whatsapp/session`);
+  }
+
+  async requestWhatsAppPairing(connectionId: string, phoneNumber: string) {
+    return this.request<{
+      sessionId: string;
+      pairingCode?: string;
+      pairingPhone?: string;
+      status: string;
+    }>(`/integrations/connections/${connectionId}/whatsapp/pairing`, {
+      method: 'POST',
+      body: JSON.stringify({ phoneNumber }),
+    });
+  }
+
+  async activateConnection(connectionId: string) {
+    return this.request(`/integrations/connections/${connectionId}/activate`, {
+      method: 'POST',
+    });
+  }
+
+  async disconnectConnection(connectionId: string) {
+    return this.request(`/integrations/connections/${connectionId}`, { method: 'DELETE' });
+  }
+
+  async searchIntegrations(q: string) {
+    return this.request<{ results: unknown[] }>(
+      `/integrations/search?q=${encodeURIComponent(q)}`
+    );
+  }
+
+  async executeTool(body: {
+    tool: string;
+    args: Record<string, unknown>;
+    source?: string;
+    confirmed?: boolean;
+    preview?: boolean;
+    connectionId?: string;
+    chatSessionId?: string;
+  }): Promise<ToolExecutionResult> {
+    return this.request('/tools/execute', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async cancelToolExecution(executionId: string) {
+    return this.request(`/tools/executions/${executionId}`, { method: 'DELETE' });
+  }
+
+  async listWorkflows(): Promise<Workflow[]> {
+    return this.request<Workflow[]>('/workflows');
+  }
+
+  async createWorkflow(body: CreateWorkflowInput): Promise<Workflow> {
+    return this.request('/workflows', { method: 'POST', body: JSON.stringify(body) });
+  }
+
+  async runWorkflow(id: string) {
+    return this.request(`/workflows/${id}/run`, { method: 'POST' });
+  }
+
+  async listAutomations(): Promise<Automation[]> {
+    return this.request<Automation[]>('/automations');
+  }
+
+  async listReminders(): Promise<Reminder[]> {
+    return this.request<Reminder[]>('/reminders');
+  }
+
+  async createReminder(body: { fireAt: string; payload: Record<string, unknown> }) {
+    return this.request<Reminder>('/reminders', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async deleteReminder(id: string) {
+    return this.request(`/reminders/${id}`, { method: 'DELETE' });
+  }
+
+  async listNotes(): Promise<UserNote[]> {
+    return this.request<UserNote[]>('/notes');
+  }
+
+  async createNote(body: CreateNoteBody): Promise<UserNote> {
+    return this.request<UserNote>('/notes', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async getSavedMessageIds(sessionId: string): Promise<string[]> {
+    const params = new URLSearchParams({ sessionId });
+    return this.request<string[]>(`/notes/saved-message-ids?${params.toString()}`);
+  }
+
+  async deleteNote(id: string) {
+    return this.request(`/notes/${id}`, { method: 'DELETE' });
   }
 }

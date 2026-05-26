@@ -4,9 +4,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "prisma generate && tsc",
-    "db:generate": "prisma generate",
-    "postinstall": "prisma generate",
+    "build": "node ../../scripts/prisma-generate.mjs && node ../../node_modules/typescript/bin/tsc",
+    "db:generate": "node ../../scripts/prisma-generate.mjs",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",

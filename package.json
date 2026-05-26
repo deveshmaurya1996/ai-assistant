@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "turbo run build --filter=@ai-assistant/config --filter=@ai-assistant/types --filter=@ai-assistant/telemetry --filter=@ai-assistant/events --filter=@ai-assistant/database --filter=@ai-assistant/auth --filter=@ai-assistant/api --filter=@ai-assistant/sdk",
+    "build": "turbo run build --filter=@ai-assistant/config --filter=@ai-assistant/types --filter=@ai-assistant/telemetry --filter=@ai-assistant/events --filter=@ai-assistant/tool-schema --filter=@ai-assistant/permissions --filter=@ai-assistant/memory --filter=@ai-assistant/workflows --filter=@ai-assistant/integrations --filter=@ai-assistant/feature-flags --filter=@ai-assistant/database --filter=@ai-assistant/auth --filter=@ai-assistant/api --filter=@ai-assistant/sdk --filter=@ai-assistant/tool-runtime --filter=@ai-assistant/ingestion-engine",
     "build:all": "turbo run build",
     "dev": "turbo run dev --parallel",
     "tilt:up": "node scripts/ports.mjs up",
@@ -15,10 +15,11 @@
     "docker:up:monitoring": "docker compose -p ai-assistant -f infra/docker/compose.core.yml -f infra/docker/compose.monitoring.yml up -d",
     "docker:up:full": "docker compose -p ai-assistant -f infra/docker/compose.dev.yml up -d",
     "docker:down": "docker compose -p ai-assistant -f infra/docker/compose.dev.yml down",
-    "db:migrate": "pnpm --filter @ai-assistant/database db:migrate:deploy",
-    "db:generate": "pnpm --filter @ai-assistant/database db:generate",
+    "db:migrate": "pnpm --filter @ai-assistant/database db:migrate",
+    "db:migrate:deploy": "pnpm --filter @ai-assistant/database db:migrate:deploy",
+    "db:generate": "node scripts/prisma-generate.mjs",
     "env:setup": "node scripts/env-setup.mjs",
-    "postinstall": "pnpm --filter @ai-assistant/config build && pnpm --filter @ai-assistant/types build && pnpm --filter @ai-assistant/telemetry build && pnpm --filter @ai-assistant/events build && pnpm --filter @ai-assistant/sdk build && pnpm --filter @ai-assistant/database db:generate",
+    "postinstall": "pnpm --filter @ai-assistant/config build && pnpm --filter @ai-assistant/types build && pnpm --filter @ai-assistant/telemetry build && pnpm --filter @ai-assistant/tool-schema build && pnpm --filter @ai-assistant/events build && pnpm --filter @ai-assistant/permissions build && pnpm --filter @ai-assistant/memory build && pnpm --filter @ai-assistant/workflows build && pnpm --filter @ai-assistant/integrations build && pnpm --filter @ai-assistant/feature-flags build && pnpm --filter @ai-assistant/sdk build && node scripts/prisma-generate.mjs --lenient",
     "mobile:android": "pnpm --filter @ai-assistant/mobile android"
   },
   "devDependencies": {

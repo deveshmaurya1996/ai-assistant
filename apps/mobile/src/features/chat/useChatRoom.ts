@@ -5,6 +5,7 @@ import { getSocketSessionToken } from '@/lib/auth-cookies';
 import { formatApiError } from '@/lib/format-ai-error';
 import { useAuthStore } from '@/stores/auth';
 import { useSettingsStore } from '@/stores/settings';
+import { useSavedNotesStore } from '@/features/notes/savedNotesStore';
 import { useChatSocketStream } from './useChatSocketStream';
 import { buildStreamingMessages } from './buildStreamingMessages';
 
@@ -34,6 +35,8 @@ export function useChatRoom({
     initialKind === 'voice' ? 'voice' : 'text'
   );
   const isVoice = kind === 'voice';
+  const savedMessageIds = useSavedNotesStore((s) => s.savedMessageIds);
+  const setSavedMessageIds = useSavedNotesStore((s) => s.setSavedMessageIds);
 
   const {
     messages,
@@ -73,6 +76,18 @@ export function useChatRoom({
     setMessages(data);
   }, [sessionId, setMessages]);
 
+  const loadSavedMessageIds = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const ids = await apiClient.getSavedMessageIds(sessionId);
+      setSavedMessageIds(ids);
+    } catch (err) {
+      if (__DEV__) {
+        console.warn('[useChatRoom] loadSavedMessageIds failed:', formatApiError(err), err);
+      }
+    }
+  }, [sessionId, setSavedMessageIds]);
+
   useEffect(() => {
     if (!sessionId) return;
 
@@ -82,12 +97,14 @@ export function useChatRoom({
     if (!hadSessionOnMount.current) {
       hadSessionOnMount.current = true;
       void refreshSessionMeta();
+      void loadSavedMessageIds();
       return;
     }
 
     void loadMessages();
     void refreshSessionMeta();
-  }, [sessionId, initialKind, initialTitle, loadMessages, refreshSessionMeta]);
+    void loadSavedMessageIds();
+  }, [sessionId, initialKind, initialTitle, loadMessages, refreshSessionMeta, loadSavedMessageIds]);
 
   const send = useCallback(
     (text: string) => {
@@ -120,5 +137,6 @@ export function useChatRoom({
     send,
     loadMessages,
     refreshSessionMeta,
+    savedMessageIds,
   };
 }

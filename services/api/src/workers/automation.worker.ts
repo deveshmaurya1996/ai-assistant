@@ -1,6 +1,8 @@
 import { Queue, Worker } from 'bullmq';
 import { prisma, Prisma } from '@ai-assistant/database';
 import { config } from '@ai-assistant/config';
+import { EventNames, publishEvent } from '@ai-assistant/events';
+import { toolRuntimeFetch } from '../lib/runtime-clients';
 
 let automationQueue: Queue | null = null;
 let automationWorker: Worker | null = null;
@@ -36,11 +38,11 @@ export async function scheduleAutomation(
 
 export function startAutomationWorker(): Worker | null {
   try {
-    automationQueue = new Queue('automations', { connection: getConnection() });
+    automationQueue = new Queue('automation-queue', { connection: getConnection() });
     queueReady = true;
 
     automationWorker = new Worker(
-      'automations',
+      'automation-queue',
       async (job) => {
         const { automationId } = job.data as { automationId: string };
         const automation = await prisma.automation.findUnique({
@@ -52,11 +54,37 @@ export function startAutomationWorker(): Worker | null {
           data: { automationId, status: 'RUNNING' },
         });
 
+        await publishEvent(EventNames.AUTOMATION_STARTED, {
+          userId: automation.userId,
+          automationId,
+          runId: run.id,
+          status: 'started',
+        });
+
         try {
-          const result = {
-            executed: automation.action,
-            at: new Date().toISOString(),
+          const action = automation.action as {
+            tool?: string;
+            connector?: string;
+            args?: Record<string, unknown>;
           };
+
+          let result: unknown = { executed: action, at: new Date().toISOString() };
+
+          if (action.tool) {
+            const res = await toolRuntimeFetch('/v1/executions', {
+              method: 'POST',
+              body: JSON.stringify({
+                userId: automation.userId,
+                tool: action.tool,
+                args: action.args ?? {},
+                source: 'automation',
+                confirmed: true,
+              }),
+            });
+            result = await res.json();
+            if (!res.ok) throw new Error(JSON.stringify(result));
+          }
+
           await prisma.automationRun.update({
             where: { id: run.id },
             data: {
@@ -64,6 +92,13 @@ export function startAutomationWorker(): Worker | null {
               result: result as Prisma.InputJsonValue,
               completedAt: new Date(),
             },
+          });
+
+          await publishEvent(EventNames.AUTOMATION_COMPLETED, {
+            userId: automation.userId,
+            automationId,
+            runId: run.id,
+            status: 'completed',
           });
         } catch (err) {
           await prisma.automationRun.update({
@@ -75,6 +110,14 @@ export function startAutomationWorker(): Worker | null {
               } as Prisma.InputJsonValue,
               completedAt: new Date(),
             },
+          });
+
+          await publishEvent(EventNames.AUTOMATION_COMPLETED, {
+            userId: automation.userId,
+            automationId,
+            runId: run.id,
+            status: 'failed',
+            error: err instanceof Error ? err.message : 'Unknown error',
           });
         }
       },

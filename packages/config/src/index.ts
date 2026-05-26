@@ -48,6 +48,11 @@ export interface AppConfig {
   openaiApiKey: string | undefined;
   anthropicApiKey: string | undefined;
   pollinationsApiKey: string | undefined;
+  toolRuntimeUrl: string;
+  aiOrchestratorUrl: string;
+  ingestionEngineUrl: string;
+  whatsappBridgeUrl: string;
+  integrationEncryptionKey: string;
 }
 
 export const config: AppConfig = {
@@ -83,6 +88,17 @@ export const config: AppConfig = {
   openaiApiKey: process.env.OPENAI_API_KEY,
   anthropicApiKey: process.env.ANTHROPIC_API_KEY,
   pollinationsApiKey: process.env.POLLINATIONS_API_KEY,
+  toolRuntimeUrl: envOptional('TOOL_RUNTIME_URL', 'http://localhost:3011'),
+  aiOrchestratorUrl: envOptional('AI_ORCHESTRATOR_URL', 'http://localhost:3013'),
+  ingestionEngineUrl: envOptional('INGESTION_ENGINE_URL', 'http://localhost:3012'),
+  whatsappBridgeUrl: envOptional(
+    'WHATSAPP_BRIDGE_URL',
+    `http://localhost:${envInt('API_PORT', 3000)}/internal/whatsapp`
+  ),
+  integrationEncryptionKey: envOptional(
+    'INTEGRATION_ENCRYPTION_KEY',
+    'dev-integration-key-change-me'
+  ),
 };
 
 export function getAiServiceUrl(path: string): string {

@@ -14,6 +14,8 @@ type Props = {
   showStreamCursor?: boolean;
   emptyHint?: string;
   contentPaddingBottom?: number;
+  savedMessageIds?: Set<string>;
+  onSaveNote?: (content: string, messageId: string) => Promise<void>;
 };
 
 export function ChatMessageList({
@@ -24,6 +26,8 @@ export function ChatMessageList({
   showStreamCursor = true,
   emptyHint,
   contentPaddingBottom,
+  savedMessageIds,
+  onSaveNote,
 }: Props) {
   const listRef = useRef<FlashListRef<ChatMessage>>(null);
 
@@ -37,6 +41,8 @@ export function ChatMessageList({
       message={item}
       showGeneratingSpinner={isGenerating}
       showStreamCursor={showStreamCursor && isStreaming}
+      isSaved={savedMessageIds?.has(item.id) ?? false}
+      onSaveNote={onSaveNote}
     />
   );
 
@@ -54,7 +60,7 @@ export function ChatMessageList({
     <FlashList
       ref={listRef}
       data={messages}
-      extraData={`${visibleText}|${isStreaming}|${isGenerating}`}
+      extraData={`${visibleText}|${isStreaming}|${isGenerating}|${savedMessageIds?.size ?? 0}`}
       keyExtractor={(item) => item.id}
       contentContainerStyle={[
         styles.list,

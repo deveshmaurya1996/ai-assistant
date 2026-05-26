@@ -1,6 +1,5 @@
 generator client {
   provider   = "prisma-client-js"
-  output     = "../generated/prisma"
   engineType = "library"
 }
 
@@ -25,6 +24,12 @@ model User {
   agentConfigs  AgentConfig[]
   memoryItems   MemoryItem[]
   automations   Automation[]
+  connections   UserConnection[]
+  workflows     Workflow[]
+  reminders     Reminder[]
+  toolInvocations ToolInvocation[]
+  fileAssets    FileAsset[]
+  notes         UserNote[]
 }
 
 model Session {
@@ -97,6 +102,7 @@ model Message {
   createdAt     DateTime    @default(now())
 
   chatSession   ChatSession @relation(fields: [chatSessionId], references: [id], onDelete: Cascade)
+  notes         UserNote[]
 
   @@index([chatSessionId])
 }
@@ -113,6 +119,24 @@ model AgentConfig {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model UserNote {
+  id              String   @id @default(uuid())
+  userId          String
+  title           String
+  content         String
+  sourceMessageId String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceMessage Message? @relation(fields: [sourceMessageId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, sourceMessageId])
+  @@index([userId])
+  @@index([userId, updatedAt])
+  @@index([userId, sourceMessageId])
 }
 
 model MemoryItem {
@@ -180,4 +204,176 @@ enum AutomationStatus {
   RUNNING
   COMPLETED
   FAILED
+}
+
+enum ConnectionStatus {
+  PENDING
+  ACTIVE
+  ERROR
+  DISCONNECTED
+}
+
+enum ToolInvocationStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ReminderStatus {
+  PENDING
+  FIRED
+  CANCELLED
+}
+
+enum WorkflowRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model IntegrationProvider {
+  id          String   @id
+  name        String
+  authType    String
+  scopes      String[]
+  isEnabled   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  connections UserConnection[]
+}
+
+model UserConnection {
+  id                   String           @id @default(uuid())
+  userId               String
+  providerId           String
+  status               ConnectionStatus @default(PENDING)
+  encryptedCredentials String?
+  scopes               String[]
+  metadata             Json?
+  lastSyncAt           DateTime?
+  expiresAt            DateTime?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  user                 User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider             IntegrationProvider  @relation(fields: [providerId], references: [id])
+  indexedResources     IndexedResource[]
+  toolInvocations      ToolInvocation[]
+
+  @@index([userId])
+  @@index([providerId])
+}
+
+model IndexedResource {
+  id           String   @id @default(uuid())
+  connectionId String
+  provider     String
+  resourceType String
+  externalId   String
+  title        String?
+  snippet      String?
+  mimeType     String?
+  url          String?
+  modifiedAt   DateTime?
+  embeddingId  String?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  connection   UserConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([connectionId, externalId])
+  @@index([connectionId])
+  @@index([provider])
+}
+
+model FileAsset {
+  id           String   @id @default(uuid())
+  userId       String
+  filename     String
+  mimeType     String
+  sizeBytes    Int
+  storageKey   String
+  checksum     String?
+  indexedAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ToolInvocation {
+  id             String               @id @default(uuid())
+  userId         String
+  connectionId   String?
+  executionId    String               @unique
+  toolName       String
+  args           Json
+  result         Json?
+  status         ToolInvocationStatus @default(PENDING)
+  source         String
+  chatSessionId  String?
+  confirmed      Boolean              @default(false)
+  error          String?
+  startedAt      DateTime             @default(now())
+  completedAt    DateTime?
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection     UserConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([executionId])
+}
+
+model Reminder {
+  id        String         @id @default(uuid())
+  userId    String
+  fireAt    DateTime
+  payload   Json
+  status    ReminderStatus @default(PENDING)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([fireAt])
+}
+
+model Workflow {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  trigger   Json
+  conditions Json    @default("[]")
+  actions   Json
+  retries   Json?
+  rollback  Json?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runs      WorkflowRun[]
+
+  @@index([userId])
+}
+
+model WorkflowRun {
+  id         String            @id @default(uuid())
+  workflowId String
+  status     WorkflowRunStatus @default(PENDING)
+  steps      Json?
+  error      String?
+  startedAt  DateTime          @default(now())
+  completedAt DateTime?
+
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([workflowId])
 }

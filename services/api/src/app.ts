@@ -6,6 +6,7 @@ import { config } from '@ai-assistant/config';
 import { prisma } from '@ai-assistant/database';
 import { registerBetterAuth } from './plugins/better-auth';
 import { registerRateLimit } from './plugins/rate-limit';
+import { registerInternalAuth } from './plugins/internal-auth';
 import { chatRoutes } from './routes/chat.routes';
 import { agentRoutes } from './routes/agent.routes';
 import { memoryRoutes } from './routes/memory.routes';
@@ -14,8 +15,14 @@ import { settingsRoutes } from './routes/settings.routes';
 import { voiceRoutes } from './routes/voice.routes';
 import { assistantRoutes } from './routes/assistant.routes';
 import { imageRoutes } from './routes/image.routes';
+import { integrationRoutes } from './routes/integration.routes';
+import { toolRoutes } from './routes/tool.routes';
+import { workflowRoutes } from './routes/workflow.routes';
+import { reminderRoutes } from './routes/reminder.routes';
+import { notesRoutes } from './routes/notes.routes';
+import { whatsappRoutes } from './routes/whatsapp.routes';
 import { setupSocketIO } from './socket';
-import { startAutomationWorker } from './workers/automation.worker';
+import { startAllWorkers } from './workers/queues';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -27,6 +34,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(multipart);
 
   await registerRateLimit(app);
+  await registerInternalAuth(app);
 
   await app.register(cors, {
     origin: true,
@@ -75,9 +83,15 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(voiceRoutes, { prefix: '/voice' });
   app.register(assistantRoutes, { prefix: '/assistant' });
   app.register(imageRoutes, { prefix: '/image' });
+  app.register(integrationRoutes, { prefix: '/integrations' });
+  app.register(toolRoutes, { prefix: '/tools' });
+  app.register(workflowRoutes, { prefix: '/workflows' });
+  app.register(reminderRoutes, { prefix: '/reminders' });
+  app.register(notesRoutes, { prefix: '/notes' });
+  app.register(whatsappRoutes, { prefix: '/internal/whatsapp' });
 
   setupSocketIO(app);
-  startAutomationWorker();
+  startAllWorkers();
 
   return app;
 }

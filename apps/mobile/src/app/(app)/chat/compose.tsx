@@ -10,12 +10,14 @@ import { PressableScale } from '@/components/motion/PressableScale';
 import { apiClient } from '@/lib/api-client';
 import { formatApiError } from '@/lib/format-ai-error';
 import { useChatRoom } from '@/features/chat/useChatRoom';
+import { useSaveNote } from '@/features/notes/useSaveNote';
 import { ChatMessageList } from '@/components/chat/ChatMessageList';
 import { ChatComposer } from '@/components/chat/ChatComposer';
 
 export default function ChatComposeScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  const saveNote = useSaveNote();
   const [liveSessionId, setLiveSessionId] = useState<string | undefined>();
   const liveSessionIdRef = useRef<string | undefined>(undefined);
   const titleRef = useRef('New chat');
@@ -98,6 +100,7 @@ export default function ChatComposeScreen() {
         isStreaming={isStreaming}
         isGenerating={isGenerating}
         emptyHint="Send a message to start"
+        onSaveNote={saveNote}
       />
 
       <ChatComposer onSend={send} disabled={isGenerating} />

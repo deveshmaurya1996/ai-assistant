@@ -4,6 +4,7 @@ import { config } from '@ai-assistant/config';
 
 const API_BASE = `http://localhost:${config.apiPort}`;
 const AI_BASE = config.aiServiceUrl.replace(/\/$/, '');
+const TOOLRT_BASE = config.toolRuntimeUrl.replace(/\/$/, '');
 
 const authHeaders = {
   'Content-Type': 'application/json',
@@ -63,6 +64,12 @@ async function runTest() {
   }
   console.log(`User registered. User ID: ${userId}`);
 
+  console.log('\n1.1 Verifying internal routes are protected...');
+  const internalRes = await fetch(`${API_BASE}/internal/whatsapp/health`);
+  if (internalRes.status !== 403) {
+    throw new Error(`Expected 403 for internal route, got ${internalRes.status}`);
+  }
+
   console.log('\n2. Ingesting documents into RAG...');
   const ingestRes = await fetch(`${AI_BASE}/v1/kb/ingest`, {
     method: 'POST',
@@ -97,6 +104,26 @@ async function runTest() {
   const chatSession = (await chatSessionRes.json()) as { id: string };
   sessionId = chatSession.id;
   console.log(`Chat session: ${sessionId}`);
+
+  console.log('\n3.1 Creating ACTIVE notes connection (test fixture)...');
+  await prisma.userConnection.upsert({
+    where: { id: `notes_${userId}` },
+    create: { id: `notes_${userId}`, userId, providerId: 'notes', status: 'ACTIVE', scopes: [] },
+    update: { status: 'ACTIVE' },
+  });
+
+  console.log('\n3.2 Verifying tool catalog is user-scoped...');
+  const toolsRes = await fetch(
+    `${TOOLRT_BASE}/v1/tools/available?userId=${encodeURIComponent(userId)}`
+  );
+  if (!toolsRes.ok) throw new Error(`tools/available failed: ${await toolsRes.text()}`);
+  const toolsData = (await toolsRes.json()) as { tools?: Array<{ function?: { name?: string } }> };
+  const toolNames = (toolsData.tools ?? [])
+    .map((t) => t.function?.name)
+    .filter(Boolean) as string[];
+  if (!toolNames.includes('notes.create')) {
+    throw new Error('Expected notes.create to be available for ACTIVE notes connection');
+  }
 
   console.log('\n4. WebSocket streaming...');
   await new Promise<void>((resolve, reject) => {
@@ -143,6 +170,47 @@ async function runTest() {
 
   if (dbMessages.length < 2) {
     throw new Error('Expected USER and ASSISTANT messages in database');
+  }
+
+  console.log('\n6. Cross-user isolation check (cannot execute using other user connectionId)...');
+  const otherEmail = `testuser2_${Date.now()}@example.com`;
+  const signUpRes2 = await fetch(`${API_BASE}/api/auth/sign-up/email`, {
+    method: 'POST',
+    headers: authHeaders,
+    body: JSON.stringify({
+      email: otherEmail,
+      password: testPassword,
+      name: 'Test Integration User 2',
+    }),
+  });
+  if (!signUpRes2.ok) throw new Error(`Second sign up failed: ${await signUpRes2.text()}`);
+  const sessionRes2 = await fetch(`${API_BASE}/api/auth/get-session`, {
+    headers: { ...authHeaders, cookie: parseCookies(signUpRes2.headers.getSetCookie?.() ?? []) },
+  });
+  const sessionData2 = (await sessionRes2.json()) as { user?: { id: string } };
+  const userId2 = sessionData2.user?.id ?? '';
+  if (!userId2) throw new Error('Failed to obtain second user');
+  const otherConn = await prisma.userConnection.upsert({
+    where: { id: `notes_${userId2}` },
+    create: { id: `notes_${userId2}`, userId: userId2, providerId: 'notes', status: 'ACTIVE', scopes: [] },
+    update: { status: 'ACTIVE' },
+  });
+
+  const execRes = await fetch(`${TOOLRT_BASE}/v1/executions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userId,
+      tool: 'notes.create',
+      args: { title: 'x', content: 'y' },
+      source: 'manual',
+      confirmed: true,
+      connectionId: otherConn.id,
+      preview: true,
+    }),
+  });
+  if (execRes.ok) {
+    throw new Error('Expected tool-runtime to reject other user connectionId');
   }
 
   console.log('\nEnd-to-end integration test SUCCEEDED.');

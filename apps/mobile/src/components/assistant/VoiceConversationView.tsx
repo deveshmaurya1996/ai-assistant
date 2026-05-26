@@ -3,6 +3,7 @@ import type { ChatMessage } from '@ai-assistant/sdk';
 import { Text } from '@/components/ui/Text';
 import { spacing } from '@/theme/tokens';
 import { ChatMessageList } from '@/components/chat/ChatMessageList';
+import { useSaveNote } from '@/features/notes/useSaveNote';
 import type { VoiceAssistantPhase } from '@/features/voice-assistant/useVoiceAssistantSession';
 
 type Props = {
@@ -37,6 +38,7 @@ export function VoiceConversationView({
   phase,
   contentPaddingBottom,
 }: Props) {
+  const saveNote = useSaveNote();
   const emptyHint = emptyHintForPhase(phase);
 
   if (messages.length === 0) {
@@ -56,6 +58,7 @@ export function VoiceConversationView({
       isStreaming={isStreaming}
       isGenerating={isGenerating}
       contentPaddingBottom={contentPaddingBottom}
+      onSaveNote={saveNote}
     />
   );
 }

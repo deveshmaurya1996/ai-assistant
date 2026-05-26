@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { Prisma, prisma } from '@ai-assistant/database';
+import { getConnectorForTool } from '@ai-assistant/integrations';
 import { authenticateRequest } from '../utils/auth.middleware';
 import { requireUserId } from '../lib/auth';
 import { sendError } from '../lib/errors';
@@ -39,6 +40,23 @@ export async function automationRoutes(fastify: FastifyInstance) {
 
       const userId = requireUserId(request);
       const body = AutomationSchema.parse(request.body);
+
+      const action = body.action as { tool?: unknown };
+      if (typeof action?.tool === 'string' && action.tool.trim()) {
+        const connector = getConnectorForTool(action.tool);
+        if (!connector) {
+          throw badRequest(`Unknown tool: ${action.tool}`);
+        }
+        const conn = await prisma.userConnection.findFirst({
+          where: { userId, providerId: connector.providerId, status: 'ACTIVE' },
+        });
+        if (!conn) {
+          throw badRequest(
+            `No active ${connector.providerId} connection. Connect it in Connect Apps first.`
+          );
+        }
+      }
+
       const automation = await prisma.automation.create({
         data: {
           userId,

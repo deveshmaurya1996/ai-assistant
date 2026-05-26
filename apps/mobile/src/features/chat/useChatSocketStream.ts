@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AssistantSocket, ChatMessage } from '@ai-assistant/sdk';
 import { apiClient } from '@/lib/api-client';
 import { formatChatSocketError } from '@/lib/format-ai-error';
+import { useChatActionConfirmBridge } from './chatActionConfirmBridge';
 import { useStreamingDisplay } from './useStreamingDisplay';
 
 type Options = {
@@ -37,6 +38,12 @@ export function useChatSocketStream({
   const [isGenerating, setIsGenerating] = useState(false);
   const socketRef = useRef<AssistantSocket | null>(null);
   const sessionIdRef = useRef(sessionId ?? null);
+  const lastSentRef = useRef<{
+    text: string;
+    ragEnabled: boolean;
+    chatSessionId?: string;
+    source?: 'chat' | 'voice';
+  } | null>(null);
 
   const stream = useStreamingDisplay();
   const streamRef = useRef(stream);
@@ -109,37 +116,73 @@ export function useChatSocketStream({
         sessionIdRef.current = data.chatSessionId;
         onSessionCreatedRef.current?.(data.chatSessionId);
       });
+
+      connected.on('chat:action_confirm_required', (payload) => {
+        if (payload.tool.startsWith('whatsapp.')) {
+          setIsGenerating(false);
+          return;
+        }
+        useChatActionConfirmBridge.getState().setPending(payload);
+        setIsGenerating(false);
+      });
     })();
 
     return () => {
       cancelled = true;
       socket?.disconnect();
       socketRef.current = null;
+      useChatActionConfirmBridge.getState().registerHandlers(null);
     };
   }, [sessionToken, enabled]);
 
-  const emitMessage = useCallback((text: string, ragEnabled: boolean) => {
+  const emitMessage = useCallback(
+    (text: string, ragEnabled: boolean, opts?: { confirmed?: boolean; source?: 'chat' | 'voice' }) => {
     if (!text.trim() || !socketRef.current) return false;
 
     streamRef.current.reset();
     setIsGenerating(true);
+    useChatActionConfirmBridge.getState().setPending(null);
 
     const filterId = sessionIdRef.current;
     const payload: {
       text: string;
       ragEnabled: boolean;
       chatSessionId?: string;
+      confirmed?: boolean;
+      source?: 'chat' | 'voice';
     } = {
       text: text.trim(),
       ragEnabled,
+      source: opts?.source ?? 'chat',
     };
     if (filterId) {
       payload.chatSessionId = filterId;
     }
+    if (opts?.confirmed) payload.confirmed = true;
 
+    lastSentRef.current = payload;
+    useChatActionConfirmBridge.getState().registerHandlers({
+      confirm: () => {
+        const last = lastSentRef.current;
+        if (!last || !socketRef.current) return;
+        useChatActionConfirmBridge.getState().setPending(null);
+        streamRef.current.reset();
+        setIsGenerating(true);
+        socketRef.current.emit('chat:message', {
+          ...last,
+          confirmed: true,
+        });
+      },
+      cancel: () => {
+        useChatActionConfirmBridge.getState().setPending(null);
+        setIsGenerating(false);
+      },
+    });
     socketRef.current.emit('chat:message', payload);
     return true;
-  }, []);
+    },
+    []
+  );
 
   const beginStream = useCallback(() => {
     streamRef.current.reset();

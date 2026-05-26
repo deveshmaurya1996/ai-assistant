@@ -2,15 +2,18 @@ import { prisma, Role, type ChatSessionKind as PrismaChatSessionKind } from '@ai
 
 type ChatSessionKind = 'text' | 'voice';
 import { config as appConfig } from '@ai-assistant/config';
-import { fetchAi, streamAi } from '../lib/http';
+import { fetchAi } from '../lib/http';
 import { forbidden, notFound } from '../lib/errors';
-import {
-  parseSseBuffer,
-  type ChatErrorPayload,
-  type ChatTokenPayload,
-} from '../lib/sse';
 import { EventNames, publishEvent } from '@ai-assistant/events';
 import { ingestConversationMemory } from './memory.service';
+import { runAgentTurn, type AgentSource } from './agent-turn.service';
+import {
+  buildConfirmText,
+  clearPendingConfirm,
+  getPendingConfirm,
+  setPendingConfirm,
+  usesInlineConfirm,
+} from './pending-confirm.service';
 
 export type ChatHistoryMessage = { role: string; content: string };
 
@@ -172,15 +175,24 @@ export async function maybeAutoTitleSession(params: {
   }
 }
 
+export type ActionConfirmPayload = {
+  tool: string;
+  args: Record<string, unknown>;
+  executionId?: string;
+};
+
 export async function processChatMessage(params: {
   userId: string;
   text: string;
   chatSessionId?: string;
   ragEnabled?: boolean;
   source?: 'socket' | 'http';
+  agentSource?: AgentSource;
+  confirmed?: boolean;
   onChunk: (chunk: string, sessionId: string) => void | Promise<void>;
   onSessionCreated?: (sessionId: string) => void;
   onTitleUpdated?: (sessionId: string, title: string) => void;
+  onActionConfirmRequired?: (payload: ActionConfirmPayload) => void;
 }) {
   const {
     userId,
@@ -224,60 +236,80 @@ export async function processChatMessage(params: {
       : appConfig.primaryModel;
   const preferredModel = rawPreferred.trim();
 
-  const stream = await streamAi('/v1/chat/stream', {
-    query: text,
-    rag_enabled: ragEnabled,
-    chat_history: dbHistory.map((m) => ({
-      role: toAiRole(m.role),
-      content: m.content,
-    })),
-    user_id: userId,
-    preferred_model: preferredModel,
-  });
+  const agentSource: AgentSource =
+    params.agentSource ?? (source === 'socket' ? 'chat' : 'chat');
 
-  const reader = stream.getReader();
-  const decoder = new TextDecoder('utf-8');
-  let accumulated = '';
-  let sseBuffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    sseBuffer += decoder.decode(value, { stream: true });
-
-    const { events, rest } = parseSseBuffer(sseBuffer);
-    sseBuffer = rest;
-
-    for (const ev of events) {
-      if (ev.event === 'token') {
-        const payload = parseSsePayload<ChatTokenPayload>(ev.data, { content: '' });
-        if (payload.content) {
-          accumulated += payload.content;
-          await onChunk(payload.content, sessionId);
-        }
-      } else if (ev.event === 'error') {
-        const payload = parseSsePayload<ChatErrorPayload>(ev.data, {
-          message: 'Stream error',
-        });
-        const message = payload.message ?? 'Stream error';
-        accumulated += `\n[${message}]\n`;
-        await onChunk(`\n[${message}]\n`, sessionId);
-      }
+  const turn = await runAgentTurn(
+    {
+      userId,
+      query: text,
+      chatSessionId: sessionId,
+      chatHistory: dbHistory.map((m) => ({
+        role: toAiRole(m.role),
+        content: m.content,
+      })),
+      ragEnabled,
+      preferredModel,
+      confirmed: params.confirmed ?? false,
+      source: agentSource,
+    },
+    {
+      onToken: (token) => onChunk(token, sessionId),
+      onActionConfirmRequired: params.onActionConfirmRequired,
     }
+  );
+
+  if (turn.requiresConfirmation && turn.confirmPayload) {
+    const payload = turn.confirmPayload;
+
+    if (usesInlineConfirm(payload.tool)) {
+      const confirmText = buildConfirmText(payload.tool, payload.args);
+      await onChunk(confirmText, sessionId);
+
+      setPendingConfirm(sessionId, {
+        tool: payload.tool,
+        args: payload.args,
+        originalText: text,
+        userId,
+      });
+
+      const assistantMessage = await prisma.message.create({
+        data: {
+          chatSessionId: sessionId,
+          role: 'ASSISTANT',
+          content: confirmText,
+        },
+      });
+
+      return {
+        sessionId,
+        userMessage,
+        assistantMessage,
+        requiresConfirmation: true,
+        inlineConfirm: true,
+      };
+    }
+
+    params.onActionConfirmRequired?.(payload);
+
+    const assistantMessage = await prisma.message.create({
+      data: {
+        chatSessionId: sessionId,
+        role: 'ASSISTANT',
+        content: 'Please confirm this action to continue.',
+      },
+    });
+
+    return {
+      sessionId,
+      userMessage,
+      assistantMessage,
+      requiresConfirmation: true,
+      modalConfirm: true,
+    };
   }
 
-  if (sseBuffer.trim()) {
-    const { events } = parseSseBuffer(`${sseBuffer}\n\n`);
-    for (const ev of events) {
-      if (ev.event === 'token') {
-        const payload = parseSsePayload<ChatTokenPayload>(ev.data, { content: '' });
-        if (payload.content) {
-          accumulated += payload.content;
-          await onChunk(payload.content, sessionId);
-        }
-      }
-    }
-  }
+  const accumulated = turn.fullText;
 
   const assistantMessage = await prisma.message.create({
     data: {
@@ -306,4 +338,130 @@ export async function processChatMessage(params: {
   });
 
   return { sessionId, userMessage, assistantMessage };
+}
+
+async function loadTurnContext(userId: string, sessionId: string) {
+  const dbHistory = await prisma.message.findMany({
+    where: { chatSessionId: sessionId },
+    orderBy: { createdAt: 'asc' },
+    take: 10,
+  });
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { settings: true },
+  });
+  const settings = (user?.settings as Record<string, unknown> | null) ?? {};
+  const rawPreferred =
+    typeof settings.preferredModel === 'string'
+      ? settings.preferredModel
+      : appConfig.primaryModel;
+
+  return {
+    dbHistory,
+    preferredModel: rawPreferred.trim(),
+  };
+}
+
+export async function processInlineConfirmAccept(params: {
+  userId: string;
+  chatSessionId: string;
+  pending: {
+    tool: string;
+    args: Record<string, unknown>;
+    originalText: string;
+    userId: string;
+  };
+  replyText: string;
+  ragEnabled?: boolean;
+  agentSource?: AgentSource;
+  onChunk: (chunk: string, sessionId: string) => void | Promise<void>;
+  onTitleUpdated?: (sessionId: string, title: string) => void;
+}) {
+  const { userId, chatSessionId, pending, replyText, onChunk, onTitleUpdated } = params;
+  await assertSessionAccess(userId, chatSessionId);
+
+  const userMessage = await prisma.message.create({
+    data: { chatSessionId, role: 'USER', content: replyText },
+  });
+
+  const { dbHistory, preferredModel } = await loadTurnContext(userId, chatSessionId);
+  const agentSource: AgentSource = params.agentSource ?? 'chat';
+
+  const turn = await runAgentTurn(
+    {
+      userId,
+      query: pending.originalText,
+      chatSessionId,
+      chatHistory: dbHistory.map((m) => ({
+        role: toAiRole(m.role),
+        content: m.content,
+      })),
+      ragEnabled: params.ragEnabled ?? true,
+      preferredModel,
+      confirmed: true,
+      source: agentSource,
+    },
+    { onToken: (token) => onChunk(token, chatSessionId) }
+  );
+
+  if (turn.requiresConfirmation && turn.confirmPayload) {
+    throw new Error('Action still requires confirmation after approval');
+  }
+
+  const assistantMessage = await prisma.message.create({
+    data: {
+      chatSessionId,
+      role: 'ASSISTANT',
+      content: turn.fullText,
+    },
+  });
+
+  await prisma.chatSession.update({
+    where: { id: chatSessionId },
+    data: { updatedAt: new Date() },
+  });
+
+  ingestConversationMemory(userId, pending.originalText, turn.fullText).catch((err) => {
+    console.error('[memory] ingest failed:', err instanceof Error ? err.message : err);
+  });
+
+  void maybeAutoTitleSession({
+    userId,
+    sessionId: chatSessionId,
+    userMessage: pending.originalText,
+    assistantMessage: turn.fullText,
+    preferredModel,
+    onTitleUpdated,
+  });
+
+  return { sessionId: chatSessionId, userMessage, assistantMessage };
+}
+
+export async function processInlineConfirmCancel(params: {
+  userId: string;
+  chatSessionId: string;
+  replyText: string;
+}) {
+  const { userId, chatSessionId, replyText } = params;
+  await assertSessionAccess(userId, chatSessionId);
+
+  const userMessage = await prisma.message.create({
+    data: { chatSessionId, role: 'USER', content: replyText },
+  });
+
+  const assistantMessage = await prisma.message.create({
+    data: {
+      chatSessionId,
+      role: 'ASSISTANT',
+      content: 'Cancelled.',
+    },
+  });
+
+  await prisma.chatSession.update({
+    where: { id: chatSessionId },
+    data: { updatedAt: new Date() },
+  });
+
+  return { sessionId: chatSessionId, userMessage, assistantMessage };
 }

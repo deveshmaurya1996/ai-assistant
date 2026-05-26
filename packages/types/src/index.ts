@@ -14,3 +14,6 @@ export type * from './automation';
 export type * from './agent';
 export type * from './memory';
 export type * from './voice';
+export type * from './tool';
+export type * from './integration';
+export type * from './note';

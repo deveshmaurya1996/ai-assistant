@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from memory.rag_service import RAGService
 from models.streaming import stream_completion_sse
+from models.streaming.completion import complete_text
 from models.streaming.title import generate_chat_title
 from observability import get_langfuse
 
@@ -13,6 +14,14 @@ router = APIRouter()
 
 
 class ChatStreamRequest(BaseModel):
+    query: str
+    rag_enabled: bool = True
+    chat_history: List[Dict[str, str]] = Field(default_factory=list)
+    user_id: Optional[str] = None
+    preferred_model: Optional[str] = None
+
+
+class ChatCompleteRequest(BaseModel):
     query: str
     rag_enabled: bool = True
     chat_history: List[Dict[str, str]] = Field(default_factory=list)
@@ -108,3 +117,14 @@ async def chat_stream(payload: ChatStreamRequest):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/chat/complete")
+async def chat_complete(payload: ChatCompleteRequest):
+    context_str = ""
+    if payload.rag_enabled:
+        context_str = _retrieve_context(payload.query, payload.user_id)
+
+    messages = build_chat_messages(payload.chat_history, context_str, payload.query)
+    text, model_used = await complete_text(messages, payload.preferred_model)
+    return {"text": text, "model_used": model_used, "rag_enabled": payload.rag_enabled}

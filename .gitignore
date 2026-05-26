@@ -13,6 +13,10 @@ Thumbs.db
 
 packages/database/generated/
 
+services/whatsapp-bridge/data/
+data/wa-auth/
+services/api/data/wa-auth/
+
 packages/database/prisma/dev.db
 packages/database/prisma/dev.db-journal
 
