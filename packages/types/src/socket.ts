@@ -1,11 +1,14 @@
+import type { ChatAttachmentRef } from './attachments';
 import type { ChatMessage } from './chat';
 
 export interface ChatOutgoingPayload {
   text: string;
   chatSessionId?: string;
-  ragEnabled?: boolean;
   confirmed?: boolean;
   source?: 'chat' | 'voice';
+  attachments?: ChatAttachmentRef[];
+  personalityId?: string;
+  assistantDisplayName?: string;
 }
 
 export interface ChatChunkPayload {
@@ -16,11 +19,21 @@ export interface ChatChunkPayload {
 export interface ChatEndPayload {
   message: ChatMessage;
   chatSessionId: string;
+  modelUsed?: string;
+  modelLabel?: string;
 }
 
 export interface ChatTitleUpdatedPayload {
   chatSessionId: string;
   title: string;
+}
+
+export interface ChatAbortPayload {
+  chatSessionId?: string;
+}
+
+export interface ChatAbortedPayload {
+  chatSessionId: string;
 }
 
 export interface ChatErrorPayload {
@@ -119,6 +132,7 @@ export interface ServerToClientEvents {
   'chat:message_saved': (data: { message: ChatMessage }) => void;
   'chat:session_created': (data: { chatSessionId: string }) => void;
   'chat:title_updated': (data: ChatTitleUpdatedPayload) => void;
+  'chat:aborted': (data: ChatAbortedPayload) => void;
   'chat:error': (data: ChatErrorPayload) => void;
   'voice:partial': (data: VoicePartialPayload) => void;
   'voice:processing': (data: VoiceProcessingPayload) => void;
@@ -136,6 +150,7 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
   authenticate: (token: string) => void;
   'chat:message': (data: ChatOutgoingPayload) => void;
+  'chat:abort': (data: ChatAbortPayload) => void;
   'voice:turn_start': (data: VoiceTurnStartPayload) => void;
   'voice:turn_audio': (data: VoiceTurnAudioPayload) => void;
   'voice:turn_end': (data: VoiceTurnEndPayload) => void;

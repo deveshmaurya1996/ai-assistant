@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AssistantSocket, ChatMessage } from '@ai-assistant/sdk';
-import { apiClient } from '@/lib/api-client';
-import { formatChatSocketError } from '@/lib/format-ai-error';
-import { useChatActionConfirmBridge } from './chatActionConfirmBridge';
-import { useStreamingDisplay } from './useStreamingDisplay';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import type { AssistantSocket, ChatAttachmentRef, ChatMessage } from '@ai-assistant/sdk';
+import { useChatSocket } from './ChatSocketProvider';
+import {
+  PENDING_CHAT_STREAM_KEY,
+  selectSessionStream,
+  useChatStreamStore,
+} from './chatStreamStore';
 
 type Options = {
-  sessionToken: string | undefined;
   sessionId?: string | null;
   enabled?: boolean;
   onSessionCreated?: (sessionId: string) => void;
@@ -16,16 +17,7 @@ type Options = {
   onError?: (message: string) => void;
 };
 
-function matchesSession(
-  eventSessionId: string,
-  filterSessionId: string | null | undefined
-): boolean {
-  if (!filterSessionId) return true;
-  return eventSessionId === filterSessionId;
-}
-
 export function useChatSocketStream({
-  sessionToken,
   sessionId,
   enabled = true,
   onSessionCreated,
@@ -34,20 +26,21 @@ export function useChatSocketStream({
   onStreamTargetChange,
   onError,
 }: Options) {
+  const listenerId = useId();
+  const chatSocket = useChatSocket();
+  const clearTurn = useChatStreamStore((s) => s.clearTurn);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [streamTurnKey, setStreamTurnKey] = useState(0);
   const socketRef = useRef<AssistantSocket | null>(null);
-  const sessionIdRef = useRef(sessionId ?? null);
-  const lastSentRef = useRef<{
-    text: string;
-    ragEnabled: boolean;
-    chatSessionId?: string;
-    source?: 'chat' | 'voice';
-  } | null>(null);
+  const lastNotifiedLenRef = useRef(0);
 
-  const stream = useStreamingDisplay();
-  const streamRef = useRef(stream);
-  streamRef.current = stream;
+  const streamKey = sessionId ?? PENDING_CHAT_STREAM_KEY;
+  const streamText = useChatStreamStore(
+    (s) => selectSessionStream(s.sessions, sessionId ?? null)?.streamText ?? ''
+  );
+  const isGenerating = useChatStreamStore(
+    (s) => selectSessionStream(s.sessions, sessionId ?? null)?.isGenerating ?? false
+  );
 
   const onSessionCreatedRef = useRef(onSessionCreated);
   const onExchangeCompleteRef = useRef(onExchangeComplete);
@@ -61,147 +54,145 @@ export function useChatSocketStream({
   onErrorRef.current = onError;
 
   useEffect(() => {
-    sessionIdRef.current = sessionId ?? null;
-  }, [sessionId]);
+    socketRef.current = chatSocket.socket;
+  }, [chatSocket.socket]);
 
   useEffect(() => {
-    if (!sessionToken || !enabled) return;
-
-    let socket: AssistantSocket | null = null;
-    let cancelled = false;
-
-    void (async () => {
-      const connected = await apiClient.connectSocket(sessionToken);
-      if (cancelled) {
-        connected.disconnect();
-        return;
-      }
-      socket = connected;
-      socketRef.current = connected;
-
-      connected.on('chat:chunk', (data) => {
-        if (!matchesSession(data.chatSessionId, sessionIdRef.current)) return;
-        const s = streamRef.current;
-        s.appendChunk(data.chunk);
-        setIsGenerating(true);
-        onStreamTargetChangeRef.current?.(s.targetText());
-      });
-
-      connected.on('chat:message_saved', (data) => {
-        setMessages((prev) => [...prev, data.message]);
-      });
-
-      connected.on('chat:end', (data) => {
-        if (!matchesSession(data.chatSessionId, sessionIdRef.current)) return;
-        streamRef.current.endStream();
-        setMessages((prev) => [...prev, data.message]);
-        streamRef.current.reset();
-        setIsGenerating(false);
-        onStreamTargetChangeRef.current?.(data.message.content);
-        onExchangeCompleteRef.current?.(data.chatSessionId);
-      });
-
-      connected.on('chat:error', (payload) => {
-        streamRef.current.reset();
-        setIsGenerating(false);
-        onErrorRef.current?.(formatChatSocketError(payload));
-      });
-
-      connected.on('chat:title_updated', (data) => {
-        if (!matchesSession(data.chatSessionId, sessionIdRef.current)) return;
-        onTitleUpdatedRef.current?.(data.title);
-      });
-
-      connected.on('chat:session_created', (data) => {
-        sessionIdRef.current = data.chatSessionId;
-        onSessionCreatedRef.current?.(data.chatSessionId);
-      });
-
-      connected.on('chat:action_confirm_required', (payload) => {
-        if (payload.tool.startsWith('whatsapp.')) {
-          setIsGenerating(false);
-          return;
-        }
-        useChatActionConfirmBridge.getState().setPending(payload);
-        setIsGenerating(false);
-      });
-    })();
-
-    return () => {
-      cancelled = true;
-      socket?.disconnect();
-      socketRef.current = null;
-      useChatActionConfirmBridge.getState().registerHandlers(null);
-    };
-  }, [sessionToken, enabled]);
-
-  const emitMessage = useCallback(
-    (text: string, ragEnabled: boolean, opts?: { confirmed?: boolean; source?: 'chat' | 'voice' }) => {
-    if (!text.trim() || !socketRef.current) return false;
-
-    streamRef.current.reset();
-    setIsGenerating(true);
-    useChatActionConfirmBridge.getState().setPending(null);
-
-    const filterId = sessionIdRef.current;
-    const payload: {
-      text: string;
-      ragEnabled: boolean;
-      chatSessionId?: string;
-      confirmed?: boolean;
-      source?: 'chat' | 'voice';
-    } = {
-      text: text.trim(),
-      ragEnabled,
-      source: opts?.source ?? 'chat',
-    };
-    if (filterId) {
-      payload.chatSessionId = filterId;
+    if (streamText.length > lastNotifiedLenRef.current) {
+      lastNotifiedLenRef.current = streamText.length;
+      onStreamTargetChangeRef.current?.(streamText);
     }
-    if (opts?.confirmed) payload.confirmed = true;
+    if (!streamText.length && !isGenerating) {
+      lastNotifiedLenRef.current = 0;
+    }
+  }, [streamText, isGenerating]);
 
-    lastSentRef.current = payload;
-    useChatActionConfirmBridge.getState().registerHandlers({
-      confirm: () => {
-        const last = lastSentRef.current;
-        if (!last || !socketRef.current) return;
-        useChatActionConfirmBridge.getState().setPending(null);
-        streamRef.current.reset();
-        setIsGenerating(true);
-        socketRef.current.emit('chat:message', {
-          ...last,
-          confirmed: true,
+  useEffect(() => {
+    if (!enabled) return;
+
+    chatSocket.registerListeners(listenerId, {
+      onMessageSaved: (message) => {
+        setMessages((prev) => {
+          if (message.role !== 'USER') {
+            return [...prev, message];
+          }
+          const matchIdx = (() => {
+            const savedIds = new Set(
+              (message.attachments ?? []).map((a) => a.id)
+            );
+            for (let i = prev.length - 1; i >= 0; i -= 1) {
+              const m = prev[i];
+              if (!m.id.startsWith('local-') || m.role !== 'USER') continue;
+              if (m.content !== message.content) continue;
+              const localIds = new Set((m.attachments ?? []).map((a) => a.id));
+              if (savedIds.size !== localIds.size) continue;
+              if ([...savedIds].every((id) => localIds.has(id))) return i;
+            }
+            for (let i = prev.length - 1; i >= 0; i -= 1) {
+              const m = prev[i];
+              if (m.id.startsWith('local-') && m.role === 'USER') return i;
+            }
+            return -1;
+          })();
+          if (matchIdx < 0) {
+            return [...prev, message];
+          }
+          const next = [...prev];
+          next[matchIdx] = message;
+          return next;
         });
       },
-      cancel: () => {
-        useChatActionConfirmBridge.getState().setPending(null);
-        setIsGenerating(false);
+      onAssistantMessage: (message) => {
+        lastNotifiedLenRef.current = 0;
+        clearTurn(streamKey);
+        setMessages((prev) => [...prev, message]);
+        onStreamTargetChangeRef.current?.(message.content);
+      },
+      onAborted: () => {
+        lastNotifiedLenRef.current = 0;
+        clearTurn(streamKey);
+      },
+      onSessionCreated: (id) => {
+        onSessionCreatedRef.current?.(id);
+      },
+      onExchangeComplete: (id) => {
+        onExchangeCompleteRef.current?.(id);
+      },
+      onTitleUpdated: (title) => {
+        onTitleUpdatedRef.current?.(title);
+      },
+      onStreamTargetChange: (fullText) => {
+        onStreamTargetChangeRef.current?.(fullText);
+      },
+      onError: (message) => {
+        lastNotifiedLenRef.current = 0;
+        clearTurn(streamKey);
+        onErrorRef.current?.(message);
       },
     });
-    socketRef.current.emit('chat:message', payload);
-    return true;
+
+    return () => {
+      chatSocket.unregisterListeners(listenerId);
+    };
+  }, [enabled, listenerId, chatSocket, clearTurn, streamKey]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    chatSocket.setActiveSessionFilter(listenerId, sessionId ?? null);
+  }, [enabled, listenerId, sessionId, chatSocket]);
+
+  const showStreamBubble = isGenerating || Boolean(streamText.trim());
+
+  const abortGeneration = useCallback(() => {
+    if (!isGenerating) return;
+    chatSocket.abortGeneration(sessionId ?? null);
+    lastNotifiedLenRef.current = 0;
+    clearTurn(streamKey);
+  }, [chatSocket, sessionId, isGenerating, clearTurn, streamKey]);
+
+  const emitMessage = useCallback(
+    (
+      text: string,
+      opts?: {
+        confirmed?: boolean;
+        source?: 'chat' | 'voice';
+        attachments?: ChatAttachmentRef[];
+      }
+    ) => {
+      const trimmed = text.trim();
+      const attachments = opts?.attachments ?? [];
+      if ((!trimmed && attachments.length === 0) || isGenerating) return false;
+      lastNotifiedLenRef.current = 0;
+      setStreamTurnKey((k) => k + 1);
+      return chatSocket.emitMessage(trimmed, sessionId ?? null, opts);
     },
-    []
+    [chatSocket, sessionId, isGenerating]
   );
 
   const beginStream = useCallback(() => {
-    streamRef.current.reset();
-    streamRef.current.beginStream();
-    setIsGenerating(true);
+    lastNotifiedLenRef.current = 0;
+    setStreamTurnKey((k) => k + 1);
   }, []);
 
   return {
     messages,
     setMessages,
     socketRef,
-    visibleText: stream.visibleText,
-    isStreaming: stream.isStreaming || isGenerating,
+    streamText,
+    /** @deprecated use streamText — kept for existing call sites */
+    visibleText: streamText,
+    isStreaming: showStreamBubble,
     isGenerating,
-    streamTargetText: stream.targetText,
-    appendChunk: stream.appendChunk,
-    beginStream,
-    resetStream: stream.reset,
+    streamTurnKey,
     emitMessage,
-    setIsGenerating,
+    abortGeneration,
+    beginStream,
+    resetStream: () => {
+      lastNotifiedLenRef.current = 0;
+      clearTurn(streamKey);
+    },
+    setIsGenerating: () => {
+      /* generation state lives in chatStreamStore */
+    },
   };
 }

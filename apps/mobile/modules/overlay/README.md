@@ -1,60 +1,107 @@
 # Android Overlay Module
 
-Requires Expo development build (`npx expo prebuild` + `expo run:android`).
+Requires an Expo development build (`npx expo prebuild` + `pnpm mobile:android`).
 
-## JS bridge (`src/lib/overlay.ts`)
+## Current architecture (JS)
 
-| Method | Description |
-|--------|-------------|
-| `syncVoiceOverlay({ phase, assistantText, appState, sessionActive, assistantDisplayName })` | Background voice UI with assistant name in status |
-| `showOverlayPanel(text)` | Show draggable overlay card |
-| `hideOverlayPanel()` | Remove overlay |
-| `setBubbleState(state)` | `idle` \| `listening` \| `processing` \| `speaking` status label |
-| `setOverlayAssistantName(name)` | Prefix status lines (e.g. `Nova · Listening…`) |
-| `setOverlaySizeTier('compact' \| 'medium')` | Compact pill vs capped medium panel |
-| `startVoiceAssistantService()` | Foreground notification + mic service |
-| `stopVoiceAssistantService()` | Stop service and hide overlay |
-| `canDrawOverlays()` / `requestOverlayPermission()` | Overlay permission |
+Overlay sync is global and mounted in:
 
-## Sizing (compact → grow)
+- `src/features/voice-assistant/VoiceSessionHost.tsx`
+  - wraps app with `AudioRecorderProvider`
+  - mounts `AppChatSocketHost`
+  - mounts `VoiceSessionProvider`
+  - mounts `AssistantOverlaySyncHost` (runs `useAssistantOverlaySync`)
 
-| Phase | Size |
-|-------|------|
-| Listening / thinking (no reply) | **Compact** — ~160×72dp pill |
-| Reply text arrives | **Auto** — fixed ~58% × 32% screen |
-| Resize | Drag **corner arc** (bottom-right) — width/height up to ~70% × 50% screen |
-| Expand shortcut | Single-tap corner arc toggles default ↔ max size |
-| Saved layout | Position and size persist |
+Core overlay files:
 
-## Interaction
+- `src/features/overlay/useAssistantOverlaySync.ts`
+  - resolves foreground route (`chat` | `voice` | `other`)
+  - builds active overlay activities from chat stream + voice session
+  - rotates across multiple active activities every 5s
+  - listens for app state changes and native dismiss events
+  - calls `syncAssistantOverlay(...)` on every relevant state change
+- `src/features/overlay/buildOverlayActivities.ts`
+  - creates normalized `OverlayActivity` entries
+  - maps voice phases to bubble states (`listening`/`processing`/`speaking`)
+  - applies visibility policy with `shouldShowOverlay(...)`
+- `src/features/overlay/resolveOverlayRoute.ts`
+  - infers foreground screen from router segments
+  - derives current chat session key for chat-route filtering
+- `src/features/overlay/overlaySessionStore.ts`
+  - stores per-session titles and dismissal state (`userDismissed`)
+  - provides context labels shown in overlay subtitle
+- `src/lib/overlay.ts`
+  - Android native bridge + permission helpers
+  - public API for show/hide/update/state/service controls
 
-- **Move** — drag the **header row** (status dot + title) to reposition (saved on release).
-- **Resize** — drag the **corner arc** (~10dp outside the card, bottom-right); release saves size.
-- **Expand shortcut** — quick tap the corner arc (no drag) toggles larger / default size.
-- **Status dot** (header, left) — **red** listening, **green** thinking/speaking, **yellow** idle.
-- **Appearance** — semi-transparent card (~50% opacity) so content behind remains visible.
-- **Scroll** — long assistant replies scroll inside the card body.
-- **Open app** — double-tap anywhere on the overlay (header, body, or card) to launch the app (`REORDER_TO_FRONT` + `CLEAR_TOP`).
+## Visibility rules (actual behavior)
 
-## Voice idle auto-stop (JS)
+`shouldShowOverlay(...)` in `buildOverlayActivities.ts` controls visibility:
 
-When a voice session is active:
+- Hide when there is no `activeItem` or user dismissed overlay.
+- Background app (`appState !== 'active'`): show whenever there is an active overlay item.
+- Foreground voice item:
+  - show on voice screen, or
+  - show anywhere if overlay is enabled in settings.
+- Foreground chat item on chat screen:
+  - must be generating,
+  - if chat route has a current session, only that session can show,
+  - overlay setting must be enabled.
+- Foreground non-chat screens:
+  - overlay shows only if overlay setting is enabled.
 
-- **12s** of listening with no speech → ends that listen attempt.
-- **2** consecutive silent listens → ends session, stops mic, hides overlay.
-- **60s** with no session activity → ends session.
+## Activity priority and rotation
 
-## Permissions
+- Voice activity is included for active phases:
+  - `listening`, `transcribing`, `waiting_for_ai`, `speaking`
+- Chat activities include currently generating chat sessions only.
+- Items are sorted with generating items first, then by most recent update.
+- If more than one activity is visible, the overlay rotates every ~5 seconds with `N of M` hint.
 
-- `SYSTEM_ALERT_WINDOW` — display over other apps
-- `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_MICROPHONE`
+## Overlay size + content sync
 
-## Native (Kotlin)
+`syncAssistantOverlay(...)` behavior:
 
-- `AssistantOverlayModule` — Expo module `AssistantOverlay`
-- `AssistantOverlayView` — scrollable card, header drag-move, corner drag-resize, status dot, double-tap launch
-- `OverlayWindowManager` — window lifecycle + persisted layout + size tiers
-- `VoiceAssistantForegroundService` — keeps session alive in background
+- Sets assistant title + context label (includes rotation hint when rotating).
+- Shows overlay panel and sets bubble state.
+- If text exists:
+  - updates text
+  - sets size tier to `medium`
+- If text is empty:
+  - sets size tier to `compact`
+
+## Settings and permission flow
+
+- User toggle lives in:
+  - `src/app/(app)/(main)/settings.tsx`
+  - `src/components/layout/DrawerContent.tsx`
+- Persistent setting:
+  - `overlayEnabled` in `src/stores/settings.ts`
+- Permission helpers:
+  - `canDrawOverlays()`
+  - `requestOverlayPermission()`
+- Toggle API:
+  - `toggleOverlay(enabled)` in `src/lib/overlay.ts`
+
+## Native bridge surface (`src/lib/overlay.ts`)
+
+- `syncAssistantOverlay(...)`
+- `subscribeOverlayDismissed(...)`
+- `showOverlayPanel(text)` / `hideOverlayPanel()`
+- `updateOverlayPanelText(text)`
+- `setBubbleState(state)` (`idle` | `listening` | `processing` | `speaking`)
+- `setOverlayAssistantName(name)`
+- `setOverlayContextLabel(label)`
+- `setOverlaySizeTier('compact' | 'medium')`
+- `startVoiceAssistantService()` / `stopVoiceAssistantService()`
+- `canDrawOverlays()` / `requestOverlayPermission()`
+
+## Native components (Kotlin)
+
+- `AssistantOverlayModule` - Expo module (`AssistantOverlay`) and `onOverlayDismissed` event
+- `AssistantOverlayView` - draggable/resizable overlay card UI
+- `OverlayWindowManager` - overlay window lifecycle + persisted layout
+- `VoiceAssistantForegroundService` - foreground service for voice session continuity
 
 ## Rebuild after native changes
 

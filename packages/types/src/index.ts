@@ -1,3 +1,17 @@
+export type * from './personality';
+export {
+  ASSISTANT_PERSONALITIES,
+  ASSISTANT_NAME_MAX_LENGTH,
+  formatPersonalityGender,
+  getAssistantPersonality,
+  normalizePersonalityId,
+  resolveAssistantContext,
+} from './personality';
+export type * from './attachments';
+export {
+  buildDefaultAttachmentQuery,
+  resolvedAttachmentHasVision,
+} from './attachments';
 export type * from './common';
 export type * from './auth';
 export type {

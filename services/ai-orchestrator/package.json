@@ -1,0 +1,9 @@
+{
+  "name": "@ai-assistant/ai-orchestrator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Compatibility shim — use services/cognitive-runtime",
+  "scripts": {
+    "dev": "node ../../scripts/dev.mjs serve cognitive-runtime"
+  }
+}

@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useState } from 'react';
+import { forwardRef, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import {
   BottomSheetModal,
@@ -13,10 +13,8 @@ import { spacing } from '@/theme/tokens';
 import { dismissBottomSheet } from '@/lib/bottom-sheet';
 import {
   useSettingsStore,
-  PERSONALITY_PRESETS,
   formatGenderLabel,
   ASSISTANT_NAME_MAX_LENGTH,
-  type PersonalityId,
 } from '@/stores/settings';
 
 export const AssistantPickerSheet = forwardRef<BottomSheetModalType>(
@@ -24,10 +22,12 @@ export const AssistantPickerSheet = forwardRef<BottomSheetModalType>(
     const { colors } = useTheme();
     const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
     const selectedPersonalityId = useSettingsStore((s) => s.selectedPersonalityId);
+    const personalities = useSettingsStore((s) => s.personalities);
     const setAssistantDisplayName = useSettingsStore((s) => s.setAssistantDisplayName);
     const setSelectedPersonalityId = useSettingsStore((s) => s.setSelectedPersonalityId);
 
     const [nameDraft, setNameDraft] = useState(assistantDisplayName);
+    const skipDismissCommitRef = useRef(false);
 
     useEffect(() => {
       setNameDraft(assistantDisplayName);
@@ -37,11 +37,19 @@ export const AssistantPickerSheet = forwardRef<BottomSheetModalType>(
       void setAssistantDisplayName(nameDraft);
     };
 
+    const handleDismiss = () => {
+      if (skipDismissCommitRef.current) {
+        skipDismissCommitRef.current = false;
+        return;
+      }
+      commitName();
+    };
+
     return (
       <BottomSheetModal
         ref={ref}
         snapPoints={['55%', '85%']}
-        onDismiss={commitName}
+        onDismiss={handleDismiss}
         backgroundStyle={{ backgroundColor: colors.surface }}>
         <BottomSheetScrollView contentContainerStyle={styles.list}>
           <Text variant="h2" style={{ marginBottom: spacing.md }}>
@@ -64,14 +72,16 @@ export const AssistantPickerSheet = forwardRef<BottomSheetModalType>(
           <Text variant="caption" muted style={{ marginBottom: spacing.sm }}>
             Personality
           </Text>
-          {PERSONALITY_PRESETS.map((preset) => {
+          {personalities.map((preset) => {
             const selected = selectedPersonalityId === preset.id;
             const subtitle = `${formatGenderLabel(preset.gender)} · ${preset.tagline}`;
             return (
               <Pressable
                 key={preset.id}
                 onPress={async () => {
-                  await setSelectedPersonalityId(preset.id as PersonalityId);
+                  skipDismissCommitRef.current = true;
+                  setNameDraft(preset.name);
+                  await setSelectedPersonalityId(preset.id);
                   dismissBottomSheet(ref);
                 }}
                 style={[styles.row, { borderBottomColor: colors.border }]}>

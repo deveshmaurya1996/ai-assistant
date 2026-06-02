@@ -37,6 +37,16 @@ export const EventNames = {
   // Memory / notifications
   MEMORY_UPDATED: 'memory.updated',
   NOTIFICATION_CREATED: 'notification.created',
+
+  // Proactive / device / OS (Phase 2)
+  EMAIL_RECEIVED: 'email.received',
+  MEETING_STARTED: 'meeting.started',
+  MEETING_ENDED: 'meeting.ended',
+  DEVICE_BATTERY_LOW: 'device.battery.low',
+  USER_DRIVING: 'user.driving',
+  PERMISSION_REVOKED: 'permission.revoked',
+  TASK_COMPLETED: 'task.completed',
+  HEADPHONES_CONNECTED: 'device.headphones.connected',
 } as const;
 
 export type EventName = (typeof EventNames)[keyof typeof EventNames];

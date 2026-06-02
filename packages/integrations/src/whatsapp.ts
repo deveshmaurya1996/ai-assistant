@@ -7,7 +7,7 @@ import type {
   JsonObject,
   ToolResult,
 } from './types';
-import { whatsappBridgeRequest } from './whatsapp-bridge';
+import { whatsAppAdapter } from './adapters/whatsapp.adapter';
 
 export const WHATSAPP_TOOL_NAMESPACES = ['whatsapp'] as const;
 
@@ -34,28 +34,24 @@ export class WhatsAppConnector implements IntegrationConnector {
     bridgeSessionId: string,
     tool: string,
     args: JsonObject,
-    _ctx: ExecutionContext,
+    ctx: ExecutionContext,
     _credentials: JsonObject
   ): Promise<ToolResult> {
+    const adapterCtx = {
+      ...ctx,
+      connectionId: bridgeSessionId,
+      bridgeSessionId,
+    };
+
     switch (tool) {
-      case 'whatsapp.send_message': {
-        const res = await whatsappBridgeRequest(
-          `/v1/sessions/${encodeURIComponent(bridgeSessionId)}/send`,
-          {
-            method: 'POST',
-            body: JSON.stringify({ to: args.to, message: args.message }),
-          }
-        );
-        if (!res.ok) return { success: false, error: await res.text() };
-        return { success: true, data: await res.json() };
-      }
-      case 'whatsapp.search_chats': {
-        const res = await whatsappBridgeRequest(
-          `/v1/sessions/${encodeURIComponent(bridgeSessionId)}/chats?q=${encodeURIComponent(String(args.query))}`
-        );
-        if (!res.ok) return { success: false, error: await res.text() };
-        return { success: true, data: await res.json() };
-      }
+      case 'whatsapp.list_unread':
+        return whatsAppAdapter.execute('list_unread', args, adapterCtx);
+      case 'whatsapp.read_chat':
+        return whatsAppAdapter.execute('read_chat', args, adapterCtx);
+      case 'whatsapp.send_message':
+        return whatsAppAdapter.execute('send_message', args, adapterCtx);
+      case 'whatsapp.search_chats':
+        return whatsAppAdapter.execute('search_chats', args, adapterCtx);
       default:
         return { success: false, error: `Unknown WhatsApp tool: ${tool}` };
     }

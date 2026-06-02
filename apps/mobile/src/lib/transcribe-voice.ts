@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
-import { File } from 'expo-file-system';
 import { apiClient } from '@/lib/api-client';
+import { prepareUploadBlob } from '@/features/upload';
 import { mimeFromUri } from '@/features/voice/mimeFromUri';
 
 function fallbackFilename(mimeType: string): string {
@@ -20,7 +20,12 @@ export async function transcribeVoice(
     return apiClient.transcribeVoice(audioUri, type);
   }
 
-  const recording = new File(audioUri);
-  const filename = recording.name || fallbackFilename(type);
-  return apiClient.transcribeVoiceBlob(recording, filename);
+  const blob = await prepareUploadBlob({
+    uri: audioUri,
+    filename: fallbackFilename(type),
+    mimeType: type,
+  });
+  const filename =
+    blob instanceof File && blob.name ? blob.name : fallbackFilename(type);
+  return apiClient.transcribeVoiceBlob(blob, filename);
 }

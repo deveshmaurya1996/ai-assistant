@@ -1,0 +1,26 @@
+{
+  "name": "@ai-assistant/capabilities",
+  "version": "1.0.0",
+  "description": "Capability-centric registry mapping to legacy tools",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc",
+    "generate:manifest": "node scripts/generate-manifest.mjs",
+    "postbuild": "node scripts/generate-manifest.mjs"
+  },
+  "dependencies": {
+    "@ai-assistant/tool-schema": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "~6.0.3"
+  }
+}

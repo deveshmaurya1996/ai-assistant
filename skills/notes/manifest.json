@@ -1,0 +1,11 @@
+{
+  "id": "notes",
+  "name": "Notes",
+  "version": "1.0.0",
+  "connector": "notes",
+  "capabilities": [
+    "productivity.note.create",
+    "productivity.note.search"
+  ],
+  "description": "In-app notes for the user"
+}

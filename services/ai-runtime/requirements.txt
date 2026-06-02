@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+python-dotenv
+httpx
+langfuse
+opentelemetry-sdk
+opentelemetry-instrumentation-fastapi
+opentelemetry-exporter-otlp-proto-http
+langgraph
+pydantic-ai
+crewai
+litellm
+transformers
+sentence-transformers
+openai
+qdrant-client
+pyyaml

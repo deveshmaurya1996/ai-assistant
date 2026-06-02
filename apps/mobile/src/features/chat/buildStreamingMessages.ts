@@ -5,9 +5,10 @@ export const STREAMING_MESSAGE_ID = 'stream';
 export function buildStreamingMessages(
   messages: ChatMessage[],
   visibleText: string,
-  isStreaming: boolean
+  isStreaming: boolean,
+  isGenerating = false
 ): ChatMessage[] {
-  if (!isStreaming && !visibleText) {
+  if (!isStreaming && !isGenerating) {
     return messages;
   }
 

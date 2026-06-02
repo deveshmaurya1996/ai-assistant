@@ -11,10 +11,10 @@ import {
   recordingMimeType,
 } from '@/features/voice/studio/recordingUri';
 
-const SILENCE_MS = 800;
+const SILENCE_MS = 1200;
 const MIN_RECORD_MS = 700;
-const MAX_RECORD_MS = 20_000;
-const LISTEN_IDLE_MS = 12_000;
+const MAX_RECORD_MS = 5 * 60_000;
+const LISTEN_IDLE_MS = 15_000;
 const POLL_MS = 100;
 
 export type RecordOutcome =

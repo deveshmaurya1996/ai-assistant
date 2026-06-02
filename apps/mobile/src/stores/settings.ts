@@ -1,8 +1,16 @@
 import { create } from 'zustand';
+import {
+  ASSISTANT_PERSONALITIES,
+  ASSISTANT_NAME_MAX_LENGTH,
+  formatPersonalityGender,
+  getAssistantPersonality,
+  type AssistantPersonality,
+  type PersonalityGender,
+} from '@ai-assistant/types';
 import { deleteItemAsync, getItemAsync, setItemAsync } from '@/lib/secure-storage';
+import { apiClient } from '@/lib/api-client';
 import type { ThemeMode } from '@/theme/tokens';
 import { TERMS_VERSION } from '@/content/terms';
-import { apiClient } from '@/lib/api-client';
 
 const KEYS = {
   termsAccepted: 'terms_accepted_at',
@@ -13,81 +21,48 @@ const KEYS = {
   selectedAgent: 'selected_agent_id',
   backgroundVoice: 'background_voice_enabled',
   autoSendVoice: 'auto_send_voice',
-  defaultRag: 'default_rag_enabled',
   overlayEnabled: 'overlay_enabled',
-  preferredModel: 'preferred_model',
+  lastAiModelLabel: 'last_ai_model_label',
   lastTranscript: 'last_transcript',
 } as const;
 
-export type PersonalityGender = 'female' | 'male' | 'neutral';
-
-export const PERSONALITY_PRESETS = [
-  {
-    id: 'assistant',
-    name: 'Assistant',
-    gender: 'neutral' as PersonalityGender,
-    tagline: 'Helpful and balanced',
-  },
-  {
-    id: 'friday',
-    name: 'Friday',
-    gender: 'female' as PersonalityGender,
-    tagline: 'Friendly, professional',
-  },
-  {
-    id: 'jarvis',
-    name: 'Jarvis',
-    gender: 'male' as PersonalityGender,
-    tagline: 'Concise, crisp',
-  },
-  {
-    id: 'nova',
-    name: 'Nova',
-    gender: 'female' as PersonalityGender,
-    tagline: 'Warm, upbeat',
-  },
-  {
-    id: 'ghost',
-    name: 'Ghost',
-    gender: 'neutral' as PersonalityGender,
-    tagline: 'Calm, minimal',
-  },
-] as const;
-
-export type PersonalityId = (typeof PERSONALITY_PRESETS)[number]['id'];
+export type { PersonalityGender, AssistantPersonality };
+export { ASSISTANT_NAME_MAX_LENGTH };
+export const PERSONALITY_PRESETS = ASSISTANT_PERSONALITIES;
+export type PersonalityId = string;
 
 /** @deprecated Use PERSONALITY_PRESETS */
-export const AGENT_PRESETS = PERSONALITY_PRESETS.map((p) => ({ id: p.id, name: p.name }));
+export const AGENT_PRESETS = ASSISTANT_PERSONALITIES.map((p) => ({ id: p.id, name: p.name }));
 export type AgentId = PersonalityId;
 
-export const ASSISTANT_NAME_MAX_LENGTH = 24;
-
 export function formatGenderLabel(gender: PersonalityGender): string {
-  switch (gender) {
-    case 'female':
-      return 'Female';
-    case 'male':
-      return 'Male';
-    default:
-      return 'Neutral';
-  }
+  return formatPersonalityGender(gender);
 }
 
-export function getPersonalityPreset(id: string) {
-  return PERSONALITY_PRESETS.find((p) => p.id === id) ?? PERSONALITY_PRESETS[0];
+export function getPersonalityPreset(id: string, personalities = ASSISTANT_PERSONALITIES) {
+  return personalities.find((p) => p.id === id) ?? personalities[0] ?? getAssistantPersonality(id);
+}
+
+export function getAssistantSubtitle(
+  assistantDisplayName: string,
+  selectedPersonalityId: string,
+  personalities = ASSISTANT_PERSONALITIES
+): string {
+  const preset = getPersonalityPreset(selectedPersonalityId, personalities);
+  return `${assistantDisplayName} · ${preset.tagline}`;
 }
 
 type SettingsState = {
   hydrated: boolean;
+  personalities: AssistantPersonality[];
   termsAcceptedAt: string | null;
   speakRepliesEnabled: boolean;
   assistantDisplayName: string;
   selectedPersonalityId: PersonalityId;
   assistantContinuousListening: boolean;
   autoSendAfterTranscribe: boolean;
-  defaultRagEnabled: boolean;
   overlayEnabled: boolean;
-  preferredModel: string | null;
+  lastAiModelLabel: string | null;
   lastTranscript: string | null;
   hydrate: () => Promise<void>;
   acceptTerms: () => Promise<void>;
@@ -97,44 +72,63 @@ type SettingsState = {
   setSelectedPersonalityId: (id: PersonalityId) => Promise<void>;
   setAssistantContinuousListening: (v: boolean) => Promise<void>;
   setAutoSend: (v: boolean) => Promise<void>;
-  setDefaultRag: (v: boolean) => Promise<void>;
   setOverlayEnabled: (v: boolean) => Promise<void>;
-  setPreferredModel: (model: string) => Promise<void>;
-  loadPreferredModelFromApi: () => Promise<void>;
+  setLastAiModelLabel: (label: string | null) => Promise<void>;
   setLastTranscript: (text: string | null) => Promise<void>;
+  getSelectedTtsVoice: () => string;
 };
 
-function normalizePersonalityId(raw: string | null): PersonalityId {
-  if (raw && PERSONALITY_PRESETS.some((p) => p.id === raw)) {
-    return raw as PersonalityId;
+function normalizePersonalityId(
+  raw: string | null,
+  personalities: AssistantPersonality[]
+): PersonalityId {
+  if (raw && personalities.some((p) => p.id === raw)) {
+    return raw;
   }
-  return 'assistant';
+  return personalities[0]?.id ?? 'assistant';
 }
 
-function normalizeDisplayName(raw: string | null, personalityId: PersonalityId): string {
+function normalizeDisplayName(
+  raw: string | null,
+  personalityId: PersonalityId,
+  personalities: AssistantPersonality[]
+): string {
   const trimmed = raw?.trim();
   if (trimmed) {
     return trimmed.slice(0, ASSISTANT_NAME_MAX_LENGTH);
   }
-  return getPersonalityPreset(personalityId).name;
+  return getPersonalityPreset(personalityId, personalities).name;
+}
+
+async function fetchPersonalities(): Promise<AssistantPersonality[]> {
+  try {
+    const data = await apiClient.listPersonalities();
+    if (data.personalities?.length) {
+      return data.personalities;
+    }
+  } catch {
+    /* offline or unauthenticated — use bundled fallback */
+  }
+  return ASSISTANT_PERSONALITIES;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   hydrated: false,
+  personalities: ASSISTANT_PERSONALITIES,
   termsAcceptedAt: null,
   speakRepliesEnabled: true,
   assistantDisplayName: 'Assistant',
   selectedPersonalityId: 'assistant',
   assistantContinuousListening: true,
   autoSendAfterTranscribe: false,
-  defaultRagEnabled: true,
   overlayEnabled: false,
-  preferredModel: null,
+  lastAiModelLabel: null,
   lastTranscript: null,
 
   hydrate: async () => {
     try {
       const [
+        personalities,
         termsAccepted,
         termsVersion,
         speakReplies,
@@ -143,11 +137,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         legacyAgent,
         backgroundVoice,
         autoSend,
-        defaultRag,
         overlay,
-        model,
+        lastModel,
         transcript,
       ] = await Promise.all([
+        fetchPersonalities(),
         getItemAsync(KEYS.termsAccepted),
         getItemAsync(KEYS.termsVersion),
         getItemAsync(KEYS.speakReplies),
@@ -156,32 +150,36 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         getItemAsync(KEYS.selectedAgent),
         getItemAsync(KEYS.backgroundVoice),
         getItemAsync(KEYS.autoSendVoice),
-        getItemAsync(KEYS.defaultRag),
         getItemAsync(KEYS.overlayEnabled),
-        getItemAsync(KEYS.preferredModel),
+        getItemAsync(KEYS.lastAiModelLabel),
         getItemAsync(KEYS.lastTranscript),
       ]);
 
       const personalityId = normalizePersonalityId(
-        selectedPersonality ?? legacyAgent
+        selectedPersonality ?? legacyAgent,
+        personalities
       );
 
       set({
         hydrated: true,
+        personalities,
         termsAcceptedAt:
           termsVersion === TERMS_VERSION && termsAccepted ? termsAccepted : null,
         speakRepliesEnabled: speakReplies !== 'false',
         selectedPersonalityId: personalityId,
-        assistantDisplayName: normalizeDisplayName(assistantName, personalityId),
+        assistantDisplayName: normalizeDisplayName(
+          assistantName,
+          personalityId,
+          personalities
+        ),
         assistantContinuousListening: backgroundVoice !== 'false',
         autoSendAfterTranscribe: autoSend === 'true',
-        defaultRagEnabled: defaultRag !== 'false',
         overlayEnabled: overlay === 'true',
-        preferredModel: model,
+        lastAiModelLabel: lastModel,
         lastTranscript: transcript,
       });
     } catch {
-      set({ hydrated: true });
+      set({ hydrated: true, personalities: ASSISTANT_PERSONALITIES });
     }
   },
 
@@ -203,14 +201,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   setAssistantDisplayName: async (name) => {
+    const { personalities, selectedPersonalityId } = get();
     const trimmed = name.trim().slice(0, ASSISTANT_NAME_MAX_LENGTH);
-    const value = trimmed || getPersonalityPreset(get().selectedPersonalityId).name;
+    const value =
+      trimmed || getPersonalityPreset(selectedPersonalityId, personalities).name;
     await setItemAsync(KEYS.assistantDisplayName, value);
     set({ assistantDisplayName: value });
   },
 
   setSelectedPersonalityId: async (id) => {
-    const preset = getPersonalityPreset(id);
+    const { personalities } = get();
+    const preset = getPersonalityPreset(id, personalities);
     await setItemAsync(KEYS.selectedPersonality, id);
     await setItemAsync(KEYS.assistantDisplayName, preset.name);
     set({
@@ -229,30 +230,19 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ autoSendAfterTranscribe: v });
   },
 
-  setDefaultRag: async (v) => {
-    await setItemAsync(KEYS.defaultRag, String(v));
-    set({ defaultRagEnabled: v });
-  },
-
   setOverlayEnabled: async (v) => {
     await setItemAsync(KEYS.overlayEnabled, String(v));
     set({ overlayEnabled: v });
   },
 
-  setPreferredModel: async (model) => {
-    await apiClient.updatePreferredModel(model);
-    await setItemAsync(KEYS.preferredModel, model);
-    set({ preferredModel: model });
-  },
-
-  loadPreferredModelFromApi: async () => {
-    try {
-      const data = await apiClient.getModels();
-      const stored = get().preferredModel;
-      set({ preferredModel: stored ?? data.primary });
-    } catch {
-      /* offline */
+  setLastAiModelLabel: async (label) => {
+    const value = label?.trim() || null;
+    if (value) {
+      await setItemAsync(KEYS.lastAiModelLabel, value);
+    } else {
+      await deleteItemAsync(KEYS.lastAiModelLabel);
     }
+    set({ lastAiModelLabel: value });
   },
 
   setLastTranscript: async (text) => {
@@ -262,5 +252,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       await deleteItemAsync(KEYS.lastTranscript);
     }
     set({ lastTranscript: text });
+  },
+
+  getSelectedTtsVoice: () => {
+    const { personalities, selectedPersonalityId } = get();
+    return getPersonalityPreset(selectedPersonalityId, personalities).voice;
   },
 }));

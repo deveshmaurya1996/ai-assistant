@@ -1,0 +1,17 @@
+{
+  "name": "@ai-assistant/storage",
+  "version": "1.0.0",
+  "description": "Object storage adapters (Cloudflare R2, local disk)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.750.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "~6.0.3"
+  }
+}

@@ -11,21 +11,39 @@ import { apiClient } from '@/lib/api-client';
 import { formatApiError } from '@/lib/format-ai-error';
 import { useChatRoom } from '@/features/chat/useChatRoom';
 import { useSaveNote } from '@/features/notes/useSaveNote';
-import { ChatMessageList } from '@/components/chat/ChatMessageList';
-import { ChatComposer } from '@/components/chat/ChatComposer';
+import {
+  ChatMessageList,
+  type ChatMessageListHandle,
+} from '@/components/chat/ChatMessageList';
+import { ChatComposer, type ChatSendPayload } from '@/components/chat/ChatComposer';
+import {
+  getAssistantSubtitle,
+  useSettingsStore,
+} from '@/stores/settings';
 
 export default function ChatComposeScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const saveNote = useSaveNote();
+  const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
+  const selectedPersonalityId = useSettingsStore((s) => s.selectedPersonalityId);
+  const personalities = useSettingsStore((s) => s.personalities);
+  const assistantSubtitle = getAssistantSubtitle(
+    assistantDisplayName,
+    selectedPersonalityId,
+    personalities
+  );
   const [liveSessionId, setLiveSessionId] = useState<string | undefined>();
   const liveSessionIdRef = useRef<string | undefined>(undefined);
   const titleRef = useRef('New chat');
+  const userSentRef = useRef(false);
+  const messageListRef = useRef<ChatMessageListHandle>(null);
 
   liveSessionIdRef.current = liveSessionId;
 
   useEffect(() => {
     return () => {
+      if (userSentRef.current) return;
       const sid = liveSessionIdRef.current;
       if (!sid) return;
       void (async () => {
@@ -47,7 +65,8 @@ export default function ChatComposeScreen() {
     };
   }, []);
 
-  const handleExchangeComplete = useCallback((sessionId: string) => {
+  const handleSessionCreated = useCallback((sessionId: string) => {
+    setLiveSessionId(sessionId);
     router.replace({
       pathname: '/(app)/chat/[id]',
       params: { id: sessionId, title: titleRef.current },
@@ -58,17 +77,27 @@ export default function ChatComposeScreen() {
     title,
     displayMessages,
     visibleText,
+    streamTurnKey,
     isStreaming,
     isGenerating,
-    send,
+    send: roomSend,
+    stopGeneration,
+    savedMessageIds,
   } = useChatRoom({
     sessionId: liveSessionId,
     initialTitle: 'New chat',
-    onSessionCreated: setLiveSessionId,
-    onExchangeComplete: handleExchangeComplete,
+    onSessionCreated: handleSessionCreated,
   });
 
   titleRef.current = title;
+
+  const send = useCallback(
+    (payload: ChatSendPayload) => {
+      userSentRef.current = true;
+      return roomSend(payload);
+    },
+    [roomSend]
+  );
 
   return (
     <KeyboardAvoidingView
@@ -91,19 +120,32 @@ export default function ChatComposeScreen() {
           <Text variant="h2" numberOfLines={1}>
             {title}
           </Text>
+          <Text variant="caption" muted numberOfLines={1}>
+            {assistantSubtitle}
+          </Text>
         </View>
       </View>
 
       <ChatMessageList
+        ref={messageListRef}
         messages={displayMessages}
         visibleText={visibleText}
+        streamTurnKey={streamTurnKey}
         isStreaming={isStreaming}
         isGenerating={isGenerating}
         emptyHint="Send a message to start"
+        savedMessageIds={savedMessageIds}
+        assistantLabel={assistantDisplayName}
         onSaveNote={saveNote}
       />
 
-      <ChatComposer onSend={send} disabled={isGenerating} />
+      <ChatComposer
+        onSend={send}
+        sendDisabled={isGenerating}
+        isGenerating={isGenerating}
+        onStop={stopGeneration}
+        onInputFocus={() => messageListRef.current?.scrollToEnd(true)}
+      />
     </KeyboardAvoidingView>
   );
 }

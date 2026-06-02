@@ -1,5 +1,10 @@
 import { Platform, Linking } from 'react-native';
-import { requireNativeModule } from 'expo-modules-core';
+import { requireNativeModule, type EventSubscription } from 'expo-modules-core';
+import type { OverlayActivity } from '@/features/overlay/buildOverlayActivities';
+import {
+  shouldShowOverlay,
+} from '@/features/overlay/buildOverlayActivities';
+import type { OverlayForegroundScreen } from '@/features/overlay/resolveOverlayRoute';
 
 export type OverlayBubbleState = 'idle' | 'listening' | 'processing' | 'speaking';
 
@@ -13,11 +18,22 @@ export type VoiceOverlaySyncInput = {
   assistantDisplayName?: string;
 };
 
+export type AssistantOverlaySyncInput = {
+  appState: string;
+  overlayEnabled: boolean;
+  userDismissed: boolean;
+  activeItem: OverlayActivity | null;
+  rotationHint?: string;
+  foregroundScreen: OverlayForegroundScreen;
+  currentChatSessionKey: string | null;
+};
+
 type OverlayModule = {
   showBubble?: () => Promise<void>;
   hideBubble?: () => Promise<void>;
   setBubbleState?: (state: OverlayBubbleState) => Promise<void>;
   setOverlayAssistantName?: (name: string) => Promise<void>;
+  setOverlayContextLabel?: (label: string) => Promise<void>;
   setOverlayExpanded?: (expanded: boolean) => Promise<void>;
   showOverlay?: (text: string) => Promise<void>;
   hideOverlay?: () => Promise<void>;
@@ -26,21 +42,11 @@ type OverlayModule = {
   requestOverlayPermission?: () => Promise<void>;
   startVoiceService?: () => Promise<void>;
   stopVoiceService?: () => Promise<void>;
+  addListener?: (
+    eventName: string,
+    listener: () => void
+  ) => EventSubscription;
 };
-
-function phaseToBubbleState(phase: string): OverlayBubbleState {
-  switch (phase) {
-    case 'listening':
-    case 'transcribing':
-      return 'listening';
-    case 'waiting_for_ai':
-      return 'processing';
-    case 'speaking':
-      return 'speaking';
-    default:
-      return 'idle';
-  }
-}
 
 function getOverlayModule(): OverlayModule | undefined {
   if (Platform.OS !== 'android') return undefined;
@@ -109,6 +115,11 @@ export async function setOverlayAssistantName(name: string): Promise<void> {
   await NativeOverlay.setOverlayAssistantName(name);
 }
 
+export async function setOverlayContextLabel(label: string): Promise<void> {
+  if (Platform.OS !== 'android' || !NativeOverlay?.setOverlayContextLabel) return;
+  await NativeOverlay.setOverlayContextLabel(label);
+}
+
 export async function startVoiceAssistantService(): Promise<void> {
   if (Platform.OS !== 'android') return;
   const can = await canDrawOverlays();
@@ -146,24 +157,33 @@ export async function setOverlaySizeTier(tier: OverlaySizeTier): Promise<void> {
   await NativeOverlay.setOverlayExpanded(tier === 'medium');
 }
 
-/** @deprecated Use setOverlaySizeTier */
 export async function setOverlayExpanded(expanded: boolean): Promise<void> {
   await setOverlaySizeTier(expanded ? 'medium' : 'compact');
 }
 
-export async function syncVoiceOverlay(input: VoiceOverlaySyncInput): Promise<void> {
+export async function syncAssistantOverlay(input: AssistantOverlaySyncInput): Promise<void> {
   if (Platform.OS !== 'android') return;
 
   const {
-    phase,
-    assistantText = '',
     appState,
-    sessionActive,
-    assistantDisplayName = 'Assistant',
+    overlayEnabled,
+    userDismissed,
+    activeItem,
+    rotationHint,
+    foregroundScreen,
+    currentChatSessionKey,
   } = input;
-  const inBackground = appState !== 'active';
 
-  if (!sessionActive || !inBackground) {
+  if (
+    !shouldShowOverlay({
+      appState,
+      overlayEnabled,
+      userDismissed,
+      activeItem,
+      foregroundScreen,
+      currentChatSessionKey,
+    })
+  ) {
     await hideOverlayPanel();
     await setBubbleState('idle');
     return;
@@ -172,30 +192,70 @@ export async function syncVoiceOverlay(input: VoiceOverlaySyncInput): Promise<vo
   const can = await canDrawOverlays();
   if (!can) return;
 
-  const bubble = phaseToBubbleState(phase);
+  if (!activeItem) {
+    await hideOverlayPanel();
+    return;
+  }
+
+  const contextWithRotation = rotationHint
+    ? `${activeItem.contextLabel} · ${rotationHint}`
+    : activeItem.contextLabel;
+
+  await setOverlayAssistantName(activeItem.assistantName);
+  await setOverlayContextLabel(contextWithRotation);
+  await showOverlayPanel(activeItem.text);
+  await setBubbleState(activeItem.bubbleState);
+
+  const hasText = activeItem.text.trim().length > 0;
+  if (hasText) {
+    await updateOverlayPanelText(activeItem.text);
+    await setOverlaySizeTier('medium');
+  } else {
+    await setOverlaySizeTier('compact');
+  }
+}
+
+export async function syncVoiceOverlay(input: VoiceOverlaySyncInput): Promise<void> {
   const showPhases = new Set([
     'listening',
     'transcribing',
     'waiting_for_ai',
     'speaking',
   ]);
+  const sessionActive = input.sessionActive && showPhases.has(input.phase);
 
-  if (!showPhases.has(phase)) {
-    await hideOverlayPanel();
-    return;
+  await syncAssistantOverlay({
+    appState: input.appState,
+    overlayEnabled: false,
+    userDismissed: false,
+    foregroundScreen: 'voice',
+    currentChatSessionKey: null,
+    activeItem: sessionActive
+      ? {
+          kind: 'voice',
+          sessionKey: '__voice__',
+          contextLabel: `Voice chat with ${input.assistantDisplayName ?? 'Assistant'}`,
+          assistantName: input.assistantDisplayName ?? 'Assistant',
+          text: input.assistantText ?? '',
+          bubbleState:
+            input.phase === 'listening' || input.phase === 'transcribing'
+              ? 'listening'
+              : input.phase === 'speaking'
+                ? 'speaking'
+                : 'processing',
+          isGenerating: true,
+          lastUpdatedAt: Date.now(),
+        }
+      : null,
+  });
+}
+
+export function subscribeOverlayDismissed(onDismissed: () => void): () => void {
+  if (Platform.OS !== 'android' || !NativeOverlay?.addListener) {
+    return () => {};
   }
-
-  await setOverlayAssistantName(assistantDisplayName);
-  await showOverlayPanel(assistantText);
-  await setBubbleState(bubble);
-
-  const hasText = assistantText.trim().length > 0;
-  if (hasText) {
-    await updateOverlayPanelText(assistantText);
-    await setOverlaySizeTier('medium');
-  } else {
-    await setOverlaySizeTier('compact');
-  }
+  const sub = NativeOverlay.addListener('onOverlayDismissed', onDismissed);
+  return () => sub.remove();
 }
 
 export async function toggleOverlay(enabled: boolean): Promise<void> {

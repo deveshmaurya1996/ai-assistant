@@ -1,0 +1,18 @@
+{
+  "name": "@ai-assistant/browser-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright browser automation runtime (stub)",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "fastify": "^5.8.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "~6.0.3"
+  }
+}

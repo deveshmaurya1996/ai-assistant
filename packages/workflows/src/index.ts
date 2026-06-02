@@ -13,10 +13,14 @@ export const WorkflowConditionSchema = z.object({
 });
 
 export const WorkflowActionSchema = z.object({
-  connector: z.string(),
-  tool: z.string(),
+  connector: z.string().optional(),
+  tool: z.string().optional(),
+  capability: z.string().optional(),
+  provider: z.string().optional(),
   args: z.record(z.string(), z.unknown()),
   onError: z.enum(['fail', 'skip', 'retry']).default('fail'),
+}).refine((a) => Boolean(a.capability || a.tool), {
+  message: 'Each action requires capability or tool',
 });
 
 export const RetryPolicySchema = z.object({
@@ -118,7 +122,13 @@ export async function executeWorkflow(
       await new Promise((r) => setTimeout(r, backoffMs * (attempt + 1)));
     }
 
-    steps.push({ stepIndex: i, tool: action.tool, success, result, error: lastError });
+    steps.push({
+      stepIndex: i,
+      tool: action.tool ?? action.capability ?? 'unknown',
+      success,
+      result,
+      error: lastError,
+    });
 
     if (!success && action.onError === 'fail') {
       if (workflow.rollback?.length) {

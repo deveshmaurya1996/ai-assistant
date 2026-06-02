@@ -1,0 +1,11 @@
+{
+  "id": "gmail",
+  "name": "Gmail",
+  "version": "1.0.0",
+  "connector": "google",
+  "capabilities": [
+    "communication.email.search",
+    "communication.email.send"
+  ],
+  "description": "Search and send email via Gmail"
+}

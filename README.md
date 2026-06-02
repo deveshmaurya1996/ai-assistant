@@ -2,6 +2,10 @@
 
 AI-native assistant with streaming chat, memory, multi-agent orchestration, voice, and cross-platform clients.
 
+For full AI implementation context (chat, tools, voice, RAG, models, file map), see **[docs/CORE_AI_README.md](docs/CORE_AI_README.md)**.
+
+For the AI OS evolution roadmap (capabilities, skills, renames), see **[docs/AI_OS_EVOLUTION.md](docs/AI_OS_EVOLUTION.md)**.
+
 ## Architecture
 
 ```
@@ -14,8 +18,8 @@ Mobile / Web  →  API Gateway (Fastify)  →  PostgreSQL
 |-------|------|
 | Runtime orchestration | [Tilt](https://tilt.dev) |
 | Containers | Docker Compose |
-| API | Fastify (`services/api`) |
-| AI | FastAPI (`services/ai`) |
+| API | Fastify (`services/gateway`, shim `services/api`) |
+| AI | FastAPI (`services/ai-runtime`, shim `services/ai`) |
 | Database | PostgreSQL |
 | Cache / events | Redis |
 | Vector DB | Qdrant |
@@ -28,7 +32,7 @@ Mobile / Web  →  API Gateway (Fastify)  →  PostgreSQL
 
 - Node.js 20+
 - pnpm 9+
-- Python 3.11+ (AI service virtualenv at `services/ai/venv`)
+- Python 3.11+ (AI service virtualenv at `services/ai-runtime/venv`)
 - Docker Desktop
 - [Tilt](https://docs.tilt.dev/install.html) — `choco install tilt` (Windows, admin shell) or `brew install tilt` (macOS)
 
@@ -42,7 +46,7 @@ pnpm env:setup
 pnpm install
 pnpm db:migrate
 
-# Default: core infra + API + AI (allocates ports → tilt_config.json, picks free Tilt UI port)
+# Default: core infra + API + AI (starts Docker Desktop if needed, then Tilt)
 pnpm tilt:up
 
 # Or explicit profiles
@@ -65,7 +69,7 @@ Open the Tilt dashboard at the URL printed on start (port is in `tilt_config.jso
 
 ### Ports
 
-Ports are stored in **`tilt_config.json`** (gitignored). `pnpm tilt:up` runs `node scripts/ports.mjs ensure` to pick free ports per clone (see [Tiltfile config](https://docs.tilt.dev/tiltfile_config.html)). Override in that file or via `tilt up -- --api-port=3100`, etc.
+Ports are stored in **`tilt_config.json`** (gitignored). `pnpm tilt:up` waits for Docker (starting Docker Desktop on Windows/macOS if needed), then runs `node scripts/ports.mjs ensure` to pick free ports per clone (see [Tiltfile config](https://docs.tilt.dev/tiltfile_config.html)). Override in that file or via `tilt up -- --api-port=3100`, etc. Set `SKIP_DOCKER_ENSURE=1` to skip auto-start (e.g. CI); set `DOCKER_DESKTOP_PATH` if Docker is installed in a non-default location.
 
 | Service | Default |
 |---------|---------|
@@ -116,8 +120,11 @@ pnpm test:integration   # must print SUCCEEDED
 ```
 apps/mobile          Expo React Native client
 apps/web             Next.js dashboard
-services/api         Fastify API + Socket.IO + Better Auth
-services/ai          FastAPI RAG + agents + voice
+services/gateway     Fastify API + Socket.IO + Better Auth (shim: services/api)
+services/ai-runtime  FastAPI RAG + agents + voice (shim: services/ai)
+services/cognitive-runtime  Planner + tool execution (shim: services/ai-orchestrator)
+services/skill-runtime      Capability/skill execution layer
+services/tool-runtime       Tool connectors + permissions
 packages/types       Shared API & client TypeScript types
 packages/database    Prisma + PostgreSQL
 packages/auth        Better Auth configuration
@@ -154,7 +161,7 @@ Voice mode is a full **STT → LLM → TTS** pipeline through the API and AI ser
 
 Configure providers via root `.env`: `TRANSCRIPTION_*`, `TEXT_MODEL`, `OPENAI_API_KEY`, `POLLINATIONS_API_KEY`, `SPEECH_VOICE`, `VOICE_MODE`, etc. (see `.env.example`).
 
-**Provider routing:** AI service uses capability-based routers (`services/ai/orchestration/`, `services/ai/docs/ARCHITECTURE.md`). Pollinations is Tier-3 fallback only — not used for realtime duplex voice. Mobile never calls providers directly.
+**Provider routing:** AI service uses capability-based routers (`services/ai-runtime/orchestration/`, `services/ai-runtime/docs/ARCHITECTURE.md`). Pollinations is Tier-3 fallback only — not used for realtime duplex voice. Mobile never calls providers directly.
 
 **Assistant APIs:** `GET /assistant/personalities`, `POST /assistant/context/evaluate`, `POST /assistant/proactive/score`, `GET /assistant/voice/mode`, `POST /assistant/voice/live/token` (stubs for Phase 4 Live).
 

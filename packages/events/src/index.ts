@@ -12,6 +12,7 @@ export {
   MessageReceivedPayloadSchema,
   MemoryUpdatedPayloadSchema,
   NotificationCreatedPayloadSchema,
+  OsEventPayloadSchema,
   eventPayloadSchemas,
   type ChatStartedPayload,
   type AgentExecutedPayload,
@@ -25,6 +26,7 @@ export {
   type MessageReceivedPayload,
   type MemoryUpdatedPayload,
   type NotificationCreatedPayload,
+  type OsEventPayload,
 } from './schemas';
 export { publishEvent, subscribeEvents, type DomainEvent } from './redis-bus';
 export {

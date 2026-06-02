@@ -3,12 +3,20 @@
   "version": "1.0.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
+    "prepare": "node ../../scripts/prisma-generate.mjs",
     "build": "node ../../scripts/prisma-generate.mjs && node ../../node_modules/typescript/bin/tsc",
     "db:generate": "node ../../scripts/prisma-generate.mjs",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
+    "db:seed": "prisma db execute --file prisma/seed-providers.sql --schema prisma/schema.prisma",
     "studio": "prisma studio --browser none --hostname 127.0.0.1"
   },
   "dependencies": {

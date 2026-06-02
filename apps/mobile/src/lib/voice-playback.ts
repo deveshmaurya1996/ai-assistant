@@ -101,7 +101,11 @@ async function playBuffer(buffer: ArrayBuffer): Promise<void> {
   });
 }
 
-export async function speakText(text: string, onFinished?: () => void): Promise<void> {
+export async function speakText(
+  text: string,
+  onFinished?: () => void,
+  voice?: string
+): Promise<void> {
   const trimmed = text.trim();
   if (!trimmed) {
     onFinished?.();
@@ -117,7 +121,7 @@ export async function speakText(text: string, onFinished?: () => void): Promise<
     shouldPlayInBackground: true,
   });
 
-  const buffer = await apiClient.speakVoice(trimmed);
+  const buffer = await apiClient.speakVoice(trimmed, voice);
   if (speechAbortFlag) {
     onFinished?.();
     return;
@@ -131,6 +135,11 @@ export class SentenceTtsQueue {
   private buffer = '';
   private chain: Promise<void> = Promise.resolve();
   private speaking = false;
+  private voice?: string;
+
+  constructor(voice?: string) {
+    this.voice = voice;
+  }
 
   get isSpeaking(): boolean {
     return this.speaking;
@@ -150,7 +159,7 @@ export class SentenceTtsQueue {
       if (speechAbortFlag) return;
       this.speaking = true;
       try {
-        await speakText(sentence);
+        await speakText(sentence, undefined, this.voice);
       } finally {
         this.speaking = false;
       }

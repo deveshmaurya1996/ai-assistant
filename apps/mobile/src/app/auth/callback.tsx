@@ -8,6 +8,7 @@ import {
   applyOAuthCookieParam,
 } from '@/lib/auth-cookies';
 import { useAuthStore } from '@/stores/auth';
+import { writeWebSessionCache } from '@/lib/web-session-cache';
 import { useTheme } from '@/theme/ThemeProvider';
 
 export default function AuthCallbackScreen() {
@@ -32,6 +33,7 @@ export default function AuthCallbackScreen() {
 
       const session = await fetchSession();
       if (session) {
+        if (Platform.OS === 'web') writeWebSessionCache(session);
         useAuthStore.setState({ session, loading: false });
         router.replace('/(app)/(main)/chats');
         return;

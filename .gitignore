@@ -12,8 +12,10 @@ tilt_config.json
 Thumbs.db
 
 packages/database/generated/
+packages/database/prisma/.schema.staging.prisma
 
 services/whatsapp-bridge/data/
+data/uploads/
 data/wa-auth/
 services/api/data/wa-auth/
 
@@ -32,3 +34,5 @@ services/ai/qdrant_db/
 .expo/
 android/
 ios/
+
+*.tsbuildinfo

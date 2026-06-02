@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -59,6 +59,36 @@ export default function IntegrationsScreen() {
       void load();
     }, [load])
   );
+
+  useEffect(() => {
+    const handleUrl = (url: string | null) => {
+      if (!url) return;
+      try {
+        const parsed = new URL(url);
+        const connected = parsed.searchParams.get('connected');
+        const error = parsed.searchParams.get('error');
+        if (connected === 'google') {
+          void load();
+          if (error) {
+            const msg = decodeURIComponent(error);
+            if (Platform.OS === 'web') {
+              window.alert(`Google connect failed: ${msg}`);
+            } else {
+              Alert.alert('Google connect failed', msg);
+            }
+          }
+        }
+      } catch {
+        if (url.includes('connected=google')) {
+          void load();
+        }
+      }
+    };
+
+    void Linking.getInitialURL().then(handleUrl);
+    const sub = Linking.addEventListener('url', (event) => handleUrl(event.url));
+    return () => sub.remove();
+  }, [load]);
 
   const getConnection = (providerId: string) =>
     connections.find((c) => c.providerId === providerId);

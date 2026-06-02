@@ -10,7 +10,13 @@ import { transcribeVoice } from '@/lib/transcribe-voice';
 import { mimeFromUri } from '@/features/voice/mimeFromUri';
 
 const CHUNK_BYTES = 48 * 1024;
-const TURN_TIMEOUT_MS = 90_000;
+const TURN_TIMEOUT_BASE_MS = 90_000;
+const TURN_TIMEOUT_MAX_MS = 600_000;
+
+function turnTimeoutMs(byteLength: number): number {
+  const extra = Math.floor(byteLength / 16_000) * 1000;
+  return Math.min(TURN_TIMEOUT_MAX_MS, TURN_TIMEOUT_BASE_MS + extra);
+}
 
 function newTurnId(): string {
   return `turn-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -102,7 +108,7 @@ export function useVoiceTurnSocket(socketRef: RefObject<AssistantSocket | null>)
         const timer = setTimeout(() => {
           pendingRef.current.delete(turnId);
           reject(new Error('Transcription timed out'));
-        }, TURN_TIMEOUT_MS);
+        }, turnTimeoutMs(bytes.length));
         pendingRef.current.set(turnId, { resolve, reject, timer });
       });
 

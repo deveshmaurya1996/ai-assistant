@@ -11,7 +11,6 @@ import { AppHeader } from '@/components/layout/AppHeader';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { SwitchRow } from '@/components/ui/SwitchRow';
 import { SettingsSection } from '@/components/settings/SettingsSection';
-import { ModelPickerSheet } from '@/components/settings/ModelPickerSheet';
 import { AssistantPickerSheet } from '@/components/settings/AssistantPickerSheet';
 import { useTheme } from '@/theme/ThemeProvider';
 import type { ThemeMode } from '@/theme/tokens';
@@ -44,41 +43,40 @@ export default function SettingsScreen() {
   const { colors, mode, setMode } = useTheme();
   const session = useAuthStore((s) => s.session);
   const signOut = useAuthStore((s) => s.signOut);
-  const modelSheetRef = useRef<BottomSheetModal>(null);
   const assistantSheetRef = useRef<BottomSheetModal>(null);
 
   const {
-    preferredModel,
     speakRepliesEnabled,
     assistantDisplayName,
     selectedPersonalityId,
+    personalities,
     assistantContinuousListening,
     autoSendAfterTranscribe,
-    defaultRagEnabled,
     overlayEnabled,
+    lastAiModelLabel,
     setSpeakRepliesEnabled,
     setAssistantContinuousListening,
     setAutoSend,
-    setDefaultRag,
     setOverlayEnabled,
-    loadPreferredModelFromApi,
   } = useSettingsStore();
 
-  const selectedPreset = getPersonalityPreset(selectedPersonalityId);
+  const selectedPreset = getPersonalityPreset(selectedPersonalityId, personalities);
   const assistantSummary = `${assistantDisplayName} · ${formatGenderLabel(selectedPreset.gender)}`;
+  const aiRoutingSummary = lastAiModelLabel
+    ? `Auto · ${lastAiModelLabel}`
+    : 'Automatic';
 
   const [micStatus, setMicStatus] = useState<PermissionStatus | null>(null);
   const [overlayStatus, setOverlayStatus] = useState<OverlayPermissionLabel>('Unknown');
 
   useEffect(() => {
     void (async () => {
-      await loadPreferredModelFromApi();
       const mic = await requestMicPermission();
       setMicStatus(mic);
       const overlayGranted = await canDrawOverlays();
       setOverlayStatus(formatOverlayPermission(overlayGranted));
     })();
-  }, [loadPreferredModelFromApi]);
+  }, []);
 
   const themeOptions: { value: ThemeMode; label: string }[] = [
     { value: 'system', label: 'System' },
@@ -95,17 +93,12 @@ export default function SettingsScreen() {
         </SettingsSection>
 
         <SettingsSection title="Assistant">
-          <PressableScale onPress={() => modelSheetRef.current?.present()}>
-            <View style={styles.row}>
-              <Text variant="bodyMedium">Preferred model</Text>
-              <View style={styles.rowEnd}>
-                <Text variant="caption" muted numberOfLines={1} style={{ maxWidth: 140 }}>
-                  {preferredModel ?? 'Default'}
-                </Text>
-                <ChevronRight color={colors.textMuted} size={18} />
-              </View>
-            </View>
-          </PressableScale>
+          <View style={styles.row}>
+            <Text variant="bodyMedium">AI routing</Text>
+            <Text variant="caption" muted numberOfLines={1} style={{ maxWidth: 180 }}>
+              {aiRoutingSummary}
+            </Text>
+          </View>
           <PressableScale onPress={() => assistantSheetRef.current?.present()}>
             <View style={styles.row}>
               <Text variant="bodyMedium">Your assistant</Text>
@@ -153,7 +146,7 @@ export default function SettingsScreen() {
         <SettingsSection title="Overlay">
           <SwitchRow
             label="Floating overlay"
-            description="Panel over other apps when voice is active in background (Android dev build)"
+            description="While on: shows chat and voice replies in-app. In background: auto-shows AI responses with chat title. Tap corner when minimized to close."
             value={overlayEnabled}
             onValueChange={async (v) => {
               if (v) {
@@ -180,15 +173,6 @@ export default function SettingsScreen() {
               const ok = await canDrawOverlays();
               setOverlayStatus(ok ? 'Granted' : 'Not granted');
             }}
-          />
-        </SettingsSection>
-
-        <SettingsSection title="Chat">
-          <SwitchRow
-            label="RAG by default"
-            description="Use memory context in new messages"
-            value={defaultRagEnabled}
-            onValueChange={(v) => void setDefaultRag(v)}
           />
         </SettingsSection>
 
@@ -223,7 +207,6 @@ export default function SettingsScreen() {
           </Text>
         </SettingsSection>
       </ScrollView>
-      <ModelPickerSheet ref={modelSheetRef} />
       <AssistantPickerSheet ref={assistantSheetRef} />
     </Screen>
   );

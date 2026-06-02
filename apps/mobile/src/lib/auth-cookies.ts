@@ -1,5 +1,5 @@
 import { getCookie, getSetCookie } from '@better-auth/expo/client';
-import { authClient } from '@/lib/auth-client';
+import { authClient, readBetterAuthStoredSession } from '@/lib/auth-client';
 import { authStorage } from '@/lib/secure-storage';
 
 export const AUTH_COOKIE_STORAGE_KEY = 'ai-assistant_cookie';
@@ -16,12 +16,25 @@ export function getAuthCookie(): string {
 
 export function sessionTokenFromCookie(cookie: string): string | null {
   const match = cookie.match(/better-auth\.session_token=([^;]+)/);
-  return match?.[1]?.trim() ?? null;
+  const raw = match?.[1]?.trim();
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+export function getAuthSessionToken(): string | undefined {
+  const fromCookie = sessionTokenFromCookie(getAuthCookie());
+  if (fromCookie) return fromCookie;
+
+  const stored = readBetterAuthStoredSession();
+  return stored?.session?.token;
 }
 
 export function getSocketSessionToken(): string | undefined {
-  const token = sessionTokenFromCookie(getAuthCookie());
-  return token ?? undefined;
+  return getAuthSessionToken();
 }
 
 function decodeCookieParam(raw: string): string {

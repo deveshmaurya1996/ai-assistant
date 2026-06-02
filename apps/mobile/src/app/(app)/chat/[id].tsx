@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { View, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, AudioLines } from 'lucide-react-native';
@@ -8,8 +9,15 @@ import { spacing } from '@/theme/tokens';
 import { PressableScale } from '@/components/motion/PressableScale';
 import { useChatRoom } from '@/features/chat/useChatRoom';
 import { useSaveNote } from '@/features/notes/useSaveNote';
-import { ChatMessageList } from '@/components/chat/ChatMessageList';
+import {
+  ChatMessageList,
+  type ChatMessageListHandle,
+} from '@/components/chat/ChatMessageList';
 import { ChatComposer } from '@/components/chat/ChatComposer';
+import {
+  getAssistantSubtitle,
+  useSettingsStore,
+} from '@/stores/settings';
 
 export default function ChatScreen() {
   const { id, title: titleParam, kind: kindParam } = useLocalSearchParams<{
@@ -20,15 +28,26 @@ export default function ChatScreen() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const saveNote = useSaveNote();
+  const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
+  const selectedPersonalityId = useSettingsStore((s) => s.selectedPersonalityId);
+  const personalities = useSettingsStore((s) => s.personalities);
+  const assistantSubtitle = getAssistantSubtitle(
+    assistantDisplayName,
+    selectedPersonalityId,
+    personalities
+  );
+  const messageListRef = useRef<ChatMessageListHandle>(null);
 
   const {
     title,
     isVoice,
     displayMessages,
     visibleText,
+    streamTurnKey,
     isStreaming,
     isGenerating,
     send,
+    stopGeneration,
     savedMessageIds,
   } = useChatRoom({
     sessionId: id,
@@ -57,11 +76,9 @@ export default function ChatScreen() {
           <Text variant="h2" numberOfLines={1}>
             {title}
           </Text>
-          {isVoice ? (
-            <Text variant="caption" muted>
-              Voice chat
-            </Text>
-          ) : null}
+          <Text variant="caption" muted numberOfLines={1}>
+            {isVoice ? `${assistantSubtitle} · Voice chat` : assistantSubtitle}
+          </Text>
         </View>
       </View>
 
@@ -92,15 +109,24 @@ export default function ChatScreen() {
       ) : null}
 
       <ChatMessageList
+        ref={messageListRef}
         messages={displayMessages}
         visibleText={visibleText}
+        streamTurnKey={streamTurnKey}
         isStreaming={isStreaming}
         isGenerating={isGenerating}
         savedMessageIds={savedMessageIds}
+        assistantLabel={assistantDisplayName}
         onSaveNote={saveNote}
       />
 
-      <ChatComposer onSend={send} disabled={isGenerating} />
+      <ChatComposer
+        onSend={send}
+        sendDisabled={isGenerating}
+        isGenerating={isGenerating}
+        onStop={stopGeneration}
+        onInputFocus={() => messageListRef.current?.scrollToEnd(true)}
+      />
     </KeyboardAvoidingView>
   );
 }

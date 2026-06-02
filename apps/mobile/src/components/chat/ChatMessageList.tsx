@@ -1,10 +1,28 @@
-import { useEffect, useRef } from 'react';
-import { StyleSheet, View } from 'react-native';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+} from 'react';
+import { Keyboard, StyleSheet, View } from 'react-native';
 import { FlashList, type FlashListRef, type ListRenderItem } from '@shopify/flash-list';
 import type { ChatMessage } from '@ai-assistant/sdk';
 import { spacing } from '@/theme/tokens';
 import { ChatMessageBubble } from './ChatMessageBubble';
 import { Text } from '@/components/ui/Text';
+import { useSavedNotesStore } from '@/features/notes/savedNotesStore';
+import { STREAMING_MESSAGE_ID } from '@/features/chat/buildStreamingMessages';
+
+function lastUserMessageText(messages: ChatMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i]?.role === 'USER') {
+      return messages[i].content?.trim() ?? '';
+    }
+  }
+  return '';
+}
 
 type Props = {
   messages: ChatMessage[];
@@ -12,38 +30,101 @@ type Props = {
   isStreaming: boolean;
   isGenerating?: boolean;
   showStreamCursor?: boolean;
+  streamTurnKey?: number;
   emptyHint?: string;
   contentPaddingBottom?: number;
   savedMessageIds?: Set<string>;
+  assistantLabel?: string;
   onSaveNote?: (content: string, messageId: string) => Promise<void>;
 };
 
-export function ChatMessageList({
+export type ChatMessageListHandle = {
+  scrollToEnd: (animated?: boolean) => void;
+};
+
+export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function ChatMessageList({
   messages,
   visibleText,
   isStreaming,
   isGenerating = false,
   showStreamCursor = true,
+  streamTurnKey = 0,
   emptyHint,
   contentPaddingBottom,
   savedMessageIds,
+  assistantLabel,
   onSaveNote,
-}: Props) {
+}, ref) {
   const listRef = useRef<FlashListRef<ChatMessage>>(null);
+  const scrollRafRef = useRef<number | null>(null);
+  const savedRevision = useSavedNotesStore((s) => s.revision);
+  const thinkingUserMessage = useMemo(() => lastUserMessageText(messages), [messages]);
+  const streamTick = isStreaming || isGenerating ? visibleText.length : 0;
+
+  const scrollToEnd = useCallback(
+    (animated = true) => {
+      if (messages.length === 0) return;
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToEnd({ animated });
+      });
+    },
+    [messages.length]
+  );
+
+  useImperativeHandle(ref, () => ({ scrollToEnd }), [scrollToEnd]);
 
   useEffect(() => {
-    if (messages.length === 0) return;
-    listRef.current?.scrollToEnd({ animated: true });
-  }, [messages.length, visibleText, isStreaming]);
+    const animated = !isStreaming && !isGenerating;
+    if (animated) {
+      scrollToEnd(true);
+      return;
+    }
 
-  const renderItem: ListRenderItem<ChatMessage> = ({ item }) => (
-    <ChatMessageBubble
-      message={item}
-      showGeneratingSpinner={isGenerating}
-      showStreamCursor={showStreamCursor && isStreaming}
-      isSaved={savedMessageIds?.has(item.id) ?? false}
-      onSaveNote={onSaveNote}
-    />
+    if (scrollRafRef.current != null) return;
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null;
+      scrollToEnd(false);
+    });
+
+    return () => {
+      if (scrollRafRef.current != null) {
+        cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
+    };
+  }, [messages.length, streamTick, isStreaming, isGenerating, scrollToEnd]);
+
+  useEffect(() => {
+    const sub = Keyboard.addListener('keyboardDidShow', () => scrollToEnd(true));
+    return () => sub.remove();
+  }, [scrollToEnd]);
+
+  const renderItem: ListRenderItem<ChatMessage> = useCallback(
+    ({ item }) => (
+      <ChatMessageBubble
+        message={item}
+        assistantLabel={item.role === 'ASSISTANT' ? assistantLabel : undefined}
+        showGeneratingSpinner={isGenerating}
+        showStreamCursor={showStreamCursor && isStreaming}
+        streamActive={isStreaming || isGenerating}
+        streamTurnKey={streamTurnKey}
+        thinkingUserMessage={
+          item.id === STREAMING_MESSAGE_ID ? thinkingUserMessage : undefined
+        }
+        isSaved={savedMessageIds?.has(item.id) ?? false}
+        onSaveNote={onSaveNote}
+      />
+    ),
+    [
+      assistantLabel,
+      isGenerating,
+      isStreaming,
+      onSaveNote,
+      savedMessageIds,
+      showStreamCursor,
+      streamTurnKey,
+      thinkingUserMessage,
+    ]
   );
 
   if (messages.length === 0 && emptyHint) {
@@ -60,7 +141,7 @@ export function ChatMessageList({
     <FlashList
       ref={listRef}
       data={messages}
-      extraData={`${visibleText}|${isStreaming}|${isGenerating}|${savedMessageIds?.size ?? 0}`}
+      extraData={`${streamTick}|${isStreaming}|${isGenerating}|${streamTurnKey}|${savedRevision}|${assistantLabel ?? ''}`}
       keyExtractor={(item) => item.id}
       contentContainerStyle={[
         styles.list,
@@ -72,7 +153,7 @@ export function ChatMessageList({
       renderItem={renderItem}
     />
   );
-}
+});
 
 const styles = StyleSheet.create({
   listContainer: { flex: 1 },

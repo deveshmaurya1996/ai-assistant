@@ -1,0 +1,21 @@
+{
+  "name": "@ai-assistant/event-bus",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Event bus service (Redis Streams; NATS adapter planned)",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc",
+    "start": "node dist/index.js",
+    "dev": "node ../../node_modules/typescript/bin/tsc && node dist/index.js"
+  },
+  "dependencies": {
+    "@ai-assistant/config": "workspace:*",
+    "@ai-assistant/events": "workspace:*",
+    "fastify": "^5.8.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "~6.0.3"
+  }
+}

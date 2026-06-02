@@ -3,6 +3,8 @@ import type { SessionInfo } from '@ai-assistant/sdk';
 import { authClient, fetchSession } from '@/lib/auth-client';
 import { getOAuthCallbackURL } from '@/lib/oauth-callback';
 import { hydrateAuthStorage } from '@/lib/secure-storage';
+import { readPersistedWebSession } from '@/lib/auth-client';
+import { writeWebSessionCache } from '@/lib/web-session-cache';
 import { Platform } from 'react-native';
 
 type AuthState = {
@@ -22,10 +24,22 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ loading: true });
     try {
       await hydrateAuthStorage();
+
+      if (Platform.OS === 'web') {
+        const cached = readPersistedWebSession();
+        if (cached) set({ session: cached });
+      }
+
       const session = await fetchSession();
       set({ session, loading: false });
+      if (Platform.OS === 'web' && session) writeWebSessionCache(session);
       return session;
     } catch {
+      if (Platform.OS === 'web') {
+        const cached = readPersistedWebSession();
+        set({ session: cached, loading: false });
+        return cached;
+      }
       set({ session: null, loading: false });
       return null;
     }
@@ -43,6 +57,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (!session) {
       throw new Error('Sign in did not return a session');
     }
+    if (Platform.OS === 'web') writeWebSessionCache(session);
     set({ session });
   },
   signInWithGoogle: async () => {
@@ -77,10 +92,12 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (!session) {
       throw new Error('Sign up did not return a session');
     }
+    if (Platform.OS === 'web') writeWebSessionCache(session);
     set({ session });
   },
   signOut: async () => {
     await authClient.signOut();
+    if (Platform.OS === 'web') writeWebSessionCache(null);
     set({ session: null });
   },
 }));

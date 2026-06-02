@@ -27,6 +27,7 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { layout, radii } from '@/theme/tokens';
 import type { MainTabBarProps } from '@/types/navigation';
 import type { ThemeColors } from '@/theme/tokens';
+import { useSettingsStore } from '@/stores/settings';
 
 const TABS = [
   { name: 'chats', label: 'Chats', Icon: MessageSquare },
@@ -92,6 +93,7 @@ function AnimatedGradientRing({
 
 export function FloatingDockTabBar({ activeIndex, navigate }: MainTabBarProps) {
   const { colors, isDark } = useTheme();
+  const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
   const insets = useSafeAreaInsets();
   const [innerWidth, setInnerWidth] = useState(0);
   const indicatorX = useSharedValue(0);
@@ -121,6 +123,7 @@ export function FloatingDockTabBar({ activeIndex, navigate }: MainTabBarProps) {
   const dockBody = (
     <DockInner
       activeIndex={activeIndex}
+      assistantLabel={assistantDisplayName}
       colors={colors}
       navigate={navigate}
       indicatorStyle={indicatorStyle}
@@ -165,12 +168,14 @@ export function FloatingDockTabBar({ activeIndex, navigate }: MainTabBarProps) {
 
 function DockInner({
   activeIndex,
+  assistantLabel,
   colors,
   navigate,
   indicatorStyle,
   onLayout,
 }: {
   activeIndex: number;
+  assistantLabel: string;
   colors: ThemeColors;
   navigate: MainTabBarProps['navigate'];
   indicatorStyle: AnimatedStyle<ViewStyle>;
@@ -188,6 +193,7 @@ function DockInner({
       {TABS.map((tab, index) => {
         const focused = activeIndex === index;
         const Icon = tab.Icon;
+        const label = tab.name === 'assistant' ? assistantLabel : tab.label;
         return (
           <PressableScale
             key={tab.name}
@@ -206,7 +212,7 @@ function DockInner({
                 styles.tabLabel,
                 { color: focused ? colors.primary : colors.textMuted },
               ]}>
-              {tab.label}
+              {label}
             </Text>
           </PressableScale>
         );

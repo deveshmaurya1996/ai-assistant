@@ -10,9 +10,13 @@ const root = path.resolve(__dirname, '..');
 
 const PORT_ENV = {
   api: 'API_PORT',
+  gateway: 'API_PORT',
   ai: 'AI_PORT',
+  'ai-runtime': 'AI_PORT',
   'tool-runtime': 'TOOL_RUNTIME_PORT',
+  'skill-runtime': 'SKILL_RUNTIME_PORT',
   'ai-orchestrator': 'AI_ORCHESTRATOR_PORT',
+  'cognitive-runtime': 'AI_ORCHESTRATOR_PORT',
   studio: 'PRISMA_STUDIO_PORT',
   mobile: 'EXPO_DEV_PORT',
 };
@@ -57,8 +61,8 @@ function runWithEnv(args) {
   return run('node', ['scripts/with-env.mjs', ...args]);
 }
 
-function findPython() {
-  const aiDir = path.join(root, 'services', 'ai');
+function findPython(aiDirName = 'ai-runtime') {
+  const aiDir = path.join(root, 'services', aiDirName);
   const win = path.join(aiDir, 'venv', 'Scripts', 'python.exe');
   const unix = path.join(aiDir, 'venv', 'bin', 'python');
   if (process.platform === 'win32' && fs.existsSync(win)) return win;
@@ -67,9 +71,9 @@ function findPython() {
 }
 
 async function serveAi() {
-  const port = portFor('ai');
-  const aiDir = path.join(root, 'services', 'ai');
-  const python = findPython();
+  const port = portFor('ai-runtime');
+  const aiDir = path.join(root, 'services', 'ai-runtime');
+  const python = findPython('ai-runtime');
   const code = await new Promise((resolve, reject) => {
     const child = spawn(
       python,
@@ -79,6 +83,30 @@ async function serveAi() {
     child.on('error', reject);
     child.on('exit', (c) => resolve(c ?? 1));
   });
+  process.exit(code);
+}
+
+async function dbSetup() {
+  console.log('[db-setup] Generating Prisma client from schema...');
+  process.env.PRISMA_GENERATE_LENIENT = '1';
+  let code = await run('node', ['scripts/prisma-generate.mjs']);
+  if (code !== 0) process.exit(code);
+
+  console.log('[db-setup] Applying migrations (migrate deploy)...');
+  code = await runWithEnv([
+    'pnpm',
+    '--filter',
+    '@ai-assistant/database',
+    'run',
+    'db:migrate:deploy',
+  ]);
+  if (code !== 0) {
+    console.error('[db-setup] migrate deploy failed');
+    process.exit(code);
+  }
+
+  console.log('[db-setup] Building @ai-assistant/database...');
+  code = await runWithEnv(['pnpm', '--filter', '@ai-assistant/database', 'build']);
   process.exit(code);
 }
 
@@ -127,10 +155,10 @@ async function serveMobile() {
   );
 }
 
-async function serveAiOrchestrator() {
-  const port = portFor('ai-orchestrator');
-  const orchDir = path.join(root, 'services', 'ai-orchestrator');
-  const python = findPython();
+async function serveCognitiveRuntime() {
+  const port = portFor('cognitive-runtime');
+  const orchDir = path.join(root, 'services', 'cognitive-runtime');
+  const python = findPython('ai-runtime');
   const code = await new Promise((resolve, reject) => {
     const child = spawn(
       python,
@@ -145,15 +173,25 @@ async function serveAiOrchestrator() {
 
 const HANDLERS = {
   api: {
-    build: ['pnpm', '--filter', '@ai-assistant/api', 'build'],
-    serve: () => runWithEnv(['pnpm', '--filter', '@ai-assistant/api', 'run', 'serve']),
+    build: ['pnpm', '--filter', '@ai-assistant/gateway', 'build'],
+    serve: () => runWithEnv(['pnpm', '--filter', '@ai-assistant/gateway', 'run', 'serve']),
+  },
+  gateway: {
+    build: ['pnpm', '--filter', '@ai-assistant/gateway', 'build'],
+    serve: () => runWithEnv(['pnpm', '--filter', '@ai-assistant/gateway', 'run', 'serve']),
   },
   'tool-runtime': {
     build: ['pnpm', '--filter', '@ai-assistant/tool-runtime', 'build'],
     serve: () => runWithEnv(['pnpm', '--filter', '@ai-assistant/tool-runtime', 'start']),
   },
+  'skill-runtime': {
+    build: ['pnpm', '--filter', '@ai-assistant/skill-runtime', 'build'],
+    serve: () => runWithEnv(['pnpm', '--filter', '@ai-assistant/skill-runtime', 'start']),
+  },
   ai: { serve: serveAi },
-  'ai-orchestrator': { serve: serveAiOrchestrator },
+  'ai-runtime': { serve: serveAi },
+  'ai-orchestrator': { serve: serveCognitiveRuntime },
+  'cognitive-runtime': { serve: serveCognitiveRuntime },
   studio: { serve: serveStudio },
   mobile: { serve: serveMobile },
 };
@@ -162,6 +200,12 @@ async function main() {
   await loadEnv();
 
   const [action, name] = process.argv.slice(2);
+
+  if (action === 'db-setup') {
+    await dbSetup();
+    return;
+  }
+
   const handler = HANDLERS[name];
 
   if (!handler) {
@@ -184,7 +228,7 @@ async function main() {
   }
 
   console.error(
-    'Usage: node scripts/dev.mjs <build|serve> <api|tool-runtime|ai|ai-orchestrator|studio|mobile>'
+    'Usage: node scripts/dev.mjs <build|serve> <gateway|api|tool-runtime|skill-runtime|ai|ai-runtime|cognitive-runtime|studio|mobile>'
   );
   process.exit(1);
 }

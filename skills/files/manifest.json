@@ -1,0 +1,13 @@
+{
+  "id": "files",
+  "name": "File Intelligence",
+  "version": "1.0.0",
+  "connector": "files",
+  "capabilities": [
+    "files.search",
+    "files.get_summary",
+    "files.get_chunks",
+    "files.analyze_image"
+  ],
+  "description": "Search indexed user files, summaries, and relevant chunks"
+}

@@ -4,6 +4,7 @@ import { Drawer } from 'expo-router/drawer';
 import { DrawerContent } from '@/components/layout/DrawerContent';
 import { useTheme } from '@/theme/ThemeProvider';
 import { promptOverlayPermissionIfNeeded } from '@/lib/overlay-prompt';
+import { ChatImagePreviewHost } from '@/features/chat/ChatImagePreviewHost';
 import { VoiceSessionHost } from '@/features/voice-assistant/VoiceSessionHost';
 import { ActionConfirmSheet } from '@/components/integrations/ActionConfirmSheet';
 import { useChatActionConfirmBridge } from '@/features/chat/chatActionConfirmBridge';
@@ -87,8 +88,10 @@ export default function AppDrawerLayout() {
   }, []);
 
   return (
-    <VoiceSessionHost>
-      <AppDrawerLayoutContent />
-    </VoiceSessionHost>
+    <ChatImagePreviewHost>
+      <VoiceSessionHost>
+        <AppDrawerLayoutContent />
+      </VoiceSessionHost>
+    </ChatImagePreviewHost>
   );
 }

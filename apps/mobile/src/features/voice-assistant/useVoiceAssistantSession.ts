@@ -14,7 +14,7 @@ import {
 import { useVoiceTurnRecorder } from './useVoiceTurnRecorder';
 import { useChatSocketStream } from '@/features/chat/useChatSocketStream';
 import { buildStreamingMessages } from '@/features/chat/buildStreamingMessages';
-import { useVoiceOverlaySync } from './useVoiceOverlaySync';
+import { useOverlaySessionStore } from '@/features/overlay/overlaySessionStore';
 import { useVoiceTurnSocket } from './useVoiceTurnSocket';
 import { useVoiceSessionBridge } from './voiceSessionBridge';
 import { useStudioVoiceAnalysis } from '@/features/voice/studio/useStudioVoiceAnalysis';
@@ -39,12 +39,12 @@ type StopSessionOptions = {
 export function useVoiceAssistantSession() {
   const session = useAuthStore((s) => s.session);
   const sessionToken = session ? getSocketSessionToken() : undefined;
-  const defaultRag = useSettingsStore((s) => s.defaultRagEnabled);
   const assistantContinuousListening = useSettingsStore(
     (s) => s.assistantContinuousListening
   );
   const speakRepliesEnabled = useSettingsStore((s) => s.speakRepliesEnabled);
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
+  const getSelectedTtsVoice = useSettingsStore((s) => s.getSelectedTtsVoice);
   const registerHandlers = useVoiceSessionBridge((s) => s.registerHandlers);
   const setRuntime = useVoiceSessionBridge((s) => s.setRuntime);
 
@@ -76,15 +76,13 @@ export function useVoiceAssistantSession() {
     setMessages,
     socketRef,
     visibleText,
+    streamTurnKey,
     emitMessage,
     isStreaming,
     resetStream,
-    setIsGenerating,
     isGenerating,
   } = useChatSocketStream({
-    sessionToken,
     sessionId,
-    enabled: Boolean(sessionToken),
     onStreamTargetChange: (fullText) => {
       latestAssistantRef.current = fullText;
       lastActivityRef.current = Date.now();
@@ -108,12 +106,17 @@ export function useVoiceAssistantSession() {
   const ensureVoiceSession = useCallback(async (): Promise<string> => {
     if (sessionIdRef.current) return sessionIdRef.current;
 
+    const voiceTitle = `Voice chat with ${assistantDisplayName}`;
     const session = await apiClient.createSession({
-      title: `Voice chat with ${assistantDisplayName}`,
+      title: voiceTitle,
       kind: 'voice',
     });
     sessionIdRef.current = session.id;
     setSessionId(session.id);
+    useOverlaySessionStore.getState().upsertSession(session.id, {
+      title: voiceTitle,
+      kind: 'voice',
+    });
     return session.id;
   }, [assistantDisplayName]);
 
@@ -129,13 +132,6 @@ export function useVoiceAssistantSession() {
     }, 250);
     return () => clearInterval(poll);
   }, [sessionToken, attachListeners, socketRef]);
-
-  useVoiceOverlaySync({
-    phase,
-    sessionActive: phase !== 'idle' && phase !== 'stopping',
-    assistantText: latestAssistantRef.current || visibleText,
-    assistantDisplayName,
-  });
 
   const stopSession = useCallback(
     async (opts?: StopSessionOptions) => {
@@ -304,7 +300,9 @@ export function useVoiceAssistantSession() {
           latestAssistantRef.current = '';
           streamedCharsRef.current = 0;
 
-          const ttsQueue = speakRepliesEnabled ? new SentenceTtsQueue() : null;
+          const ttsQueue = speakRepliesEnabled
+            ? new SentenceTtsQueue(getSelectedTtsVoice())
+            : null;
           ttsQueueRef.current = ttsQueue;
 
           const socket = socketRef.current;
@@ -325,9 +323,8 @@ export function useVoiceAssistantSession() {
           }
 
           setPhase('waiting_for_ai');
-          setIsGenerating(true);
 
-          emitMessage(text, defaultRag, { source: 'voice' });
+          emitMessage(text, { source: 'voice' });
 
           try {
             const assistantMessage = await waitForAssistantReply(sid);
@@ -368,12 +365,10 @@ export function useVoiceAssistantSession() {
     [
       assistantContinuousListening,
       speakRepliesEnabled,
-      defaultRag,
       recordUntilSilence,
       transcribeViaSocket,
       waitForAssistantReply,
       resetStream,
-      setIsGenerating,
       emitMessage,
       handleIdleTurn,
       markActivity,
@@ -383,6 +378,7 @@ export function useVoiceAssistantSession() {
 
   const beginVoiceLoop = useCallback(
     async (existingId?: string, existingMessages?: ChatMessage[]) => {
+      useOverlaySessionStore.getState().setUserDismissed(false);
       setError(null);
       if (existingMessages) {
         setMessages(existingMessages);
@@ -458,7 +454,12 @@ export function useVoiceAssistantSession() {
     (isStreaming || Boolean(visibleText));
 
   const displayMessages = showStreamBubble
-    ? buildStreamingMessages(messages, visibleText, isStreaming || Boolean(visibleText))
+    ? buildStreamingMessages(
+        messages,
+        visibleText,
+        isStreaming || Boolean(visibleText),
+        isGenerating
+      )
     : messages;
 
   return {
@@ -466,6 +467,7 @@ export function useVoiceAssistantSession() {
     isActive,
     messages: displayMessages,
     visibleText,
+    streamTurnKey,
     isStreaming,
     isGenerating,
     socketRef,

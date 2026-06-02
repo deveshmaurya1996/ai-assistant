@@ -3,12 +3,13 @@
  * Port allocation for Tilt (tilt_config.json).
  *
  *   node scripts/ports.mjs ensure   → write tilt_config.json
- *   node scripts/ports.mjs up       → ensure, then `tilt up --port …`
+ *   node scripts/ports.mjs up       → ensure Docker, ensure ports, then `tilt up --port …`
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ensureDocker } from './lib/docker-ensure.mjs';
 import { findFreePort, portInUse } from './lib/ports-util.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -109,7 +110,8 @@ function tiltPortFromConfig(config) {
   return n;
 }
 
-function up() {
+async function up() {
+  await ensureDocker();
   const config = ensure();
   const tiltPort = tiltPortFromConfig(config);
   const tiltfileArgs = process.argv.slice(3).filter((a) => a !== '--');
@@ -127,7 +129,12 @@ function up() {
 }
 
 const cmd = process.argv[2] ?? 'ensure';
-if (cmd === 'up') up();
+if (cmd === 'up') {
+  up().catch((err) => {
+    console.error(err.message ?? err);
+    process.exit(1);
+  });
+}
 else if (cmd === 'ensure') ensure();
 else {
   console.error(`Unknown command: ${cmd} (use ensure | up)`);

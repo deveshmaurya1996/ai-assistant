@@ -26,6 +26,7 @@ export default function AssistantScreen() {
     isActive,
     messages,
     visibleText,
+    streamTurnKey,
     isStreaming,
     isGenerating,
     error,
@@ -51,6 +52,7 @@ export default function AssistantScreen() {
             <VoiceConversationView
               messages={messages}
               visibleText={visibleText}
+              streamTurnKey={streamTurnKey}
               isStreaming={isStreaming}
               isGenerating={isGenerating}
               phase={phase}

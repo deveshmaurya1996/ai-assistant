@@ -1,6 +1,8 @@
 import { io, type Socket } from 'socket.io-client';
 import { ApiError, parseApiError } from './errors';
 import { buildAudioUploadPart } from './upload-audio';
+import { buildFileUploadPart } from './upload-file';
+import { isUploadFilePayload } from './upload-env';
 import type {
   AuthUser,
   ChatMessage,
@@ -9,8 +11,8 @@ import type {
   ConnectChallenge,
   CreateChatSessionBody,
   CreateChatSessionResponse,
+  FileAssetResponse,
   ModelsResponse,
-  PreferredModelUpdate,
   Reminder,
   Automation,
   CreateWorkflowInput,
@@ -195,22 +197,33 @@ export class AssistantClient {
   async connectSocket(sessionToken?: string): Promise<AssistantSocket> {
     await this.resolveAuth();
     const token = sessionToken ?? this.sessionToken;
-    return io(this.baseUrl, {
+    const cookieName = 'better-auth.session_token';
+    let cookieHeader = this.cookie;
+    if (token && !cookieHeader.includes(cookieName)) {
+      const tokenCookie = `${cookieName}=${token}`;
+      cookieHeader = cookieHeader ? `${cookieHeader}; ${tokenCookie}` : tokenCookie;
+    }
+    const socket = io(this.baseUrl, {
       auth: { token },
-      extraHeaders: this.cookie ? { cookie: this.cookie } : undefined,
+      extraHeaders: cookieHeader ? { cookie: cookieHeader } : undefined,
       transports: ['websocket'],
     });
+    if (token) {
+      socket.on('connect', () => {
+        socket.emit('authenticate', token);
+      });
+    }
+    return socket;
   }
 
   async getModels() {
     return this.request<ModelsResponse>('/settings/models');
   }
 
-  async updatePreferredModel(preferredModel: string) {
-    return this.request<PreferredModelUpdate>('/settings/model', {
-      method: 'PATCH',
-      body: JSON.stringify({ preferredModel }),
-    });
+  async listPersonalities() {
+    return this.request<import('@ai-assistant/types').PersonalitiesResponse>(
+      '/assistant/personalities'
+    );
   }
 
   async transcribeVoice(
@@ -218,16 +231,16 @@ export class AssistantClient {
     mimeType = 'audio/m4a'
   ): Promise<VoiceTranscriptionResponse> {
     const file = await buildAudioUploadPart(audioUri, mimeType);
-    if (file instanceof Blob) {
-      const name =
-        'name' in file && typeof file.name === 'string' && file.name.length > 0
-          ? file.name
-          : mimeType.includes('webm')
-            ? 'recording.webm'
-            : 'recording.m4a';
-      return this.transcribeVoiceBlob(file, name);
+    if (isUploadFilePayload(file)) {
+      return this.transcribeVoicePart(file);
     }
-    return this.transcribeVoicePart(file);
+    const name =
+      'name' in file && typeof file.name === 'string' && file.name.length > 0
+        ? file.name
+        : mimeType.includes('webm')
+          ? 'recording.webm'
+          : 'recording.m4a';
+    return this.transcribeVoiceBlob(file, name);
   }
 
   async transcribeVoiceBlob(
@@ -235,7 +248,7 @@ export class AssistantClient {
     filename: string
   ): Promise<VoiceTranscriptionResponse> {
     const form = new FormData();
-    form.append('file', file, filename);
+    this.appendUploadPart(form, 'file', file, filename);
     return this.postVoiceTranscribeForm(form);
   }
 
@@ -243,7 +256,7 @@ export class AssistantClient {
     part: UploadFilePayload
   ): Promise<VoiceTranscriptionResponse> {
     const form = new FormData();
-    form.append('file', part);
+    this.appendUploadPart(form, 'file', part);
     return this.postVoiceTranscribeForm(form);
   }
 
@@ -273,7 +286,79 @@ export class AssistantClient {
     return res.json() as Promise<VoiceTranscriptionResponse>;
   }
 
-  async speakVoice(text: string): Promise<ArrayBuffer> {
+  async uploadFile(
+    uri: string,
+    name: string,
+    mimeType: string
+  ): Promise<FileAssetResponse> {
+    const file = await buildFileUploadPart(uri, name, mimeType);
+    return this.uploadFilePart(file, name);
+  }
+
+  private appendUploadPart(
+    form: FormData,
+    field: string,
+    file: Blob | File | UploadFilePayload,
+    filename?: string
+  ): void {
+    if (isUploadFilePayload(file)) {
+      form.append(field, file);
+      return;
+    }
+    const name =
+      filename ?? (file instanceof File ? file.name : 'upload');
+    form.append(field, file, name);
+  }
+
+  async uploadFilePart(
+    file: Blob | File | UploadFilePayload,
+    filename?: string
+  ): Promise<FileAssetResponse> {
+    const form = new FormData();
+    this.appendUploadPart(form, 'file', file, filename);
+    return this.postFileUploadForm(form);
+  }
+
+  private async postFileUploadForm(form: FormData): Promise<FileAssetResponse> {
+    await this.resolveAuth();
+
+    const headers: Record<string, string> = {
+      Origin: this.origin,
+    };
+    if (this.cookie) {
+      headers.cookie = this.cookie;
+    }
+
+    const uploadSignal =
+      typeof AbortSignal.timeout === 'function'
+        ? AbortSignal.timeout(60_000)
+        : undefined;
+
+    const res = await fetch(`${this.baseUrl}/files/upload`, {
+      method: 'POST',
+      headers,
+      body: form,
+      credentials: 'include',
+      signal: uploadSignal,
+    });
+
+    if (!res.ok) {
+      throw await parseApiError(res);
+    }
+
+    return res.json() as Promise<FileAssetResponse>;
+  }
+
+  fileContentUrl(fileId: string, sessionToken?: string): string {
+    const base = `${this.baseUrl}/files/${fileId}`;
+    const token = sessionToken ?? this.sessionToken;
+    if (token) {
+      return `${base}?token=${encodeURIComponent(token)}`;
+    }
+    return base;
+  }
+
+  async speakVoice(text: string, voice?: string): Promise<ArrayBuffer> {
     await this.resolveAuth();
 
     const headers: Record<string, string> = {
@@ -284,10 +369,13 @@ export class AssistantClient {
       headers.cookie = this.cookie;
     }
 
+    const body: { text: string; voice?: string } = { text };
+    if (voice) body.voice = voice;
+
     const res = await fetch(`${this.baseUrl}/voice/speak`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(body),
       credentials: 'include',
     });
 
@@ -414,5 +502,12 @@ export class AssistantClient {
 
   async deleteNote(id: string) {
     return this.request(`/notes/${id}`, { method: 'DELETE' });
+  }
+
+  async deleteNoteByMessageId(sourceMessageId: string) {
+    return this.request<{ deleted: boolean; sourceMessageId: string | null }>(
+      `/notes/by-message/${encodeURIComponent(sourceMessageId)}`,
+      { method: 'DELETE' }
+    );
   }
 }

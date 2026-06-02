@@ -5,6 +5,7 @@ import { prisma } from '@ai-assistant/database';
 import { EventNames, publishEvent } from '@ai-assistant/events';
 import { getConnector } from '@ai-assistant/integrations';
 import { decryptCredentials } from './encryption';
+import { processFileAsset } from './jobs/process-file';
 
 const PORT = parseInt(process.env.INGESTION_ENGINE_PORT ?? '3012', 10);
 
@@ -42,6 +43,14 @@ async function main() {
   const worker = new Worker(
     'sync-queue',
     async (job) => {
+      if (job.name === 'index-file') {
+        const { userId, fileAssetId } = job.data as {
+          userId: string;
+          fileAssetId: string;
+        };
+        await processFileAsset(userId, fileAssetId);
+        return;
+      }
       const { connectionId } = job.data as { connectionId: string };
       await syncConnection(connectionId);
     },

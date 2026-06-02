@@ -1,0 +1,250 @@
+
+version: 1
+
+timeouts:
+  stream: 45
+  complete: 20
+  planner: 20
+
+rag:
+  enabledByDefault: true
+  timeoutSeconds: 8
+  limit: 3
+  warmEmbedderOnStartup: true
+  embeddingModel: nvidia/nv-embed-v1
+  providerModel: nvidia/nv-embed-v1
+  rerankModel: nvidia/rerank-qa-mistral-4b
+  rerankProviderModel: nv-rerank-qa-mistral-4b:1
+  collectionName: kb_documents_nv
+  embeddingDim: 4096
+  rerankFetchLimit: 12
+
+providers:
+  nvidia:
+    kind: openai_compatible
+    apiKeyEnv: NVIDIA_API_KEY
+    baseUrl: https://integrate.api.nvidia.com/v1
+    streamTimeout: 120
+    completeTimeout: 90
+  nvidia_rerank:
+    kind: nvidia_rerank
+    apiKeyEnv: NVIDIA_API_KEY
+    baseUrl: https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking
+  nvidia_vlm:
+    kind: nvidia_vlm
+    apiKeyEnv: NVIDIA_API_KEY
+    baseUrl: https://ai.api.nvidia.com/v1/vlm
+  pollinations:
+    kind: pollinations
+    apiKeyEnv: POLLINATIONS_API_KEY
+    baseUrl: https://gen.pollinations.ai/v1
+    headers:
+      User-Agent: Ai-Assistant/1.0
+
+models:
+  # Tier A — primary intelligence (text + RAG)
+  - id: nvidia/glm-5.1
+    label: GLM 5.1
+    provider: nvidia
+    providerModel: z-ai/glm-5.1
+    tasks: [fast_chat, reasoning, coding, planner, summary]
+    tier: A
+    streamTimeout: 120
+    completeTimeout: 90
+    defaultParams:
+      temperature: 1.0
+      top_p: 1.0
+      max_tokens: 16384
+
+  - id: nvidia/mistral-nemotron
+    label: Mistral Nemotron
+    provider: nvidia
+    providerModel: mistralai/mistral-nemotron
+    tasks: [fast_chat, reasoning, coding, planner, summary]
+    tier: A
+    streamTimeout: 90
+    completeTimeout: 60
+    defaultParams:
+      temperature: 0.6
+      top_p: 0.7
+      max_tokens: 4096
+
+  - id: nvidia/nv-embed-v1
+    label: NV-Embed v1
+    provider: nvidia
+    providerModel: nvidia/nv-embed-v1
+    adapter: nvidia_embed
+    tasks: [embedding]
+    tier: A
+
+  - id: nvidia/rerank-qa-mistral-4b
+    label: Rerank QA Mistral 4B
+    provider: nvidia_rerank
+    providerModel: nv-rerank-qa-mistral-4b:1
+    adapter: nvidia_rerank
+    tasks: [rerank]
+    tier: A
+
+  # Tier B — fast / voice helpers
+  - id: nvidia/nemotron-mini-4b-instruct
+    label: Nemotron Mini 4B
+    provider: nvidia
+    providerModel: nvidia/nemotron-mini-4b-instruct
+    tasks: [fast_chat, planner, title, summary]
+    tier: B
+    streamTimeout: 45
+    completeTimeout: 30
+    defaultParams:
+      temperature: 0.2
+      top_p: 0.7
+      max_tokens: 1024
+
+  - id: google/gemma-3n-e4b-it
+    label: Gemma 3n E4B
+    provider: nvidia
+    providerModel: google/gemma-3n-e4b-it
+    adapter: multimodal_stt
+    tasks: [transcription]
+    tier: B
+    streamTimeout: 60
+    completeTimeout: 45
+
+  - id: google/gemma-3n-e2b-it
+    label: Gemma 3n E2B
+    provider: nvidia
+    providerModel: google/gemma-3n-e2b-it
+    adapter: multimodal_stt
+    tasks: [transcription]
+    tier: B
+    streamTimeout: 60
+    completeTimeout: 45
+
+  # Tier C — vision / OCR only (cold start; use when images attached)
+  - id: google/paligemma
+    label: PaliGemma
+    provider: nvidia_vlm
+    providerModel: google/paligemma
+    adapter: nvidia_vlm
+    endpointUrl: https://ai.api.nvidia.com/v1/vlm/google/paligemma
+    tasks: [vision, file_analysis]
+    tier: C
+    streamTimeout: 90
+    completeTimeout: 60
+    defaultParams:
+      temperature: 1.0
+      top_p: 0.7
+      max_tokens: 512
+
+  - id: nvidia/llama-4-maverick-17b-128e-instruct
+    label: Llama 4 Maverick 17B
+    provider: nvidia
+    providerModel: meta/llama-4-maverick-17b-128e-instruct
+    tasks: [vision, file_analysis]
+    tier: C
+    streamTimeout: 120
+    completeTimeout: 90
+    defaultParams:
+      temperature: 1.0
+      top_p: 1.0
+      max_tokens: 1024
+
+  - id: nvidia/magpie-tts-zeroshot
+    label: Magpie TTS Zeroshot
+    provider: nvidia
+    providerModel: magpie-tts-zeroshot
+    adapter: magpie_tts
+    tasks: [speech]
+    tier: 1
+    languageCode: en-US
+    zeroShotPromptPath: services/ai-runtime/assets/voice/default_magpie_prompt.wav
+
+  - id: pollinations/openai
+    label: Pollinations Chat
+    provider: pollinations
+    providerModel: openai
+    tasks: [fallback, fast_chat, vision, file_analysis]
+    tier: 3
+    streamTimeout: 45
+    completeTimeout: 30
+
+  - id: pollinations/whisper-1
+    label: Pollinations Whisper
+    provider: pollinations
+    providerModel: whisper-1
+    tasks: [transcription]
+    tier: 3
+
+  - id: pollinations/whisper-large-v3
+    label: Pollinations Whisper Large v3
+    provider: pollinations
+    providerModel: whisper-large-v3
+    tasks: [transcription]
+    tier: 3
+
+  - id: pollinations/openai-audio
+    label: Pollinations TTS
+    provider: pollinations
+    providerModel: openai-audio
+    tasks: [speech]
+    tier: 3
+
+  - id: pollinations/flux
+    label: Pollinations Flux
+    provider: pollinations
+    providerModel: flux
+    tasks: [image, image_edit]
+    tier: 3
+
+routing:
+  # Tier A first; Tier B for cheap ops; Pollinations last
+  fast_chat:
+    - nvidia/glm-5.1
+    - nvidia/mistral-nemotron
+    - nvidia/nemotron-mini-4b-instruct
+    - pollinations/openai
+  reasoning:
+    - nvidia/glm-5.1
+    - nvidia/mistral-nemotron
+    - pollinations/openai
+  coding:
+    - nvidia/glm-5.1
+    - nvidia/mistral-nemotron
+    - pollinations/openai
+  summary:
+    - nvidia/glm-5.1
+    - nvidia/mistral-nemotron
+    - nvidia/nemotron-mini-4b-instruct
+    - pollinations/openai
+  planner:
+    - nvidia/glm-5.1
+    - nvidia/mistral-nemotron
+    - nvidia/nemotron-mini-4b-instruct
+    - pollinations/openai
+  title:
+    - nvidia/nemotron-mini-4b-instruct
+    - nvidia/mistral-nemotron
+    - pollinations/openai
+  # Tier C vision chain — only when attachments include images (VLM skips otherwise)
+  vision:
+    - google/paligemma
+    - nvidia/llama-4-maverick-17b-128e-instruct
+    - nvidia/glm-5.1
+    - nvidia/mistral-nemotron
+    - pollinations/openai
+  file_analysis:
+    - google/paligemma
+    - nvidia/llama-4-maverick-17b-128e-instruct
+    - nvidia/glm-5.1
+    - nvidia/mistral-nemotron
+    - pollinations/openai
+  transcription:
+    - pollinations/whisper-large-v3
+    - pollinations/whisper-1
+    - google/gemma-3n-e4b-it
+    - google/gemma-3n-e2b-it
+  speech:
+    - nvidia/magpie-tts-zeroshot
+    - pollinations/openai-audio
+  image: [pollinations/flux]
+  image_edit: [pollinations/flux]
+  fallback: [pollinations/openai]

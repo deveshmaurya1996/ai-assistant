@@ -1,0 +1,68 @@
+
+version: 1
+
+timeouts:
+  stream: 45
+  complete: 20
+  planner: 20
+
+rag:
+  enabledByDefault: true
+  embeddingModel: nvidia/nv-embed-v1
+  providerModel: nvidia/nv-embed-v1
+  rerankModel: nvidia/rerank-qa-mistral-4b
+  rerankProviderModel: nv-rerank-qa-mistral-4b:1
+  collectionName: kb_documents_nv
+  embeddingDim: 4096
+
+providers:
+  nvidia:
+    kind: openai_compatible
+    apiKeyEnv: NVIDIA_API_KEY
+    baseUrl: https://integrate.api.nvidia.com/v1
+  nvidia_rerank:
+    kind: nvidia_rerank
+    apiKeyEnv: NVIDIA_API_KEY
+    baseUrl: https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking
+  nvidia_vlm:
+    kind: nvidia_vlm
+    apiKeyEnv: NVIDIA_API_KEY
+    baseUrl: https://ai.api.nvidia.com/v1/vlm
+  pollinations:
+    kind: pollinations
+    apiKeyEnv: POLLINATIONS_API_KEY
+    baseUrl: https://gen.pollinations.ai/v1
+
+models:
+  - id: nvidia/glm-5.1
+    provider: nvidia
+    providerModel: z-ai/glm-5.1
+    tasks: [fast_chat, reasoning, coding]
+    tier: A
+
+  - id: nvidia/mistral-nemotron
+    provider: nvidia
+    providerModel: mistralai/mistral-nemotron
+    tasks: [fast_chat, reasoning, coding]
+    tier: A
+
+  - id: nvidia/nemotron-mini-4b-instruct
+    provider: nvidia
+    providerModel: nvidia/nemotron-mini-4b-instruct
+    tasks: [title, summary]
+    tier: B
+
+  - id: google/paligemma
+    provider: nvidia_vlm
+    providerModel: google/paligemma
+    adapter: nvidia_vlm
+    endpointUrl: https://ai.api.nvidia.com/v1/vlm/google/paligemma
+    tasks: [vision, file_analysis]
+    tier: C
+
+routing:
+  fast_chat: [nvidia/glm-5.1, nvidia/mistral-nemotron, nvidia/nemotron-mini-4b-instruct, pollinations/openai]
+  reasoning: [nvidia/glm-5.1, nvidia/mistral-nemotron, pollinations/openai]
+  vision: [google/paligemma, nvidia/llama-4-maverick-17b-128e-instruct, pollinations/openai]
+  transcription: [pollinations/whisper-large-v3, google/gemma-3n-e4b-it]
+  fallback: [pollinations/openai]

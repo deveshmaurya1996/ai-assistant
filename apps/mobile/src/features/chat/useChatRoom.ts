@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ChatMessage, ChatSessionKind } from '@ai-assistant/sdk';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import type { ChatAttachmentRef, ChatMessage, ChatSessionKind } from '@ai-assistant/sdk';
+import type { ChatSendPayload } from '@/components/chat/ChatComposer';
 import { apiClient } from '@/lib/api-client';
-import { getSocketSessionToken } from '@/lib/auth-cookies';
 import { formatApiError } from '@/lib/format-ai-error';
-import { useAuthStore } from '@/stores/auth';
 import { useSettingsStore } from '@/stores/settings';
 import { useSavedNotesStore } from '@/features/notes/savedNotesStore';
 import { useChatSocketStream } from './useChatSocketStream';
 import { buildStreamingMessages } from './buildStreamingMessages';
+import { useOverlaySessionStore } from '@/features/overlay/overlaySessionStore';
+import { useChatStreamStore } from './chatStreamStore';
 
 type UseChatRoomOptions = {
   sessionId?: string | null;
@@ -24,11 +27,7 @@ export function useChatRoom({
   onSessionCreated,
   onExchangeComplete,
 }: UseChatRoomOptions) {
-  const session = useAuthStore((s) => s.session);
-  const sessionToken = session ? getSocketSessionToken() : undefined;
-  const defaultRag = useSettingsStore((s) => s.defaultRagEnabled);
   const hasSessionId = Boolean(sessionId);
-  const hadSessionOnMount = useRef(hasSessionId);
 
   const [title, setTitle] = useState(initialTitle ?? (hasSessionId ? 'Chat' : 'New chat'));
   const [kind, setKind] = useState<ChatSessionKind>(
@@ -42,16 +41,19 @@ export function useChatRoom({
     messages,
     setMessages,
     visibleText,
+    streamTurnKey,
     isStreaming,
     isGenerating,
     emitMessage,
+    abortGeneration,
   } = useChatSocketStream({
-    sessionToken,
     sessionId: sessionId ?? null,
-    enabled: Boolean(sessionToken),
     onSessionCreated,
     onExchangeComplete,
     onTitleUpdated: setTitle,
+    onError: (message) => {
+      Alert.alert('Message failed', message);
+    },
   });
 
   const refreshSessionMeta = useCallback(async () => {
@@ -62,6 +64,10 @@ export function useChatRoom({
       if (chatSession.title) {
         setTitle(chatSession.title);
       }
+      useOverlaySessionStore.getState().upsertSession(sessionId, {
+        title: chatSession.title || 'Chat',
+        kind: chatSession.kind === 'voice' ? 'voice' : 'text',
+      });
     } catch (err) {
       // Keep optimistic title/kind from route when metadata refresh fails (offline, etc.)
       if (__DEV__) {
@@ -73,7 +79,19 @@ export function useChatRoom({
   const loadMessages = useCallback(async () => {
     if (!sessionId) return;
     const data = await apiClient.getMessages(sessionId);
-    setMessages(data);
+    const generating = useChatStreamStore.getState().isSessionGenerating(sessionId);
+    if (!generating) {
+      setMessages(data);
+      return;
+    }
+    setMessages((prev) => {
+      const pendingLocals = prev.filter(
+        (m) =>
+          m.id.startsWith('local-') &&
+          !data.some((d) => d.role === m.role && d.content === m.content)
+      );
+      return [...data, ...pendingLocals];
+    });
   }, [sessionId, setMessages]);
 
   const loadSavedMessageIds = useCallback(async () => {
@@ -90,39 +108,53 @@ export function useChatRoom({
 
   useEffect(() => {
     if (!sessionId) return;
-
     setKind(initialKind === 'voice' ? 'voice' : 'text');
     if (initialTitle) setTitle(initialTitle);
+  }, [sessionId, initialKind, initialTitle]);
 
-    if (!hadSessionOnMount.current) {
-      hadSessionOnMount.current = true;
+  useFocusEffect(
+    useCallback(() => {
+      if (!sessionId) return;
+      void loadMessages();
       void refreshSessionMeta();
       void loadSavedMessageIds();
-      return;
-    }
-
-    void loadMessages();
-    void refreshSessionMeta();
-    void loadSavedMessageIds();
-  }, [sessionId, initialKind, initialTitle, loadMessages, refreshSessionMeta, loadSavedMessageIds]);
-
-  const send = useCallback(
-    (text: string) => {
-      const trimmed = text.trim();
-      if (!trimmed) return false;
-
-      const optimistic: ChatMessage = {
-        id: `local-${Date.now()}`,
-        role: 'USER',
-        content: trimmed,
-      };
-      setMessages((prev) => [...prev, optimistic]);
-      return emitMessage(trimmed, defaultRag);
-    },
-    [defaultRag, emitMessage, setMessages]
+    }, [sessionId, loadMessages, refreshSessionMeta, loadSavedMessageIds])
   );
 
-  const displayMessages = buildStreamingMessages(messages, visibleText, isStreaming);
+  const send = useCallback(
+    (payload: ChatSendPayload) => {
+      const trimmed = payload.text.trim();
+      const attachments: ChatAttachmentRef[] = payload.attachments ?? [];
+      if ((!trimmed && attachments.length === 0) || isGenerating) return false;
+
+      const optimisticId = `local-${Date.now()}`;
+      const optimistic: ChatMessage = {
+        id: optimisticId,
+        role: 'USER',
+        content: trimmed,
+        attachments: attachments.length > 0 ? attachments : undefined,
+      };
+      setMessages((prev) => [...prev, optimistic]);
+      const sent = emitMessage(trimmed, { attachments });
+      if (!sent) {
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+        Alert.alert(
+          'Could not send',
+          'Not connected or a reply is already in progress. Try again in a moment.'
+        );
+        return false;
+      }
+      return true;
+    },
+    [emitMessage, isGenerating, setMessages]
+  );
+
+  const displayMessages = buildStreamingMessages(
+    messages,
+    visibleText,
+    isStreaming,
+    isGenerating
+  );
 
   return {
     title,
@@ -132,9 +164,11 @@ export function useChatRoom({
     messages,
     displayMessages,
     visibleText,
+    streamTurnKey,
     isStreaming,
     isGenerating,
     send,
+    stopGeneration: abortGeneration,
     loadMessages,
     refreshSessionMeta,
     savedMessageIds,

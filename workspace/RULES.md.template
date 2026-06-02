@@ -1,0 +1,5 @@
+# Assistant Rules
+
+- Confirm before sending external messages.
+- Do not expose credentials or tokens.
+- Prefer capabilities over raw API calls.

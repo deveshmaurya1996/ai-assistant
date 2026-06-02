@@ -2,27 +2,17 @@ export interface ModelInfo {
   id: string;
   label: string;
   provider?: string;
-  role?: 'primary' | 'fallback';
+  tasks?: string[];
+  tier?: number;
   available?: boolean;
 }
 
-export interface CapabilityModels {
-  label: string;
-  primary: string;
-  fallback: string | null;
-  chain: string[];
-  models: ModelInfo[];
-}
-
 export interface ModelsResponse {
+  mode: 'auto';
   models: ModelInfo[];
-  primary: string;
-  fallback: string;
-  capabilities?: Record<string, CapabilityModels>;
-  text?: CapabilityModels;
+  routing?: Record<string, string[]>;
+  taskChains?: Record<string, string[]>;
+  rag?: Record<string, unknown>;
+  timeouts?: Record<string, number>;
   aiServiceUrl?: string;
-}
-
-export interface PreferredModelUpdate {
-  preferredModel: string;
 }

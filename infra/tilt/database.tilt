@@ -11,6 +11,35 @@ load(
 DATABASE_LABELS = ['database']
 DEV_SCRIPT = 'scripts/dev.mjs'
 
+DB_SETUP_DEPS = [
+    DEV_SCRIPT,
+    'scripts/prisma-generate.mjs',
+    'scripts/with-env.mjs',
+    '.env',
+    'packages/database/prisma/schema.prisma',
+    'packages/database/prisma/migrations',
+    'packages/database/prisma.config.ts',
+    'packages/database/package.json',
+    'packages/database/src',
+]
+
+def database_setup():
+    """Fresh-start: prisma generate + migrate deploy before API/runtimes."""
+    enabled = enabled_services()
+    if not is_enabled('postgres', enabled):
+        return
+
+    local_resource(
+        'db-setup',
+        'node ' + DEV_SCRIPT + ' db-setup',
+        deps=DB_SETUP_DEPS,
+        env=port_env(),
+        ignore=SERVICE_BUILD_IGNORE + ['packages/database/generated'],
+        allow_parallel=False,
+        labels=DATABASE_LABELS,
+        resource_deps=['postgres-db'],
+    )
+
 def database_tools():
     enabled = enabled_services()
     if not is_enabled('prisma-studio', enabled):
@@ -19,19 +48,11 @@ def database_tools():
     local_resource(
         'prisma-studio',
         serve_cmd='node ' + DEV_SCRIPT + ' serve studio',
-        deps=[
-            DEV_SCRIPT,
-            'tilt_config.json',
-            'scripts/with-env.mjs',
-            '.env',
-            'packages/database/prisma',
-            'packages/database/prisma.config.ts',
-            'packages/database/package.json',
-        ],
+        deps=DB_SETUP_DEPS,
         env=port_env(),
         ignore=SERVICE_BUILD_IGNORE + ['packages/database/generated'],
         allow_parallel=True,
         labels=DATABASE_LABELS,
-        resource_deps=['postgres-db'],
+        resource_deps=['db-setup'],
         links=[link(port_url('studio'), 'Prisma Studio :' + str(PORTS['studio']))],
     )

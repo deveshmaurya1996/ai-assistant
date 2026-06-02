@@ -1,0 +1,11 @@
+{
+  "id": "whatsapp",
+  "name": "WhatsApp",
+  "version": "1.0.0",
+  "connector": "whatsapp",
+  "capabilities": [
+    "communication.chat.search",
+    "communication.message.send"
+  ],
+  "description": "Search chats and send WhatsApp messages"
+}

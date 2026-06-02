@@ -17,6 +17,8 @@ for (const ns of GOOGLE_TOOL_NAMESPACES) toolNamespaceToProvider.set(ns, 'google
 for (const ns of WHATSAPP_TOOL_NAMESPACES) toolNamespaceToProvider.set(ns, 'whatsapp');
 for (const ns of FILES_TOOL_NAMESPACES) toolNamespaceToProvider.set(ns, 'files');
 toolNamespaceToProvider.set('notes', 'notes');
+toolNamespaceToProvider.set('email', 'google');
+toolNamespaceToProvider.set('messaging', 'whatsapp');
 
 export function getConnector(providerId: string): IntegrationConnector | undefined {
   return connectors.get(providerId);

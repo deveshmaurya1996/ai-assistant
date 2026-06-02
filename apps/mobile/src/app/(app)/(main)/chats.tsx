@@ -19,11 +19,13 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { spacing, radii } from '@/theme/tokens';
 import type { ChatSession } from '@ai-assistant/sdk';
 import { apiClient } from '@/lib/api-client';
+import { useChatStreamStore } from '@/features/chat/chatStreamStore';
 
 export default function ChatsScreen() {
   const { colors } = useTheme();
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const generatingSessions = useChatStreamStore((s) => s.sessions);
 
   const load = useCallback(async () => {
     setRefreshing(true);
@@ -143,7 +145,11 @@ export default function ChatsScreen() {
                   <Text variant="bodyMedium" style={styles.rowTitle} numberOfLines={1}>
                     {item.title ?? (item.kind === 'voice' ? 'Voice chat' : 'Untitled')}
                   </Text>
-                  {item.kind === 'voice' ? (
+                  {generatingSessions[item.id]?.isGenerating ? (
+                    <Text variant="caption" style={{ color: colors.primary }}>
+                      Generating…
+                    </Text>
+                  ) : item.kind === 'voice' ? (
                     <Text variant="caption" muted>
                       Spoken conversation
                     </Text>

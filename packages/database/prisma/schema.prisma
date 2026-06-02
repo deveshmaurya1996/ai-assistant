@@ -1,6 +1,7 @@
 generator client {
   provider   = "prisma-client-js"
-  engineType = "library"
+  output     = "../generated/prisma"
+  engineType = "wasm"
 }
 
 datasource db {
@@ -84,6 +85,7 @@ model ChatSession {
   userId    String
   title     String?
   kind      ChatSessionKind @default(TEXT)
+  context   Json?
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
 
@@ -292,19 +294,40 @@ model IndexedResource {
 }
 
 model FileAsset {
-  id           String   @id @default(uuid())
-  userId       String
-  filename     String
-  mimeType     String
-  sizeBytes    Int
-  storageKey   String
-  checksum     String?
-  indexedAt    DateTime?
-  createdAt    DateTime @default(now())
+  id              String    @id @default(uuid())
+  userId          String
+  filename        String
+  mimeType        String
+  sizeBytes       Int
+  storageKey      String
+  storageBackend  String    @default("local")
+  checksum        String?
+  status          String    @default("pending")
+  summary         String?
+  analysis        Json?
+  chunkCount      Int       @default(0)
+  indexedAt       DateTime?
+  createdAt       DateTime  @default(now())
 
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chunks          FileChunk[]
 
   @@index([userId])
+  @@index([userId, status])
+}
+
+model FileChunk {
+  id          String   @id @default(uuid())
+  fileAssetId String
+  chunkIndex  Int
+  pageNumber  Int?
+  content     String
+  createdAt   DateTime @default(now())
+
+  fileAsset   FileAsset @relation(fields: [fileAssetId], references: [id], onDelete: Cascade)
+
+  @@index([fileAssetId])
+  @@unique([fileAssetId, chunkIndex])
 }
 
 model ToolInvocation {
@@ -376,4 +399,39 @@ model WorkflowRun {
   workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
 
   @@index([workflowId])
+}
+
+model ChatThread {
+  id            String    @id @default(cuid())
+  userId        String
+  connectionId  String
+  provider      String
+  externalJid   String
+  displayName   String?
+  unreadCount   Int       @default(0)
+  lastMessageAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  messages      IntegrationMessage[]
+
+  @@unique([connectionId, externalJid])
+  @@index([userId])
+  @@index([connectionId])
+}
+
+model IntegrationMessage {
+  id         String   @id @default(cuid())
+  threadId   String
+  externalId String
+  direction  String
+  body       String?
+  mediaType  String?
+  sentAt     DateTime
+
+  thread     ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, externalId])
+  @@index([threadId])
+  @@index([sentAt])
 }

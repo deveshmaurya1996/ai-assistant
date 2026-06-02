@@ -1,4 +1,14 @@
-const DEFAULT_BRIDGE_URL = 'http://localhost:3000/internal/whatsapp';
+function defaultBridgeUrl(): string {
+  const explicit = process.env.GATEWAY_URL ?? process.env.WHATSAPP_BRIDGE_URL;
+  if (explicit) {
+    const base = explicit.replace(/\/internal\/whatsapp\/?$/, '').replace(/\/$/, '');
+    return `${base}/internal/whatsapp`;
+  }
+  const port = process.env.API_PORT ?? process.env.GATEWAY_PORT ?? '3050';
+  return `http://localhost:${port}/internal/whatsapp`;
+}
+
+const DEFAULT_BRIDGE_URL = defaultBridgeUrl();
 const INTERNAL_TOKEN = process.env.INTERNAL_SERVICE_TOKEN ?? 'dev-internal-token';
 
 export function getWhatsAppBridgeUrl(): string {
@@ -13,9 +23,12 @@ export async function whatsappBridgeRequest(
   const normalized = path.startsWith('/') ? path : `/${path}`;
   const url = `${base}${normalized}`;
 
+  const timeoutMs = Number(process.env.WHATSAPP_BRIDGE_TIMEOUT_MS ?? 45_000);
+
   try {
     return await fetch(url, {
       ...init,
+      signal: init?.signal ?? AbortSignal.timeout(timeoutMs),
       headers: {
         'Content-Type': 'application/json',
         'X-Internal-Token': INTERNAL_TOKEN,

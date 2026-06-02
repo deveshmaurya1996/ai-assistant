@@ -157,9 +157,9 @@ Check: http://localhost:3000/health → `{"status":"ok","service":"api"}`
 
 ### Voice transcription (Pollinations)
 
-Android records **m4a (AAC)** for STT. If Pollinations rejects the format, install **ffmpeg** on the machine running the AI service so it can convert to WAV before transcribing.
+Android records **m4a (AAC)** for STT. The **ai-runtime** server requires **ffmpeg** to convert uploads to 16 kHz mono WAV and to measure loudness (silence detection).
 
-Optional: `winget install ffmpeg` (Windows), then restart the AI service.
+Install on the machine running ai-runtime: `winget install ffmpeg` (Windows) or `apt install ffmpeg` (Linux), then restart ai-runtime.
 
 ### Voice assistant (Android overlay)
 
@@ -289,7 +289,7 @@ Works for basic UI and API calls. **Does not support** assistant keep-listening 
 |------|-------------|
 | **Floating dock** | Chats · Assistant · Settings + center mic |
 | **Sidebar** | Profile, new chat, assistant shortcut, theme, overlay toggle |
-| **Settings** | Theme, model, voice, overlay, RAG, account |
+| **Settings** | Theme, model, voice, overlay, account |
 | **Terms** | Required before registration |
 
 ## Voice assistant (Assistant tab)

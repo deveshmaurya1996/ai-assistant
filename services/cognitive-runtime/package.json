@@ -1,0 +1,6 @@
+{
+  "name": "@ai-assistant/cognitive-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cognitive runtime — planner, capability execution, agent turns"
+}

@@ -1,13 +1,8 @@
-
-export interface FormDataFile {
-  uri: string;
-  name: string;
-  type: string;
-}
+import type { UploadFilePayload } from '@ai-assistant/types';
 
 declare global {
   interface FormData {
-    append(name: string, value: string | Blob | FormDataFile): void;
+    append(name: string, value: string | Blob | File | UploadFilePayload): void;
   }
 }
 

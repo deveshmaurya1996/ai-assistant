@@ -1,6 +1,13 @@
 import type { DataPoint } from '@siteed/audio-studio';
 
+/** Used when the recorder exposes native dB on data points. */
 export const SPEECH_THRESHOLD_DB = -48;
+
+/** Minimum consecutive analysis frames (~100ms at 50ms interval) to count as speech. */
+export const SPEECH_FRAMES_REQUIRED = 2;
+
+/** Peak normalized level (0–1) from amplitude/rms — works without native dB. */
+export const SPEECH_PEAK_LEVEL = 0.08;
 
 export function latestDataPoints(
   points: DataPoint[] | undefined,
@@ -42,5 +49,19 @@ export function isSpeechFromDataPoints(points: DataPoint[]): boolean {
   if (!last.silent && typeof last.dB === 'number') {
     return last.dB > SPEECH_THRESHOLD_DB;
   }
-  return !last.silent && (last.amplitude > 0.12 || last.rms > 0.025);
+  return !last.silent && (last.amplitude > 0.1 || last.rms > 0.02);
+}
+
+export function hadLikelySpeech(
+  heardSpeechFrames: boolean,
+  peakLevel: number,
+  peakDb: number
+): boolean {
+  if (heardSpeechFrames) {
+    return true;
+  }
+  if (peakLevel >= SPEECH_PEAK_LEVEL) {
+    return true;
+  }
+  return peakDb > SPEECH_THRESHOLD_DB;
 }

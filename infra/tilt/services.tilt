@@ -24,6 +24,7 @@ def ai_service():
             'tilt_config.json',
             'scripts/with-env.mjs',
             '.env',
+            'services/ai-runtime',
             'services/ai',
         ],
         env=port_env(),
@@ -53,35 +54,75 @@ def tool_runtime_service():
             'packages/tool-schema',
             'packages/permissions',
             'packages/database',
+            'packages/resources',
+            'packages/contacts',
+            'packages/domains',
             'packages/config',
         ],
         env=port_env(),
         ignore=SERVICE_BUILD_IGNORE,
         allow_parallel=True,
         labels=SERVICE_LABELS,
-        resource_deps=['postgres-db', 'redis'],
+        resource_deps=['db-setup', 'redis'],
         links=[link(port_url('tool-runtime'), 'Tool Runtime :' + str(PORTS['tool-runtime']))],
     )
 
-def ai_orchestrator_service():
+def skill_runtime_service():
     enabled = enabled_services()
-    if not is_enabled('ai-orchestrator', enabled):
+    if not is_enabled('skill-runtime', enabled):
         return
 
     local_resource(
-        'ai-orchestrator',
-        serve_cmd='node ' + DEV_SCRIPT + ' serve ai-orchestrator',
+        'skill-runtime',
+        'node ' + DEV_SCRIPT + ' build skill-runtime',
+        serve_cmd='node ' + DEV_SCRIPT + ' serve skill-runtime',
         deps=[
             DEV_SCRIPT,
             'tilt_config.json',
             'scripts/with-env.mjs',
             '.env',
-            'services/ai-orchestrator',
+            'services/skill-runtime',
+            'packages/capabilities',
+            'packages/skills',
+            'packages/capabilities/generated',
+            'services/cognitive-runtime/capability_manifest.json',
+            'skills',
+            'packages/config',
         ],
         env=port_env(),
         ignore=SERVICE_BUILD_IGNORE,
         allow_parallel=True,
         labels=SERVICE_LABELS,
-        resource_deps=['tool-runtime', 'ai'],
-        links=[link(port_url('ai-orchestrator'), 'AI Orchestrator :' + str(PORTS['ai-orchestrator']))],
+        resource_deps=['tool-runtime'],
+        links=[link(port_url('skill-runtime'), 'Skill Runtime :' + str(PORTS['skill-runtime']))],
     )
+
+
+def cognitive_runtime_service():
+    enabled = enabled_services()
+    if not is_enabled('cognitive-runtime', enabled) and not is_enabled('ai-orchestrator', enabled):
+        return
+
+    local_resource(
+        'cognitive-runtime',
+        serve_cmd='node ' + DEV_SCRIPT + ' serve cognitive-runtime',
+        deps=[
+            DEV_SCRIPT,
+            'tilt_config.json',
+            'scripts/with-env.mjs',
+            '.env',
+            'services/cognitive-runtime',
+            'services/cognitive-runtime/capability_manifest.json',
+            'skills',
+        ],
+        env=port_env(),
+        ignore=SERVICE_BUILD_IGNORE,
+        allow_parallel=True,
+        labels=SERVICE_LABELS,
+        resource_deps=['tool-runtime', 'skill-runtime', 'ai'],
+        links=[link(port_url('ai-orchestrator'), 'Cognitive Runtime :' + str(PORTS['ai-orchestrator']))],
+    )
+
+
+def ai_orchestrator_service():
+    cognitive_runtime_service()

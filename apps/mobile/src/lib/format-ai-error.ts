@@ -4,11 +4,11 @@ export type VoiceAiStep = 'transcription' | 'chat' | 'speech';
 
 const STEP_HINTS: Record<VoiceAiStep, string> = {
   transcription:
-    'Uses AI service /v1/voice/transcribe (whisper-1 or pollinations/whisper-1). Set OPENAI_API_KEY or POLLINATIONS_API_KEY in .env and restart the AI service.',
+    'Uses /v1/voice/transcribe (ffmpeg → WAV → NVIDIA STT or Pollinations Whisper). Requires ffmpeg on ai-runtime and NVIDIA_API_KEY or POLLINATIONS_API_KEY in .env.',
   chat:
-    'Uses AI service /v1/chat/stream with your Settings preferred model (default gemini/gemini-3.1-pro-preview). Ensure AI service is running on port 8000.',
+    'Uses NVIDIA NIM via /v1/chat/stream (auto-routed from config/ai-models.yaml). Set NVIDIA_API_KEY and restart ai-runtime.',
   speech:
-    'Uses AI service /v1/voice/speak (tts-1 or pollinations/openai-audio). Set OPENAI_API_KEY or POLLINATIONS_API_KEY.',
+    'Uses Pollinations TTS via /v1/voice/speak. Set POLLINATIONS_API_KEY in .env.',
 };
 
 function detailText(details: unknown): string {

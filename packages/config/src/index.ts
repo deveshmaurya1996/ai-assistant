@@ -15,12 +15,6 @@ function envInt(key: string, fallback: number): number {
 
 const nodeEnv = envOptional('NODE_ENV', 'development');
 
-const defaultTextModel = envOptional(
-  'PRIMARY_MODEL',
-  'gemini/gemini-3.1-pro-preview'
-);
-const defaultTextFallback = envOptional('FALLBACK_MODEL', 'pollinations/openai');
-
 export interface AppConfig {
   nodeEnv: string;
   isDev: boolean;
@@ -33,23 +27,13 @@ export interface AppConfig {
   googleClientId: string | undefined;
   googleClientSecret: string | undefined;
   logQueries: boolean;
-  primaryModel: string;
-  fallbackModel: string;
-  textModel: string;
-  textFallbackModel: string;
-  transcriptionModel: string;
-  transcriptionFallbackModel: string;
-  speechModel: string;
-  speechFallbackModel: string;
-  imageModel: string;
-  imageFallbackModel: string;
   qdrantUrl: string;
-  geminiApiKey: string | undefined;
-  openaiApiKey: string | undefined;
-  anthropicApiKey: string | undefined;
+  nvidiaApiKey: string | undefined;
   pollinationsApiKey: string | undefined;
   toolRuntimeUrl: string;
+  skillRuntimeUrl: string;
   aiOrchestratorUrl: string;
+  cognitiveRuntimeUrl: string;
   ingestionEngineUrl: string;
   whatsappBridgeUrl: string;
   integrationEncryptionKey: string;
@@ -70,26 +54,19 @@ export const config: AppConfig = {
   googleClientId: process.env.GOOGLE_CLIENT_ID,
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
   logQueries: process.env.PRISMA_LOG_QUERIES === 'true',
-  primaryModel: defaultTextModel,
-  fallbackModel: defaultTextFallback,
-  textModel: envOptional('TEXT_MODEL', defaultTextModel),
-  textFallbackModel: envOptional('TEXT_FALLBACK_MODEL', defaultTextFallback),
-  transcriptionModel: envOptional('TRANSCRIPTION_MODEL', 'whisper-1'),
-  transcriptionFallbackModel: envOptional(
-    'TRANSCRIPTION_FALLBACK_MODEL',
-    'pollinations/openai'
-  ),
-  speechModel: envOptional('SPEECH_MODEL', 'tts-1'),
-  speechFallbackModel: envOptional('SPEECH_FALLBACK_MODEL', 'pollinations/openai-audio'),
-  imageModel: envOptional('IMAGE_MODEL', 'pollinations/flux'),
-  imageFallbackModel: envOptional('IMAGE_FALLBACK_MODEL', 'dall-e-3'),
   qdrantUrl: envOptional('QDRANT_URL', 'http://localhost:6333'),
-  geminiApiKey: process.env.GEMINI_API_KEY,
-  openaiApiKey: process.env.OPENAI_API_KEY,
-  anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+  nvidiaApiKey: process.env.NVIDIA_API_KEY,
   pollinationsApiKey: process.env.POLLINATIONS_API_KEY,
   toolRuntimeUrl: envOptional('TOOL_RUNTIME_URL', 'http://localhost:3011'),
-  aiOrchestratorUrl: envOptional('AI_ORCHESTRATOR_URL', 'http://localhost:3013'),
+  skillRuntimeUrl: envOptional('SKILL_RUNTIME_URL', 'http://localhost:3014'),
+  aiOrchestratorUrl: envOptional(
+    'AI_ORCHESTRATOR_URL',
+    envOptional('COGNITIVE_RUNTIME_URL', 'http://localhost:3013')
+  ),
+  cognitiveRuntimeUrl: envOptional(
+    'COGNITIVE_RUNTIME_URL',
+    envOptional('AI_ORCHESTRATOR_URL', 'http://localhost:3013')
+  ),
   ingestionEngineUrl: envOptional('INGESTION_ENGINE_URL', 'http://localhost:3012'),
   whatsappBridgeUrl: envOptional(
     'WHATSAPP_BRIDGE_URL',

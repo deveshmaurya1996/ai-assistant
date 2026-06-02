@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { EventNames } from './names';
+import { EventNames, type EventName } from './names';
 
 export const ChatStartedPayloadSchema = z.object({
   userId: z.string(),
@@ -101,6 +101,13 @@ export const NotificationCreatedPayloadSchema = z.object({
   type: z.string().optional(),
 });
 
+/** Generic payload for proactive OS events (Phase 2). */
+export const OsEventPayloadSchema = z.object({
+  userId: z.string(),
+  source: z.string().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
 export type ChatStartedPayload = z.infer<typeof ChatStartedPayloadSchema>;
 export type AgentExecutedPayload = z.infer<typeof AgentExecutedPayloadSchema>;
 export type VoiceStreamPayload = z.infer<typeof VoiceStreamPayloadSchema>;
@@ -115,8 +122,9 @@ export type MemoryUpdatedPayload = z.infer<typeof MemoryUpdatedPayloadSchema>;
 export type NotificationCreatedPayload = z.infer<
   typeof NotificationCreatedPayloadSchema
 >;
+export type OsEventPayload = z.infer<typeof OsEventPayloadSchema>;
 
-export const eventPayloadSchemas = {
+export const eventPayloadSchemas: Record<EventName, z.ZodTypeAny> = {
   [EventNames.CHAT_STARTED]: ChatStartedPayloadSchema,
   [EventNames.AGENT_EXECUTED]: AgentExecutedPayloadSchema,
   [EventNames.VOICE_STREAM]: VoiceStreamPayloadSchema,
@@ -139,4 +147,12 @@ export const eventPayloadSchemas = {
   [EventNames.MESSAGE_RECEIVED]: MessageReceivedPayloadSchema,
   [EventNames.MEMORY_UPDATED]: MemoryUpdatedPayloadSchema,
   [EventNames.NOTIFICATION_CREATED]: NotificationCreatedPayloadSchema,
-} as const;
+  [EventNames.EMAIL_RECEIVED]: OsEventPayloadSchema,
+  [EventNames.MEETING_STARTED]: OsEventPayloadSchema,
+  [EventNames.MEETING_ENDED]: OsEventPayloadSchema,
+  [EventNames.DEVICE_BATTERY_LOW]: OsEventPayloadSchema,
+  [EventNames.USER_DRIVING]: OsEventPayloadSchema,
+  [EventNames.PERMISSION_REVOKED]: OsEventPayloadSchema,
+  [EventNames.TASK_COMPLETED]: OsEventPayloadSchema,
+  [EventNames.HEADPHONES_CONNECTED]: OsEventPayloadSchema,
+};

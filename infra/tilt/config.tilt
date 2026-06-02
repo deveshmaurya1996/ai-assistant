@@ -12,6 +12,7 @@ config.define_string('redis-port')
 config.define_string('qdrant-port')
 config.define_string('tool-runtime-port')
 config.define_string('ai-orchestrator-port')
+config.define_string('skill-runtime-port')
 
 # Single config.parse() for the whole run (https://docs.tilt.dev/tiltfile_config.html).
 TILT_CFG = config.parse()
@@ -50,8 +51,12 @@ PROFILE_APPS = [
 
 PROFILE_SERVICES = [
     'api',
+    'gateway',
     'ai',
+    'ai-runtime',
     'tool-runtime',
+    'skill-runtime',
+    'cognitive-runtime',
     'ai-orchestrator',
 ]
 
@@ -151,7 +156,7 @@ SERVICE_BUILD_IGNORE = [
     '**/.pytest_cache',
     '**/tsconfig.tsbuildinfo',
     'data/wa-auth',
-    'services/api/data/wa-auth',
+    'services/gateway/data/wa-auth',
     'services/whatsapp-bridge/data',
 ]
 
@@ -173,6 +178,7 @@ PORTS = {
     'qdrant': _port_int('qdrant-port', 6333),
     'tool-runtime': _port_int('tool-runtime-port', 3011),
     'ai-orchestrator': _port_int('ai-orchestrator-port', 3013),
+    'skill-runtime': _port_int('skill-runtime-port', 3014),
 }
 
 def port_url(key, path=''):
@@ -184,6 +190,7 @@ def port_env():
     pg = str(PORTS['postgres'])
     toolrt = str(PORTS['tool-runtime'])
     orch = str(PORTS['ai-orchestrator'])
+    skillrt = str(PORTS['skill-runtime'])
     return {
         'API_PORT': api,
         'AI_PORT': ai,
@@ -202,12 +209,18 @@ def port_env():
         'AI_ORCHESTRATOR_PORT': orch,
         'TOOL_RUNTIME_URL': 'http://localhost:' + toolrt,
         'AI_ORCHESTRATOR_URL': 'http://localhost:' + orch,
+        'COGNITIVE_RUNTIME_URL': 'http://localhost:' + orch,
+        'SKILL_RUNTIME_PORT': skillrt,
+        'SKILL_RUNTIME_URL': 'http://localhost:' + skillrt,
+        'SKILLS_ROOT': 'skills',
         'WHATSAPP_BRIDGE_URL': 'http://localhost:' + api + '/internal/whatsapp',
         'WHATSAPP_AUTH_DIR': 'data/wa-auth',
         'INTERNAL_SERVICE_TOKEN': 'dev-internal-token',
         'NEXT_PUBLIC_API_URL': 'http://localhost:' + api,
         'EXPO_PUBLIC_API_URL': 'http://localhost:' + api,
         'BETTER_AUTH_URL': 'http://localhost:' + api,
+        'GATEWAY_URL': 'http://localhost:' + api,
+        'API_URL': 'http://localhost:' + api,
     }
 
 def apply_compose_env():
