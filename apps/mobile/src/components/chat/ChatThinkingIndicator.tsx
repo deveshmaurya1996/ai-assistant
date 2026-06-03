@@ -25,19 +25,16 @@ const BOUNCE_UP_MS = 240;
 
 type Props = {
   userMessage?: string;
-  assistantLabel?: string;
   statusOverride?: string | null;
 };
 
 export function ChatThinkingIndicator({
   userMessage = '',
-  assistantLabel,
   statusOverride,
 }: Props) {
   const { colors } = useTheme();
   const phrases = useMemo(() => buildThinkingPhrases(userMessage), [userMessage]);
   const [statusText, setStatusText] = useState(() => phrases[0] ?? 'Thinking');
-  const thinkingPrefix = assistantLabel?.trim() || 'Assistant';
   const startedAt = useRef(Date.now());
   const phraseIndex = useRef(0);
   const recentFunny = useRef(new Set<string>());
@@ -135,7 +132,7 @@ export function ChatThinkingIndicator({
       </View>
       <Animated.View style={labelStyle}>
         <Text variant="body" muted numberOfLines={1}>
-          {`${thinkingPrefix} · ${statusText}…`}
+          {`${statusText}…`}
         </Text>
       </Animated.View>
     </View>

@@ -157,6 +157,8 @@ export function setupSocketIO(fastify: FastifyInstance) {
                   pending,
                   replyText: trimmedText,
                   ragEnabled: data.ragEnabled,
+                  personalityId: data.personalityId,
+                  assistantDisplayName: data.assistantDisplayName,
                   agentSource:
                     (data as { source?: 'chat' | 'voice' }).source === 'voice'
                       ? 'voice'
@@ -194,6 +196,8 @@ export function setupSocketIO(fastify: FastifyInstance) {
                   userId,
                   chatSessionId,
                   replyText: trimmedText,
+                  personalityId: data.personalityId,
+                  assistantDisplayName: data.assistantDisplayName,
                 });
                 socket.emit('chat:message_saved', { message: result.userMessage });
                 socket.emit('chat:end', {

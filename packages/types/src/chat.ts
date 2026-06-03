@@ -9,6 +9,8 @@ export interface ChatMessage {
   role: MessageRole;
   content: string;
   attachments?: ChatAttachmentRef[];
+  personalityId?: string;
+  assistantDisplayName?: string;
 }
 
 export interface ChatSession {

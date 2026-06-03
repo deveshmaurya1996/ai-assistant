@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { View, StyleSheet, RefreshControl, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router, usePathname, useGlobalSearchParams } from 'expo-router';
+import { router, usePathname } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
 import { LogOut, Pencil, Settings } from 'lucide-react-native';
 import type { ChatSession } from '@ai-assistant/sdk';
@@ -18,6 +18,9 @@ import { useAuthStore } from '@/stores/auth';
 import { spacing, radii } from '@/theme/tokens';
 import { Routes, assistantRoute, chatSessionRoute } from '@/lib/routes';
 import { useChatSessions } from '@/features/chat/useChatSessions';
+import { useChatSidebarSync } from '@/features/chat/chatSidebarSync';
+import { resolveActiveChatSessionId } from '@/features/chat/chatRoutes';
+import { prepareNewCompose, useComposeDraftStore } from '@/features/chat/chatSessionLifecycle';
 import { useChatStreamStore } from '@/features/chat/chatStreamStore';
 import { useSettingsStore } from '@/stores/settings';
 import { MessageSquare, Mic, MoreVertical } from 'lucide-react-native';
@@ -50,18 +53,19 @@ function getCollapsedSessions(
 function DrawerSessionRow({
   item,
   isActive,
-  isGenerating,
   onOpen,
   onMenuPress,
 }: {
   item: ChatSession;
   isActive: boolean;
-  isGenerating?: boolean;
   onOpen: (item: ChatSession) => void;
   onMenuPress: (item: ChatSession, anchor: MenuAnchorRect) => void;
 }) {
   const { colors } = useTheme();
   const menuRef = useRef<View>(null);
+  const isGenerating = useChatStreamStore((s) =>
+    Boolean(s.sessions[item.id]?.isGenerating)
+  );
   const isVoice = item.kind === 'voice';
 
   const handleMenuPress = () => {
@@ -166,11 +170,10 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const pathname = usePathname();
-  const params = useGlobalSearchParams<{ id?: string }>();
   const session = useAuthStore((s) => s.session);
   const signOut = useAuthStore((s) => s.signOut);
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
-  const generatingSessions = useChatStreamStore((s) => s.sessions);
+  useChatSidebarSync();
 
   const {
     sessions,
@@ -187,14 +190,14 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
   const [actionsAnchor, setActionsAnchor] = useState<MenuAnchorRect | null>(null);
   const [chatsExpanded, setChatsExpanded] = useState(false);
 
-  const activeSessionId =
-    pathname.includes('/chat/') && params.id ? String(params.id) : undefined;
-
   const isAssistantActive = pathname.includes('/assistant');
   const isSettingsActive = pathname.includes('/settings');
   const isNotesActive = pathname.includes('/notes');
   const isIntegrationsActive = pathname.includes('/integrations');
   const isAutomationsActive = pathname.includes('/automations');
+
+  const composeLiveSessionId = useComposeDraftStore((s) => s.liveSessionId);
+  const activeSessionId = resolveActiveChatSessionId(pathname, composeLiveSessionId);
 
   const visibleSessions = useMemo(
     () =>
@@ -209,10 +212,6 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
     (sessions.length > visibleSessions.length || Boolean(nextCursor));
 
   const hiddenChatCount = Math.max(0, sessions.length - visibleSessions.length);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
 
   useEffect(() => {
     setChatsExpanded(false);
@@ -242,6 +241,7 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
 
   const handleNewChat = useCallback(() => {
     closeAnd(() => {
+      prepareNewCompose();
       router.replace(Routes.chatCompose);
     });
   }, [closeAnd]);
@@ -250,6 +250,7 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
     async (sessionId: string) => {
       await deleteSession(sessionId);
       if (activeSessionId === sessionId) {
+        prepareNewCompose();
         router.replace(Routes.chatCompose);
       }
     },
@@ -268,12 +269,11 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
       <DrawerSessionRow
         item={item}
         isActive={item.id === activeSessionId}
-        isGenerating={generatingSessions[item.id]?.isGenerating}
         onOpen={openSession}
         onMenuPress={handleMenuPress}
       />
     ),
-    [activeSessionId, generatingSessions, handleMenuPress, openSession]
+    [activeSessionId, handleMenuPress, openSession]
   );
 
   const listHeader = (

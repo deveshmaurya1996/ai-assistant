@@ -60,14 +60,6 @@ const ChatSocketContext = createContext<ChatSocketContextValue | null>(null);
 
 const TURN_TIMEOUT_MS = 130_000;
 
-function matchesSession(
-  eventSessionId: string,
-  filterSessionId: string | null | undefined
-): boolean {
-  if (!filterSessionId) return true;
-  return eventSessionId === filterSessionId;
-}
-
 type ListenerEntry = {
   filterSessionId: string | null;
   listeners: SessionListeners;
@@ -93,6 +85,8 @@ export function ChatSocketProvider({
   const activeTurnSessionRef = useRef<string | null>(null);
   const turnTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeStreamKeyRef = useRef<string>(PENDING_CHAT_STREAM_KEY);
+  const chunkBufferRef = useRef(new Map<string, string>());
+  const chunkFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearTurnTimeout = useCallback(() => {
     if (turnTimeoutRef.current) {
@@ -107,23 +101,67 @@ export function ChatSocketProvider({
   const endTurn = useChatStreamStore((s) => s.endTurn);
   const abortTurn = useChatStreamStore((s) => s.abortTurn);
   const migratePendingToSession = useChatStreamStore((s) => s.migratePendingToSession);
+  const setBoundTurnSessionId = useChatStreamStore((s) => s.setBoundTurnSessionId);
 
-  const notifyMatching = useCallback(
-    (
-      eventSessionId: string,
-      fn: (listeners: SessionListeners) => void
-    ) => {
-      for (const entry of listenerMapRef.current.values()) {
-        if (!matchesSession(eventSessionId, entry.filterSessionId)) continue;
-        fn(entry.listeners);
-      }
+  const shouldNotifyListener = useCallback(
+    (eventSessionId: string, filterSessionId: string | null) => {
+      if (filterSessionId === eventSessionId) return true;
+      if (filterSessionId !== null) return false;
+      const turnSessionId = activeTurnSessionRef.current;
+      return turnSessionId === eventSessionId;
     },
     []
   );
 
+  const notifySessionEvent = useCallback(
+    (eventSessionId: string, fn: (listeners: SessionListeners) => void) => {
+      for (const entry of listenerMapRef.current.values()) {
+        if (!shouldNotifyListener(eventSessionId, entry.filterSessionId)) continue;
+        fn(entry.listeners);
+      }
+    },
+    [shouldNotifyListener]
+  );
+
+  const notifyPendingOnly = useCallback((fn: (listeners: SessionListeners) => void) => {
+    for (const entry of listenerMapRef.current.values()) {
+      if (entry.filterSessionId !== null) continue;
+      fn(entry.listeners);
+    }
+  }, []);
+
   const streamKeyForSession = useCallback((sessionId: string | null) => {
     return sessionId ?? PENDING_CHAT_STREAM_KEY;
   }, []);
+
+  const bindIncomingStreamSession = useCallback(
+    (incomingSessionId: string) => {
+      if (activeStreamKeyRef.current !== PENDING_CHAT_STREAM_KEY) return;
+
+      activeTurnSessionRef.current = activeTurnSessionRef.current ?? incomingSessionId;
+      activeStreamKeyRef.current = incomingSessionId;
+
+      const { boundTurnSessionId, sessions } = useChatStreamStore.getState();
+      if (!boundTurnSessionId) {
+        setBoundTurnSessionId(incomingSessionId);
+      }
+      if (sessions[PENDING_CHAT_STREAM_KEY]) {
+        migratePendingToSession(incomingSessionId);
+      }
+    },
+    [migratePendingToSession, setBoundTurnSessionId]
+  );
+
+  const resolveChunkStreamKey = useCallback(
+    (incomingSessionId: string | null | undefined) => {
+      if (incomingSessionId) {
+        bindIncomingStreamSession(incomingSessionId);
+        return incomingSessionId;
+      }
+      return activeStreamKeyRef.current;
+    },
+    [bindIncomingStreamSession]
+  );
 
   const fireTurnTimeout = useCallback(() => {
     const streamKey = activeStreamKeyRef.current;
@@ -133,17 +171,16 @@ export function ChatSocketProvider({
     const sid = activeTurnSessionRef.current;
     abortTurn(streamKey);
     activeTurnSessionRef.current = null;
+    setBoundTurnSessionId(null);
 
     const message =
       'Request timed out. Check that AI services are running and try again.';
     if (sid) {
-      notifyMatching(sid, (l) => l.onError?.(message));
+      notifySessionEvent(sid, (l) => l.onError?.(message));
     } else {
-      for (const entry of listenerMapRef.current.values()) {
-        entry.listeners.onError?.(message);
-      }
+      notifyPendingOnly((l) => l.onError?.(message));
     }
-  }, [abortTurn, notifyMatching]);
+  }, [abortTurn, notifySessionEvent, notifyPendingOnly, setBoundTurnSessionId]);
 
   const scheduleTurnTimeout = useCallback(() => {
     clearTurnTimeout();
@@ -151,6 +188,27 @@ export function ChatSocketProvider({
       fireTurnTimeout();
     }, TURN_TIMEOUT_MS);
   }, [clearTurnTimeout, fireTurnTimeout]);
+
+  const flushChunkBuffer = useCallback(() => {
+    chunkFlushTimerRef.current = null;
+    const buffer = chunkBufferRef.current;
+    for (const [key, text] of buffer.entries()) {
+      if (text) appendChunk(key, text);
+    }
+    buffer.clear();
+  }, [appendChunk]);
+
+  const queueChunk = useCallback(
+    (sessionId: string | null | undefined, chunk: string) => {
+      if (!chunk) return;
+      const key = resolveChunkStreamKey(sessionId);
+      const buffer = chunkBufferRef.current;
+      buffer.set(key, (buffer.get(key) ?? '') + chunk);
+      if (chunkFlushTimerRef.current != null) return;
+      chunkFlushTimerRef.current = setTimeout(flushChunkBuffer, 80);
+    },
+    [flushChunkBuffer, resolveChunkStreamKey]
+  );
 
   useEffect(() => {
     if (!sessionToken) {
@@ -175,26 +233,29 @@ export function ChatSocketProvider({
       setSocket(connected);
 
       connected.on('chat:chunk', (data) => {
-        appendChunk(data.chatSessionId, data.chunk);
+        queueChunk(data.chatSessionId, data.chunk);
       });
 
       connected.on('chat:status', (data: ChatStatusPayload) => {
-        const key = streamKeyForSession(data.chatSessionId);
+        const key = resolveChunkStreamKey(data.chatSessionId);
         setStatusMessage(key, data.message);
       });
 
       connected.on('chat:message_saved', (data) => {
         const sid = activeTurnSessionRef.current;
         if (sid) {
-          notifyMatching(sid, (l) => l.onMessageSaved?.(data.message));
+          notifySessionEvent(sid, (l) => l.onMessageSaved?.(data.message));
         } else {
-          for (const entry of listenerMapRef.current.values()) {
-            entry.listeners.onMessageSaved?.(data.message);
-          }
+          notifyPendingOnly((l) => l.onMessageSaved?.(data.message));
         }
       });
 
       connected.on('chat:end', (data) => {
+        if (chunkFlushTimerRef.current != null) {
+          clearTimeout(chunkFlushTimerRef.current);
+          chunkFlushTimerRef.current = null;
+        }
+        flushChunkBuffer();
         clearTurnTimeout();
         activeTurnSessionRef.current = data.chatSessionId;
         endTurn(data.chatSessionId);
@@ -204,19 +265,21 @@ export function ChatSocketProvider({
         if (data.modelLabel) {
           void useSettingsStore.getState().setLastAiModelLabel(data.modelLabel);
         }
-        notifyMatching(data.chatSessionId, (l) => {
+        notifySessionEvent(data.chatSessionId, (l) => {
           l.onStreamTargetChange?.(data.message.content);
           l.onAssistantMessage?.(data.message);
           l.onExchangeComplete?.(data.chatSessionId);
         });
         activeTurnSessionRef.current = null;
+        setBoundTurnSessionId(null);
       });
 
       connected.on('chat:aborted', (data) => {
         clearTurnTimeout();
         abortTurn(data.chatSessionId);
-        notifyMatching(data.chatSessionId, (l) => l.onAborted?.(data.chatSessionId));
+        notifySessionEvent(data.chatSessionId, (l) => l.onAborted?.(data.chatSessionId));
         activeTurnSessionRef.current = null;
+        setBoundTurnSessionId(null);
       });
 
       connected.on('chat:error', (payload) => {
@@ -229,31 +292,37 @@ export function ChatSocketProvider({
         const sid = activeTurnSessionRef.current;
         activeTurnSessionRef.current = null;
         if (sid) {
-          notifyMatching(sid, (l) => l.onError?.(message));
+          notifySessionEvent(sid, (l) => l.onError?.(message));
         } else {
-          for (const entry of listenerMapRef.current.values()) {
-            entry.listeners.onError?.(message);
-          }
+          notifyPendingOnly((l) => l.onError?.(message));
         }
+        setBoundTurnSessionId(null);
       });
 
       connected.on('chat:title_updated', (data) => {
         useOverlaySessionStore.getState().setTitle(data.chatSessionId, data.title);
         useChatSidebarStore.getState().patchTitle(data.chatSessionId, data.title);
-        notifyMatching(data.chatSessionId, (l) => l.onTitleUpdated?.(data.title));
+        notifySessionEvent(data.chatSessionId, (l) => l.onTitleUpdated?.(data.title));
       });
 
       connected.on('chat:session_created', (data) => {
         activeTurnSessionRef.current = data.chatSessionId;
         activeStreamKeyRef.current = data.chatSessionId;
+        setBoundTurnSessionId(data.chatSessionId);
+        notifySessionEvent(data.chatSessionId, (l) =>
+          l.onSessionCreated?.(data.chatSessionId)
+        );
         migratePendingToSession(data.chatSessionId);
         useOverlaySessionStore.getState().upsertSession(data.chatSessionId, {
           title: 'New chat',
           kind: 'text',
         });
-        notifyMatching(data.chatSessionId, (l) =>
-          l.onSessionCreated?.(data.chatSessionId)
-        );
+        useChatSidebarStore.getState().upsertSession({
+          id: data.chatSessionId,
+          title: 'New chat',
+          kind: 'text',
+          messageCount: 1,
+        });
       });
 
       connected.on('chat:action_confirm_required', (payload: ActionConfirmRequiredPayload) => {
@@ -279,6 +348,11 @@ export function ChatSocketProvider({
     return () => {
       cancelled = true;
       clearTurnTimeout();
+      if (chunkFlushTimerRef.current != null) {
+        clearTimeout(chunkFlushTimerRef.current);
+        chunkFlushTimerRef.current = null;
+      }
+      chunkBufferRef.current.clear();
       socket?.disconnect();
       socketRef.current = null;
       setSocket(null);
@@ -290,8 +364,15 @@ export function ChatSocketProvider({
     endTurn,
     abortTurn,
     migratePendingToSession,
-    notifyMatching,
+    notifySessionEvent,
+    notifyPendingOnly,
+    setBoundTurnSessionId,
+    resolveChunkStreamKey,
+    queueChunk,
+    flushChunkBuffer,
     clearTurnTimeout,
+    streamKeyForSession,
+    setStatusMessage,
   ]);
 
   const emitMessage = useCallback(
@@ -321,6 +402,7 @@ export function ChatSocketProvider({
 
       activeTurnSessionRef.current = sessionId;
       activeStreamKeyRef.current = sessionKey;
+      setBoundTurnSessionId(sessionId);
       useOverlaySessionStore.getState().setUserDismissed(false);
       if (sessionId) {
         useOverlaySessionStore.getState().clearLastReply(sessionId);
@@ -374,7 +456,7 @@ export function ChatSocketProvider({
       socket.emit('chat:message', payload);
       return true;
     },
-    [beginTurn, abortTurn, streamKeyForSession, scheduleTurnTimeout]
+    [beginTurn, abortTurn, streamKeyForSession, scheduleTurnTimeout, setBoundTurnSessionId]
   );
 
   const abortGeneration = useCallback((sessionId: string | null) => {
@@ -389,7 +471,8 @@ export function ChatSocketProvider({
     );
     abortTurn(sessionKey);
     activeTurnSessionRef.current = null;
-  }, [abortTurn, streamKeyForSession, clearTurnTimeout]);
+    setBoundTurnSessionId(null);
+  }, [abortTurn, streamKeyForSession, clearTurnTimeout, setBoundTurnSessionId]);
 
   const registerListeners = useCallback(
     (listenerId: string, listeners: SessionListeners) => {

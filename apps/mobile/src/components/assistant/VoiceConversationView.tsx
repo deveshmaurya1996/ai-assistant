@@ -13,6 +13,7 @@ type Props = {
   streamTurnKey?: number;
   isStreaming: boolean;
   isGenerating?: boolean;
+  streamRevision?: number;
   phase: VoiceAssistantPhase;
   contentPaddingBottom?: number;
 };
@@ -38,6 +39,7 @@ export function VoiceConversationView({
   streamTurnKey = 0,
   isStreaming,
   isGenerating = false,
+  streamRevision = 0,
   phase,
   contentPaddingBottom,
 }: Props) {
@@ -63,7 +65,8 @@ export function VoiceConversationView({
       isStreaming={isStreaming}
       isGenerating={isGenerating}
       contentPaddingBottom={contentPaddingBottom}
-      assistantLabel={assistantDisplayName}
+      streamingAssistantLabel={assistantDisplayName}
+      streamRevision={streamRevision}
       onSaveNote={saveNote}
     />
   );

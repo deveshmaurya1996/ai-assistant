@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useSharedAudioRecorder } from '@siteed/audio-studio';
+import type { useSharedAudioRecorder } from '@siteed/audio-studio';
 import {
   decibelsFromDataPoints,
   isSpeechFromDataPoints,
@@ -7,8 +7,13 @@ import {
   levelFromDataPoints,
 } from './analysis';
 
-export function useStudioVoiceAnalysis(enabled: boolean) {
-  const { analysisData, isRecording } = useSharedAudioRecorder();
+export type SharedAudioRecorder = ReturnType<typeof useSharedAudioRecorder>;
+
+export function useStudioVoiceAnalysis(
+  enabled: boolean,
+  studio: Pick<SharedAudioRecorder, 'analysisData' | 'isRecording'>
+) {
+  const { analysisData, isRecording } = studio;
 
   const dataPoints = useMemo(() => {
     if (!enabled || !isRecording) {

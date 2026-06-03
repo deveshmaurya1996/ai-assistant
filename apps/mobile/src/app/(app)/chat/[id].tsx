@@ -41,6 +41,7 @@ export default function ChatScreen() {
     isStreaming,
     isGenerating,
     streamStatusMessage,
+    streamRevision,
     send,
     stopGeneration,
     savedMessageIds,
@@ -75,6 +76,7 @@ export default function ChatScreen() {
 
   return (
     <ChatScreenShell
+      key={id}
       title={title}
       subtitle={
         isVoice ? `${assistantSubtitle} · Voice chat` : assistantSubtitle
@@ -89,6 +91,7 @@ export default function ChatScreen() {
       isStreaming={isStreaming}
       isGenerating={isGenerating}
       streamStatusMessage={streamStatusMessage}
+      streamRevision={streamRevision}
       savedMessageIds={savedMessageIds}
       assistantLabel={assistantDisplayName}
       onSaveNote={saveNote}

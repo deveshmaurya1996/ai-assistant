@@ -3,9 +3,11 @@ import type { AssistantSocket, ChatAttachmentRef, ChatMessage } from '@ai-assist
 import { useChatSocket } from './ChatSocketProvider';
 import {
   PENDING_CHAT_STREAM_KEY,
-  selectSessionStream,
+  resolveStreamSessionKey,
   useChatStreamStore,
 } from './chatStreamStore';
+import { useChatStreamState } from './useChatStreamState';
+import { useComposeDraftStore } from './chatSessionLifecycle';
 
 type Options = {
   sessionId?: string | null;
@@ -29,21 +31,20 @@ export function useChatSocketStream({
   const listenerId = useId();
   const chatSocket = useChatSocket();
   const clearTurn = useChatStreamStore((s) => s.clearTurn);
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamTurnKey, setStreamTurnKey] = useState(0);
   const socketRef = useRef<AssistantSocket | null>(null);
   const lastNotifiedLenRef = useRef(0);
 
-  const streamKey = sessionId ?? PENDING_CHAT_STREAM_KEY;
-  const streamText = useChatStreamStore(
-    (s) => selectSessionStream(s.sessions, sessionId ?? null)?.streamText ?? ''
-  );
-  const isGenerating = useChatStreamStore(
-    (s) => selectSessionStream(s.sessions, sessionId ?? null)?.isGenerating ?? false
-  );
-  const streamStatusMessage = useChatStreamStore(
-    (s) => selectSessionStream(s.sessions, sessionId ?? null)?.statusMessage ?? null
-  );
+  const {
+    streamKey,
+    streamText,
+    isGenerating,
+    streamStatusMessage,
+    revision: streamRevision,
+    showStreamBubble: isStreaming,
+  } = useChatStreamState(sessionId);
 
   const onSessionCreatedRef = useRef(onSessionCreated);
   const onExchangeCompleteRef = useRef(onExchangeComplete);
@@ -79,24 +80,7 @@ export function useChatSocketStream({
           if (message.role !== 'USER') {
             return [...prev, message];
           }
-          const matchIdx = (() => {
-            const savedIds = new Set(
-              (message.attachments ?? []).map((a) => a.id)
-            );
-            for (let i = prev.length - 1; i >= 0; i -= 1) {
-              const m = prev[i];
-              if (!m.id.startsWith('local-') || m.role !== 'USER') continue;
-              if (m.content !== message.content) continue;
-              const localIds = new Set((m.attachments ?? []).map((a) => a.id));
-              if (savedIds.size !== localIds.size) continue;
-              if ([...savedIds].every((id) => localIds.has(id))) return i;
-            }
-            for (let i = prev.length - 1; i >= 0; i -= 1) {
-              const m = prev[i];
-              if (m.id.startsWith('local-') && m.role === 'USER') return i;
-            }
-            return -1;
-          })();
+          const matchIdx = findMatchingLocalUserIndex(prev, message);
           if (matchIdx < 0) {
             return [...prev, message];
           }
@@ -107,13 +91,21 @@ export function useChatSocketStream({
       },
       onAssistantMessage: (message) => {
         lastNotifiedLenRef.current = 0;
-        clearTurn(streamKey);
+        const key = resolveStreamSessionKey(
+          sessionId,
+          useChatStreamStore.getState().boundTurnSessionId
+        );
+        clearTurn(key);
         setMessages((prev) => [...prev, message]);
         onStreamTargetChangeRef.current?.(message.content);
       },
       onAborted: () => {
         lastNotifiedLenRef.current = 0;
-        clearTurn(streamKey);
+        const key = resolveStreamSessionKey(
+          sessionId,
+          useChatStreamStore.getState().boundTurnSessionId
+        );
+        clearTurn(key);
       },
       onSessionCreated: (id) => {
         onSessionCreatedRef.current?.(id);
@@ -129,7 +121,11 @@ export function useChatSocketStream({
       },
       onError: (message) => {
         lastNotifiedLenRef.current = 0;
-        clearTurn(streamKey);
+        const key = resolveStreamSessionKey(
+          sessionId,
+          useChatStreamStore.getState().boundTurnSessionId
+        );
+        clearTurn(key);
         onErrorRef.current?.(message);
       },
     });
@@ -137,14 +133,38 @@ export function useChatSocketStream({
     return () => {
       chatSocket.unregisterListeners(listenerId);
     };
-  }, [enabled, listenerId, chatSocket, clearTurn, streamKey]);
+  }, [enabled, listenerId, chatSocket, clearTurn, sessionId]);
 
   useEffect(() => {
     if (!enabled) return;
     chatSocket.setActiveSessionFilter(listenerId, sessionId ?? null);
   }, [enabled, listenerId, sessionId, chatSocket]);
 
-  const showStreamBubble = isGenerating || Boolean(streamText.trim());
+  const prevSessionIdRef = useRef(sessionId);
+  useEffect(() => {
+    if (prevSessionIdRef.current === sessionId) return;
+
+    const wasDraft = prevSessionIdRef.current == null && sessionId != null;
+    const promotingInPlace = useComposeDraftStore.getState().promotingInPlace;
+
+    const prevBound = useChatStreamStore.getState().boundTurnSessionId;
+    const prevKey = resolveStreamSessionKey(prevSessionIdRef.current, prevBound);
+    prevSessionIdRef.current = sessionId;
+    lastNotifiedLenRef.current = 0;
+    setStreamTurnKey((k) => k + 1);
+
+    if (wasDraft && promotingInPlace) {
+      return;
+    }
+
+    const nextKey = resolveStreamSessionKey(
+      sessionId,
+      useChatStreamStore.getState().boundTurnSessionId
+    );
+    if (prevKey !== nextKey) {
+      clearTurn(prevKey);
+    }
+  }, [sessionId, clearTurn]);
 
   const abortGeneration = useCallback(() => {
     if (!isGenerating) return;
@@ -177,26 +197,45 @@ export function useChatSocketStream({
     setStreamTurnKey((k) => k + 1);
   }, []);
 
+  const resetStream = useCallback(() => {
+    lastNotifiedLenRef.current = 0;
+    clearTurn(streamKey);
+  }, [clearTurn, streamKey]);
+
   return {
     messages,
     setMessages,
     socketRef,
     streamText,
-    /** @deprecated use streamText — kept for existing call sites */
     visibleText: streamText,
-    isStreaming: showStreamBubble,
+    isStreaming,
     isGenerating,
     streamStatusMessage,
+    streamRevision,
     streamTurnKey,
     emitMessage,
     abortGeneration,
     beginStream,
-    resetStream: () => {
-      lastNotifiedLenRef.current = 0;
-      clearTurn(streamKey);
-    },
-    setIsGenerating: () => {
-      /* generation state lives in chatStreamStore */
-    },
+    resetStream,
   };
+}
+
+function findMatchingLocalUserIndex(
+  prev: ChatMessage[],
+  message: ChatMessage
+): number {
+  const savedIds = new Set((message.attachments ?? []).map((a) => a.id));
+  for (let i = prev.length - 1; i >= 0; i -= 1) {
+    const m = prev[i];
+    if (!m.id.startsWith('local-') || m.role !== 'USER') continue;
+    if (m.content !== message.content) continue;
+    const localIds = new Set((m.attachments ?? []).map((a) => a.id));
+    if (savedIds.size !== localIds.size) continue;
+    if ([...savedIds].every((id) => localIds.has(id))) return i;
+  }
+  for (let i = prev.length - 1; i >= 0; i -= 1) {
+    const m = prev[i];
+    if (m.id.startsWith('local-') && m.role === 'USER') return i;
+  }
+  return -1;
 }

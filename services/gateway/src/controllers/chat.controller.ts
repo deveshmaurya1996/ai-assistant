@@ -16,6 +16,7 @@ const SessionParamSchema = z.object({
 const ListSessionsQuerySchema = z.object({
   cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(50).optional(),
+  personalityId: z.string().min(1).max(64).optional(),
 });
 
 const UpdateSessionSchema = z.object({
@@ -31,6 +32,7 @@ export class ChatController {
         await chatService.listSessions(userId, {
           cursor: query.cursor,
           limit: query.limit,
+          personalityId: query.personalityId,
         })
       );
     } catch (error) {

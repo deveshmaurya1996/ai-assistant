@@ -30,7 +30,7 @@ export function useVoiceCapture(_mode: 'chat' | 'assistant' = 'chat') {
   const lastRecordingDurationMsRef = useRef(0);
 
   const isRecording = status === 'recording';
-  const analysis = useStudioVoiceAnalysis(isRecording);
+  const analysis = useStudioVoiceAnalysis(isRecording, studio);
 
   const ingestMetering = useCallback((points: DataPoint[]) => {
     if (points.length === 0) {

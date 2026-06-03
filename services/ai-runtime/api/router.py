@@ -107,6 +107,9 @@ async def kb_search(query: str, limit: int = 3, user_id: Optional[str] = None):
 
 @router.post("/memory/ingest")
 def memory_ingest(payload: MemoryIngestRequest):
+    import logging
+
+    log = logging.getLogger(__name__)
     with langfuse_span("memory.ingest", user_id=payload.user_id):
         try:
             rag = RAGService()
@@ -114,6 +117,12 @@ def memory_ingest(payload: MemoryIngestRequest):
             point_ids = rag.ingest_documents(docs, user_id=payload.user_id)
             return {"success": True, "ids": point_ids}
         except Exception as e:
+            log.exception(
+                "[memory] ingest failed user_id=%s doc_count=%d: %s",
+                payload.user_id,
+                len(payload.documents),
+                e,
+            )
             raise HTTPException(status_code=500, detail=str(e)) from e
 
 

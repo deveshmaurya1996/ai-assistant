@@ -169,10 +169,15 @@ export class AssistantClient {
     this.cookie = cookie;
   }
 
-  async listSessions(options?: { cursor?: string; limit?: number }) {
+  async listSessions(options?: {
+    cursor?: string;
+    limit?: number;
+    personalityId?: string;
+  }) {
     const params = new URLSearchParams();
     if (options?.cursor) params.set('cursor', options.cursor);
     if (options?.limit != null) params.set('limit', String(options.limit));
+    if (options?.personalityId) params.set('personalityId', options.personalityId);
     const q = params.toString();
     return this.request<ListChatSessionsResponse>(`/chat/sessions${q ? `?${q}` : ''}`);
   }

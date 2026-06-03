@@ -26,11 +26,13 @@ def embed_texts(texts: List[str], *, input_type: str) -> List[List[float]]:
         "truncate": "NONE",
     }
 
-    timeout = float(cfg.get("searchTimeoutSeconds", cfg.get("timeoutSeconds", 5))) + 10
+    ingest_timeout = float(cfg.get("ingestTimeoutSeconds", 30))
+    search_timeout = float(cfg.get("searchTimeoutSeconds", cfg.get("timeoutSeconds", 5)))
+    timeout = ingest_timeout if input_type == "passage" else search_timeout + 10
     client = nvidia_sync_client(timeout)
     response = client.post(url, headers=headers, json=payload, timeout=timeout)
-        response.raise_for_status()
-        data = response.json()
+    response.raise_for_status()
+    data = response.json()
 
     rows = data.get("data") or []
     vectors: List[List[float]] = []

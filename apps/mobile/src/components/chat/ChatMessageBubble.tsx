@@ -2,7 +2,8 @@ import { memo, useState } from 'react';
 import { View, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Bookmark, Check, Copy } from 'lucide-react-native';
-import type { ChatMessage } from '@ai-assistant/sdk';
+import type { ChatMessage } from '@ai-assistant/types/chat';
+import { LEGACY_ASSISTANT_LABEL } from '@/features/chat/chatRoutes';
 import { Text } from '@/components/ui/Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing, radii } from '@/theme/tokens';
@@ -87,7 +88,6 @@ function ChatMessageBubbleInner({
       {showSpinner ? (
         <ChatThinkingIndicator
           userMessage={thinkingUserMessage}
-          assistantLabel={assistantLabel}
           statusOverride={streamStatusMessage}
         />
       ) : (
@@ -171,7 +171,10 @@ function bubblePropsEqual(prev: Props, next: Props): boolean {
     );
   }
   return (
-    prev.message === next.message &&
+    prev.message.id === next.message.id &&
+    prev.message.content === next.message.content &&
+    (prev.message.assistantDisplayName ?? LEGACY_ASSISTANT_LABEL) ===
+      (next.message.assistantDisplayName ?? LEGACY_ASSISTANT_LABEL) &&
     prev.isSaved === next.isSaved &&
     prev.assistantLabel === next.assistantLabel &&
     prev.onSaveNote === next.onSaveNote

@@ -61,7 +61,7 @@ export function useVoiceAssistantSession() {
   const lastActivityRef = useRef(Date.now());
   const stopSessionRef = useRef<(opts?: StopSessionOptions) => Promise<void>>(async () => {});
 
-  const { recordUntilSilence, cancelRecording } = useVoiceTurnRecorder();
+  const { studio, recordUntilSilence, cancelRecording } = useVoiceTurnRecorder();
 
   const isListening = phase === 'listening';
   const {
@@ -69,7 +69,7 @@ export function useVoiceAssistantSession() {
     meteringDecibels,
     dataPoints: meteringDataPoints,
     isSpeechDetected: speechDetected,
-  } = useStudioVoiceAnalysis(isListening);
+  } = useStudioVoiceAnalysis(isListening, studio);
 
   const {
     messages,
@@ -77,6 +77,7 @@ export function useVoiceAssistantSession() {
     socketRef,
     visibleText,
     streamTurnKey,
+    streamRevision,
     emitMessage,
     isStreaming,
     resetStream,
@@ -470,6 +471,7 @@ export function useVoiceAssistantSession() {
     streamTurnKey,
     isStreaming,
     isGenerating,
+    streamRevision,
     socketRef,
     sessionId,
     error,

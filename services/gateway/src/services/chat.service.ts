@@ -132,7 +132,7 @@ function shouldAutoTitle(
 
 export async function listSessions(
   userId: string,
-  options?: { cursor?: string; limit?: number }
+  options?: { cursor?: string; limit?: number; personalityId?: string }
 ) {
   const limit = Math.min(Math.max(options?.limit ?? 30, 1), 50);
   const where: Prisma.ChatSessionWhereInput = {
@@ -194,11 +194,54 @@ export async function getSession(userId: string, sessionId: string) {
   return serializeSession(session);
 }
 
+const DEFAULT_PERSONALITY_ID = 'assistant';
+
 function attachmentsFromMetadata(metadata: unknown): ChatAttachmentRef[] | undefined {
   if (!metadata || typeof metadata !== 'object') return undefined;
   const raw = (metadata as { attachments?: unknown }).attachments;
   if (!Array.isArray(raw) || raw.length === 0) return undefined;
   return raw as ChatAttachmentRef[];
+}
+
+function personalityFieldsFromMetadata(metadata: unknown): {
+  personalityId?: string;
+  assistantDisplayName?: string;
+} {
+  if (!metadata || typeof metadata !== 'object') return {};
+  const raw = metadata as { personalityId?: unknown; assistantDisplayName?: unknown };
+  const personalityId =
+    typeof raw.personalityId === 'string' ? raw.personalityId : undefined;
+  const assistantDisplayName =
+    typeof raw.assistantDisplayName === 'string' ? raw.assistantDisplayName : undefined;
+  return { personalityId, assistantDisplayName };
+}
+
+function buildAssistantMessageMetadata(
+  assistantContext: { personalityId: string; displayName: string },
+  attachments?: ChatAttachmentRef[]
+): Prisma.InputJsonValue {
+  const meta: Record<string, unknown> = {
+    personalityId: assistantContext.personalityId,
+    assistantDisplayName: assistantContext.displayName,
+  };
+  if (attachments?.length) {
+    meta.attachments = attachments;
+  }
+  return meta as Prisma.InputJsonValue;
+}
+
+function buildUserMessageMetadata(
+  assistantContext: { personalityId: string; displayName: string },
+  attachments?: ChatAttachmentRef[]
+): Prisma.InputJsonValue | undefined {
+  const meta: Record<string, unknown> = {
+    personalityId: assistantContext.personalityId,
+    assistantDisplayName: assistantContext.displayName,
+  };
+  if (attachments?.length) {
+    meta.attachments = attachments;
+  }
+  return meta as Prisma.InputJsonValue;
 }
 
 export function mapApiMessage(message: {
@@ -207,11 +250,13 @@ export function mapApiMessage(message: {
   content: string;
   metadata?: unknown | null;
 }) {
+  const personality = personalityFieldsFromMetadata(message.metadata ?? null);
   return {
     id: message.id,
     role: message.role,
     content: message.content,
     attachments: attachmentsFromMetadata(message.metadata ?? null),
+    ...personality,
   };
 }
 
@@ -386,15 +431,17 @@ export async function processChatMessage(params: {
     }).catch(() => undefined);
   }
 
+  const assistantContext = resolveAssistantContext(
+    normalizePersonalityId(params.personalityId),
+    params.assistantDisplayName
+  );
+
   const userMessage = await prisma.message.create({
     data: {
       chatSessionId: sessionId,
       role: 'USER',
       content: text,
-      metadata:
-        attachments.length > 0
-          ? ({ attachments } as unknown as Prisma.InputJsonValue)
-          : undefined,
+      metadata: buildUserMessageMetadata(assistantContext, attachments),
     },
   });
 
@@ -469,11 +516,6 @@ export async function processChatMessage(params: {
     });
   }
 
-  const assistantContext = resolveAssistantContext(
-    normalizePersonalityId(params.personalityId),
-    params.assistantDisplayName
-  );
-
   let turn;
   try {
     turn = await runAgentTurn(
@@ -534,6 +576,7 @@ export async function processChatMessage(params: {
           chatSessionId: sessionId,
           role: 'ASSISTANT',
           content: partial,
+          metadata: buildAssistantMessageMetadata(assistantContext),
         },
       });
 
@@ -571,6 +614,7 @@ export async function processChatMessage(params: {
           chatSessionId: sessionId,
           role: 'ASSISTANT',
           content: confirmText,
+          metadata: buildAssistantMessageMetadata(assistantContext),
         },
       });
 
@@ -590,6 +634,7 @@ export async function processChatMessage(params: {
         chatSessionId: sessionId,
         role: 'ASSISTANT',
         content: 'Please confirm this action to continue.',
+        metadata: buildAssistantMessageMetadata(assistantContext),
       },
     });
 
@@ -610,10 +655,7 @@ export async function processChatMessage(params: {
       chatSessionId: sessionId,
       role: 'ASSISTANT',
       content: accumulated,
-      metadata:
-        assistantAttachments.length > 0
-          ? ({ attachments: assistantAttachments } as unknown as Prisma.InputJsonValue)
-          : undefined,
+      metadata: buildAssistantMessageMetadata(assistantContext, assistantAttachments),
     },
   });
 
@@ -660,6 +702,8 @@ export async function processInlineConfirmAccept(params: {
   replyText: string;
   ragEnabled?: boolean;
   agentSource?: AgentSource;
+  personalityId?: string;
+  assistantDisplayName?: string;
   onChunk: (chunk: string, sessionId: string) => void | Promise<void>;
   onTitleUpdated?: (sessionId: string, title: string) => void;
   signal?: AbortSignal;
@@ -667,8 +711,18 @@ export async function processInlineConfirmAccept(params: {
   const { userId, chatSessionId, pending, replyText, onChunk, onTitleUpdated } = params;
   await assertSessionAccess(userId, chatSessionId);
 
+  const assistantContext = resolveAssistantContext(
+    normalizePersonalityId(params.personalityId),
+    params.assistantDisplayName
+  );
+
   const userMessage = await prisma.message.create({
-    data: { chatSessionId, role: 'USER', content: replyText },
+    data: {
+      chatSessionId,
+      role: 'USER',
+      content: replyText,
+      metadata: buildUserMessageMetadata(assistantContext),
+    },
   });
 
   const agentSource: AgentSource = params.agentSource ?? 'chat';
@@ -703,6 +757,7 @@ export async function processInlineConfirmAccept(params: {
       chatSessionId,
       role: 'ASSISTANT',
       content: assistantText,
+      metadata: buildAssistantMessageMetadata(assistantContext),
     },
   });
 
@@ -723,19 +778,35 @@ export async function processInlineConfirmAccept(params: {
     onTitleUpdated,
   });
 
-  return { sessionId: chatSessionId, userMessage, assistantMessage };
+  return {
+    sessionId: chatSessionId,
+    userMessage: mapApiMessage(userMessage),
+    assistantMessage: mapApiMessage(assistantMessage),
+  };
 }
 
 export async function processInlineConfirmCancel(params: {
   userId: string;
   chatSessionId: string;
   replyText: string;
+  personalityId?: string;
+  assistantDisplayName?: string;
 }) {
   const { userId, chatSessionId, replyText } = params;
   await assertSessionAccess(userId, chatSessionId);
 
+  const assistantContext = resolveAssistantContext(
+    normalizePersonalityId(params.personalityId),
+    params.assistantDisplayName
+  );
+
   const userMessage = await prisma.message.create({
-    data: { chatSessionId, role: 'USER', content: replyText },
+    data: {
+      chatSessionId,
+      role: 'USER',
+      content: replyText,
+      metadata: buildUserMessageMetadata(assistantContext),
+    },
   });
 
   const assistantMessage = await prisma.message.create({
@@ -743,6 +814,7 @@ export async function processInlineConfirmCancel(params: {
       chatSessionId,
       role: 'ASSISTANT',
       content: 'Cancelled.',
+      metadata: buildAssistantMessageMetadata(assistantContext),
     },
   });
 
@@ -751,5 +823,9 @@ export async function processInlineConfirmCancel(params: {
     data: { updatedAt: new Date() },
   });
 
-  return { sessionId: chatSessionId, userMessage, assistantMessage };
+  return {
+    sessionId: chatSessionId,
+    userMessage: mapApiMessage(userMessage),
+    assistantMessage: mapApiMessage(assistantMessage),
+  };
 }

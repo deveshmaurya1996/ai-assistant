@@ -125,6 +125,7 @@ def get_rag_config() -> Dict[str, Any]:
         "searchTimeoutSeconds": float(
             rag.get("searchTimeoutSeconds", rag.get("timeoutSeconds", 5))
         ),
+        "ingestTimeoutSeconds": float(rag.get("ingestTimeoutSeconds", 30)),
     }
 
 

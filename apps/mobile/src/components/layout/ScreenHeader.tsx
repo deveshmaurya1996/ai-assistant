@@ -12,6 +12,7 @@ import { useDrawerNavigation } from '@/hooks/useDrawerNavigation';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing, radii } from '@/theme/tokens';
 import { Routes } from '@/lib/routes';
+import { prepareNewCompose } from '@/features/chat/chatSessionLifecycle';
 import type { MenuAnchorRect } from '@/components/chat/ChatSessionActionsModal';
 
 type ScreenHeaderVariant = 'chat' | 'page' | 'large';
@@ -105,6 +106,7 @@ export function ScreenHeader({
   };
 
   const handleNewChat = () => {
+    prepareNewCompose();
     router.replace(Routes.chatCompose);
   };
 

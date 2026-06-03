@@ -29,6 +29,7 @@ export default function AssistantScreen() {
     streamTurnKey,
     isStreaming,
     isGenerating,
+    streamRevision,
     error,
     meteringDataPoints,
     startSession,
@@ -60,6 +61,7 @@ export default function AssistantScreen() {
               streamTurnKey={streamTurnKey}
               isStreaming={isStreaming}
               isGenerating={isGenerating}
+              streamRevision={streamRevision}
               phase={phase}
               contentPaddingBottom={contentBottom}
             />

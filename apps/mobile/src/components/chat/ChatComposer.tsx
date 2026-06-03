@@ -47,6 +47,7 @@ export function ChatComposer({
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
+  const autoSendAfterTranscribe = useSettingsStore((s) => s.autoSendAfterTranscribe);
   const [input, setInput] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
   const sheetRef = useRef<BottomSheetModal>(null);
@@ -75,37 +76,48 @@ export function ChatComposer({
       ? 'Short prompt + file works best — long pasted text slows replies.'
       : null;
 
-  const handleSend = useCallback(async () => {
-    const text = input.trim();
-    if (!hasContent || sendDisabled || attachments.isUploading) return;
-
-    const maxQuery = 2000;
-    if (attachments.items.length > 0 && text.length > maxQuery) {
-      Alert.alert(
-        'Message too long',
-        `With a file attached, keep your message under ${maxQuery} characters.`
+  const sendMessage = useCallback(
+    async (textOverride?: string) => {
+      const text = (textOverride ?? input).trim();
+      const hasTextToSend = text.length > 0;
+      const hasAttachmentsToSend = attachments.items.some(
+        (i) => !i.error && (i.uploaded || i.uri)
       );
-      return;
-    }
-
-    try {
-      const uploaded = await attachments.uploadAll();
-      const ready = uploaded.filter(Boolean);
-      const hasUploadError = attachments.items.some((i) => i.error);
-      if (hasUploadError && ready.length === 0 && !text) return;
-
-      const ok = await onSend({ text, attachments: ready });
-      if (ok !== false) {
-        setInput('');
-        attachments.clearAll();
+      if ((!hasTextToSend && !hasAttachmentsToSend) || sendDisabled || attachments.isUploading) {
+        return;
       }
-    } catch (err) {
-      Alert.alert(
-        'Upload failed',
-        err instanceof Error ? err.message : 'Could not upload attachments'
-      );
-    }
-  }, [attachments, hasContent, input, onSend, sendDisabled]);
+
+      const maxQuery = 2000;
+      if (attachments.items.length > 0 && text.length > maxQuery) {
+        Alert.alert(
+          'Message too long',
+          `With a file attached, keep your message under ${maxQuery} characters.`
+        );
+        return;
+      }
+
+      try {
+        const uploaded = await attachments.uploadAll();
+        const ready = uploaded.filter(Boolean);
+        const hasUploadError = attachments.items.some((i) => i.error);
+        if (hasUploadError && ready.length === 0 && !text) return;
+
+        const ok = await onSend({ text, attachments: ready });
+        if (ok !== false) {
+          setInput('');
+          attachments.clearAll();
+        }
+      } catch (err) {
+        Alert.alert(
+          'Upload failed',
+          err instanceof Error ? err.message : 'Could not upload attachments'
+        );
+      }
+    },
+    [attachments, input, onSend, sendDisabled]
+  );
+
+  const handleSend = useCallback(() => void sendMessage(), [sendMessage]);
 
   const handleKeyPress = useCallback(
     (e: TextInputKeyPressEvent) => {
@@ -117,9 +129,13 @@ export function ChatComposer({
   const handleMicPress = useCallback(async () => {
     const result = await toggleRecording();
     if (result.kind === 'text') {
-      setInput(result.text);
+      if (autoSendAfterTranscribe && !sendDisabled && !isGenerating) {
+        await sendMessage(result.text);
+      } else {
+        setInput(result.text);
+      }
     }
-  }, [toggleRecording]);
+  }, [autoSendAfterTranscribe, isGenerating, sendDisabled, sendMessage, toggleRecording]);
 
   const openAssistant = useCallback(() => {
     router.push(Routes.assistant);

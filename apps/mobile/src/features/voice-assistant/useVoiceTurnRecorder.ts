@@ -135,6 +135,7 @@ export function useVoiceTurnRecorder() {
   }, [studio]);
 
   return {
+    studio,
     recordUntilSilence,
     cancelRecording,
   };

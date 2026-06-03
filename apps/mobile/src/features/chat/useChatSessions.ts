@@ -1,13 +1,11 @@
 import { useCallback, useRef, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { useChatSidebarStore } from './chatSidebarStore';
-
-const PAGE_SIZE = 30;
+import { fetchChatSidebarPage } from './chatSidebarSync';
 
 export function useChatSessions() {
   const sessions = useChatSidebarStore((s) => s.sessions);
   const nextCursor = useChatSidebarStore((s) => s.nextCursor);
-  const setPage = useChatSidebarStore((s) => s.setPage);
   const removeSession = useChatSidebarStore((s) => s.removeSession);
   const patchTitle = useChatSidebarStore((s) => s.patchTitle);
 
@@ -20,29 +18,24 @@ export function useChatSessions() {
     loadingRef.current = true;
     setRefreshing(true);
     try {
-      const data = await apiClient.listSessions({ limit: PAGE_SIZE });
-      setPage(data.sessions, data.nextCursor, false);
+      await fetchChatSidebarPage();
     } finally {
       setRefreshing(false);
       loadingRef.current = false;
     }
-  }, [setPage]);
+  }, []);
 
   const loadMore = useCallback(async () => {
     if (!nextCursor || loadingRef.current) return;
     loadingRef.current = true;
     setLoadingMore(true);
     try {
-      const data = await apiClient.listSessions({
-        cursor: nextCursor,
-        limit: PAGE_SIZE,
-      });
-      setPage(data.sessions, data.nextCursor, true);
+      await fetchChatSidebarPage({ cursor: nextCursor, append: true });
     } finally {
       setLoadingMore(false);
       loadingRef.current = false;
     }
-  }, [nextCursor, setPage]);
+  }, [nextCursor]);
 
   const renameSession = useCallback(
     async (sessionId: string, title: string) => {

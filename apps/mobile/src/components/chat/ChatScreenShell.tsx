@@ -29,6 +29,7 @@ type ChatScreenShellProps = {
   isStreaming: boolean;
   isGenerating: boolean;
   streamStatusMessage?: string | null;
+  streamRevision?: number;
   emptyHint?: string;
   savedMessageIds: Set<string>;
   assistantLabel: string;
@@ -50,6 +51,7 @@ export function ChatScreenShell({
   isStreaming,
   isGenerating,
   streamStatusMessage,
+  streamRevision = 0,
   emptyHint,
   savedMessageIds,
   assistantLabel,
@@ -117,7 +119,8 @@ export function ChatScreenShell({
         streamStatusMessage={streamStatusMessage}
         emptyHint={emptyHint}
         savedMessageIds={savedMessageIds}
-        assistantLabel={assistantLabel}
+        streamingAssistantLabel={assistantLabel}
+        streamRevision={streamRevision}
         onSaveNote={onSaveNote}
       />
 

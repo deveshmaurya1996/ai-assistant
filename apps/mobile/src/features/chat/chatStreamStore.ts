@@ -11,6 +11,8 @@ export type SessionStreamState = {
 
 type ChatStreamState = {
   sessions: Record<string, SessionStreamState>;
+  boundTurnSessionId: string | null;
+  setBoundTurnSessionId: (sessionId: string | null) => void;
   beginTurn: (sessionKey: string) => void;
   setStatusMessage: (sessionKey: string, message: string | null) => void;
   appendChunk: (sessionKey: string, chunk: string) => void;
@@ -31,6 +33,9 @@ function bump(session: SessionStreamState): SessionStreamState {
 
 export const useChatStreamStore = create<ChatStreamState>((set, get) => ({
   sessions: {},
+  boundTurnSessionId: null,
+
+  setBoundTurnSessionId: (sessionId) => set({ boundTurnSessionId: sessionId }),
 
   beginTurn: (sessionKey) => {
     set((state) => ({
@@ -123,10 +128,19 @@ export const useChatStreamStore = create<ChatStreamState>((set, get) => ({
   isSessionGenerating: (sessionId) => Boolean(get().sessions[sessionId]?.isGenerating),
 }));
 
+export function resolveStreamSessionKey(
+  sessionId: string | null | undefined,
+  boundTurnSessionId: string | null
+): string {
+  if (sessionId) return sessionId;
+  if (boundTurnSessionId) return boundTurnSessionId;
+  return PENDING_CHAT_STREAM_KEY;
+}
+
 export function selectSessionStream(
   sessions: Record<string, SessionStreamState>,
-  sessionKey: string | null | undefined
+  sessionId: string | null | undefined,
+  boundTurnSessionId: string | null = null
 ): SessionStreamState | undefined {
-  if (!sessionKey) return sessions[PENDING_CHAT_STREAM_KEY];
-  return sessions[sessionKey] ?? sessions[PENDING_CHAT_STREAM_KEY];
+  return sessions[resolveStreamSessionKey(sessionId, boundTurnSessionId)];
 }

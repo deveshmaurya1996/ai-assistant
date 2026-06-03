@@ -1,8 +1,11 @@
-import { router } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { apiClient } from '@/lib/api-client';
 import { formatApiError } from '@/lib/format-ai-error';
 import { useChatRoom } from '@/features/chat/useChatRoom';
+import {
+  promoteDraftSession,
+  useComposeDraftStore,
+} from '@/features/chat/chatSessionLifecycle';
 import { useSaveNote } from '@/features/notes/useSaveNote';
 import { type ChatSendPayload } from '@/components/chat/ChatComposer';
 import { ChatScreenShell } from '@/components/chat/ChatScreenShell';
@@ -21,7 +24,8 @@ export default function ChatComposeScreen() {
     selectedPersonalityId,
     personalities
   );
-  const [liveSessionId, setLiveSessionId] = useState<string | undefined>();
+
+  const liveSessionId = useComposeDraftStore((s) => s.liveSessionId) ?? undefined;
   const liveSessionIdRef = useRef<string | undefined>(undefined);
   const titleRef = useRef('New chat');
   const userSentRef = useRef(false);
@@ -53,11 +57,7 @@ export default function ChatComposeScreen() {
   }, []);
 
   const handleSessionCreated = useCallback((sessionId: string) => {
-    setLiveSessionId(sessionId);
-    router.replace({
-      pathname: '/(app)/chat/[id]',
-      params: { id: sessionId, title: titleRef.current },
-    });
+    promoteDraftSession(sessionId);
   }, []);
 
   const {
@@ -69,6 +69,7 @@ export default function ChatComposeScreen() {
     isStreaming,
     isGenerating,
     streamStatusMessage,
+    streamRevision,
     send: roomSend,
     stopGeneration,
     savedMessageIds,
@@ -76,6 +77,7 @@ export default function ChatComposeScreen() {
   } = useChatRoom({
     sessionId: liveSessionId,
     initialTitle: 'New chat',
+    isCompose: true,
     onSessionCreated: handleSessionCreated,
   });
 
@@ -91,6 +93,7 @@ export default function ChatComposeScreen() {
 
   return (
     <ChatScreenShell
+      key={liveSessionId ?? 'compose'}
       title={title}
       subtitle={assistantSubtitle}
       sessionId={liveSessionId}
@@ -102,6 +105,7 @@ export default function ChatComposeScreen() {
       isStreaming={isStreaming}
       isGenerating={isGenerating}
       streamStatusMessage={streamStatusMessage}
+      streamRevision={streamRevision}
       emptyHint="Send a message to start"
       savedMessageIds={savedMessageIds}
       assistantLabel={assistantDisplayName}

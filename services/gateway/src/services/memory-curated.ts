@@ -44,10 +44,11 @@ async function safeIngestToVector(
   try {
     return await ingestToVector(userId, text, metadata);
   } catch (err) {
-    console.warn(
-      '[memory] vector ingest failed (Postgres row still saved):',
-      err instanceof Error ? err.message : err
-    );
+    const detail =
+      err && typeof err === 'object' && 'message' in err
+        ? String((err as { message: string }).message)
+        : String(err);
+    console.warn('[memory] vector ingest failed (chat continues):', detail);
     return null;
   }
 }
