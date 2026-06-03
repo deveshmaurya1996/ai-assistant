@@ -35,6 +35,8 @@ class RAGService:
         self.collection_name = str(cfg.get("collectionName", "kb_documents_nv"))
         self.embedding_dim = int(cfg.get("embeddingDim", 4096))
         self.rerank_fetch_limit = int(cfg.get("rerankFetchLimit", 12))
+        self.rerank_enabled = bool(cfg.get("rerankEnabled", False))
+        self.min_score = float(cfg.get("minScore", 0.35))
 
         qdrant_url = os.getenv("QDRANT_URL")
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -131,69 +133,107 @@ class RAGService:
         self.client.upsert(collection_name=self.collection_name, points=points)
         return point_ids
 
+    def delete_point(self, point_id: str) -> bool:
+        try:
+            from qdrant_client.http import models as qmodels
+
+            self.client.delete(
+                collection_name=self.collection_name,
+                points_selector=qmodels.PointIdsList(points=[point_id]),
+            )
+            return True
+        except Exception as exc:
+            logger.warning("[rag] delete_point failed id=%s: %s", point_id, exc)
+            return False
+
     async def search_context_async(
-        self, query: str, limit: Optional[int] = None, user_id: Optional[str] = None
+        self,
+        query: str,
+        limit: Optional[int] = None,
+        user_id: Optional[str] = None,
+        chat_session_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         cfg = get_rag_config()
         lim = limit if limit is not None else int(cfg.get("limit", 3))
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            _executor, lambda: self.search_context(query, lim, user_id)
+            _executor,
+            lambda: self.search_context(query, lim, user_id, chat_session_id),
         )
 
     def search_context(
-        self, query: str, limit: int = 3, user_id: Optional[str] = None
+        self,
+        query: str,
+        limit: int = 3,
+        user_id: Optional[str] = None,
+        chat_session_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         from opentelemetry import trace
 
         tracer = trace.get_tracer(__name__)
         with tracer.start_as_current_span(
             "rag.search",
-            attributes={"limit": limit, "user_id": user_id or ""},
+            attributes={
+                "limit": limit,
+                "user_id": user_id or "",
+                "chat_session_id": chat_session_id or "",
+            },
         ):
-            return self._search_context(query, limit, user_id)
+            return self._search_context(query, limit, user_id, chat_session_id)
 
-    def _search_context(
-        self, query: str, limit: int = 3, user_id: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
-        if not query.strip():
-            return []
-
-        query_vector = self._embed([query], input_type="query")[0]
-        query_filter = None
-        if user_id:
-            query_filter = models.Filter(
-                must=[
-                    models.FieldCondition(
-                        key="user_id",
-                        match=models.MatchValue(value=user_id),
-                    )
-                ]
+    def _user_filter(
+        self, user_id: str, chat_session_id: Optional[str] = None
+    ) -> models.Filter:
+        must = [
+            models.FieldCondition(
+                key="user_id",
+                match=models.MatchValue(value=user_id),
             )
+        ]
+        if chat_session_id:
+            must.append(
+                models.FieldCondition(
+                    key="chat_session_id",
+                    match=models.MatchValue(value=chat_session_id),
+                )
+            )
+        return models.Filter(must=must)
 
-        fetch_limit = max(limit, self.rerank_fetch_limit)
+    def _query_hits(
+        self,
+        query_vector: List[float],
+        *,
+        user_id: str,
+        chat_session_id: Optional[str],
+        fetch_limit: int,
+    ) -> List[Any]:
+        query_filter = self._user_filter(user_id, chat_session_id)
         results = self.client.query_points(
             collection_name=self.collection_name,
             query=query_vector,
             limit=fetch_limit,
             query_filter=query_filter,
         )
-
         hits = list(results.points)
-        if not hits:
-            return []
+        min_score = self.min_score
+        return [h for h in hits if h.score is None or float(h.score) >= min_score]
 
+    def _hits_to_payloads(
+        self, query: str, hits: List[Any], limit: int
+    ) -> List[Dict[str, Any]]:
         passages = []
         hit_payloads: List[Dict[str, Any]] = []
         for hit in hits:
             payload = dict(hit.payload or {})
             text = str(payload.pop("text", ""))
+            if not text.strip():
+                continue
             passages.append(text)
             hit_payloads.append(
                 {"text": text, "score": hit.score, "metadata": payload}
             )
 
-        if _nvidia_embed_available() and len(passages) > 1:
+        if self.rerank_enabled and _nvidia_embed_available() and len(passages) > 1:
             try:
                 from models.providers.nvidia_rerank import rerank_passages
 
@@ -203,3 +243,98 @@ class RAGService:
                 logger.warning("[rag] rerank failed, using vector order: %s", exc)
 
         return hit_payloads[:limit]
+
+    def _search_context(
+        self,
+        query: str,
+        limit: int = 3,
+        user_id: Optional[str] = None,
+        chat_session_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        if not query.strip() or not user_id:
+            return []
+
+        from memory.embed_cache import get_cached_embedding, set_cached_embedding
+
+        query_vector = get_cached_embedding(user_id, query)
+        if query_vector is None:
+            query_vector = self._embed([query], input_type="query")[0]
+            set_cached_embedding(user_id, query, query_vector)
+
+        fetch_limit = (
+            max(limit, self.rerank_fetch_limit) if self.rerank_enabled else limit
+        )
+        combined: List[Dict[str, Any]] = []
+        seen_text: set[str] = set()
+
+        if chat_session_id:
+            session_hits = self._query_hits(
+                query_vector,
+                user_id=user_id,
+                chat_session_id=chat_session_id,
+                fetch_limit=fetch_limit,
+            )
+            for item in self._hits_to_payloads(query, session_hits, limit):
+                key = item["text"].strip().lower()
+                if key not in seen_text:
+                    seen_text.add(key)
+                    combined.append(item)
+
+        if len(combined) < limit:
+            global_hits = self._query_hits(
+                query_vector,
+                user_id=user_id,
+                chat_session_id=None,
+                fetch_limit=fetch_limit * 2,
+            )
+            extra: List[Any] = []
+            for hit in global_hits:
+                payload = dict(hit.payload or {})
+                sid = str(payload.get("chat_session_id", ""))
+                if chat_session_id and sid == chat_session_id:
+                    continue
+                extra.append(hit)
+            for item in self._hits_to_payloads(query, extra, limit - len(combined)):
+                key = item["text"].strip().lower()
+                if key not in seen_text:
+                    seen_text.add(key)
+                    combined.append(item)
+                if len(combined) >= limit:
+                    break
+        elif not chat_session_id:
+            global_hits = self._query_hits(
+                query_vector,
+                user_id=user_id,
+                chat_session_id=None,
+                fetch_limit=fetch_limit,
+            )
+            combined = self._hits_to_payloads(query, global_hits, limit)
+
+        return combined[:limit]
+
+    def delete_session_vectors(
+        self, user_id: str, chat_session_id: str
+    ) -> int:
+        from qdrant_client.http import models as qmodels
+
+        deleted = 0
+        offset = None
+        while True:
+            points, offset = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter=self._user_filter(user_id, chat_session_id),
+                limit=100,
+                offset=offset,
+                with_payload=False,
+            )
+            point_ids = [r.id for r in points]
+            if not point_ids:
+                break
+            self.client.delete(
+                collection_name=self.collection_name,
+                points_selector=qmodels.PointIdsList(points=point_ids),
+            )
+            deleted += len(point_ids)
+            if offset is None:
+                break
+        return deleted

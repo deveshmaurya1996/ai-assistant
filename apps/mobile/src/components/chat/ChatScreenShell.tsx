@@ -1,0 +1,150 @@
+import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
+import { KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
+import { router } from 'expo-router';
+import type { ChatMessage, ChatSessionKind } from '@ai-assistant/sdk';
+import { ScreenHeader } from '@/components/layout/ScreenHeader';
+import { ChatComposer, type ChatSendPayload } from '@/components/chat/ChatComposer';
+import {
+  ChatSessionActionsModal,
+  type MenuAnchorRect,
+} from '@/components/chat/ChatSessionActionsModal';
+import {
+  ChatMessageList,
+  type ChatMessageListHandle,
+} from '@/components/chat/ChatMessageList';
+import { useTheme } from '@/theme/ThemeProvider';
+import { Routes } from '@/lib/routes';
+import { useChatSessions } from '@/features/chat/useChatSessions';
+
+type ChatScreenShellProps = {
+  title: string;
+  subtitle?: string;
+  sessionId?: string;
+  sessionKind?: ChatSessionKind;
+  onSessionRenamed?: (title: string) => void;
+  banner?: ReactNode;
+  messages: ChatMessage[];
+  visibleText: string;
+  streamTurnKey?: number;
+  isStreaming: boolean;
+  isGenerating: boolean;
+  streamStatusMessage?: string | null;
+  emptyHint?: string;
+  savedMessageIds: Set<string>;
+  assistantLabel: string;
+  onSaveNote?: (content: string, messageId?: string) => Promise<void>;
+  onSend: (payload: ChatSendPayload) => void | boolean | Promise<boolean>;
+  onStop?: () => void;
+};
+
+export function ChatScreenShell({
+  title,
+  subtitle,
+  sessionId,
+  sessionKind = 'text',
+  onSessionRenamed,
+  banner,
+  messages,
+  visibleText,
+  streamTurnKey,
+  isStreaming,
+  isGenerating,
+  streamStatusMessage,
+  emptyHint,
+  savedMessageIds,
+  assistantLabel,
+  onSaveNote,
+  onSend,
+  onStop,
+}: ChatScreenShellProps) {
+  const { colors } = useTheme();
+  const messageListRef = useRef<ChatMessageListHandle>(null);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [actionsAnchor, setActionsAnchor] = useState<MenuAnchorRect | null>(null);
+  const { renameSession, deleteSession } = useChatSessions();
+
+  const sessionForModal = useMemo(
+    () =>
+      sessionId
+        ? { id: sessionId, title, kind: sessionKind, messageCount: messages.length }
+        : null,
+    [sessionId, title, sessionKind, messages.length]
+  );
+
+  const handleRename = useCallback(
+    async (id: string, newTitle: string) => {
+      await renameSession(id, newTitle);
+      onSessionRenamed?.(newTitle);
+    },
+    [renameSession, onSessionRenamed]
+  );
+
+  const handleDelete = useCallback(
+    async (id: string) => {
+      await deleteSession(id);
+      router.replace(Routes.chatCompose);
+    },
+    [deleteSession]
+  );
+
+  return (
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+      keyboardVerticalOffset={0}>
+      <ScreenHeader
+        title={title}
+        subtitle={subtitle}
+        variant="chat"
+        leading="menu"
+        trailing={sessionId ? 'more' : null}
+        onTrailingPress={(anchor) => {
+          setActionsAnchor(anchor);
+          setActionsOpen(true);
+        }}
+        titleAlign="center"
+      />
+
+      {banner}
+
+      <ChatMessageList
+        ref={messageListRef}
+        messages={messages}
+        visibleText={visibleText}
+        streamTurnKey={streamTurnKey}
+        isStreaming={isStreaming}
+        isGenerating={isGenerating}
+        streamStatusMessage={streamStatusMessage}
+        emptyHint={emptyHint}
+        savedMessageIds={savedMessageIds}
+        assistantLabel={assistantLabel}
+        onSaveNote={onSaveNote}
+      />
+
+      <ChatComposer
+        onSend={onSend}
+        sendDisabled={isGenerating}
+        isGenerating={isGenerating}
+        onStop={onStop}
+        onInputFocus={() => messageListRef.current?.scrollToEnd(true)}
+      />
+
+      <ChatSessionActionsModal
+        session={actionsOpen ? sessionForModal : null}
+        visible={actionsOpen}
+        anchor={actionsAnchor}
+        anchorOffsetY={40}
+        onClose={() => {
+          setActionsOpen(false);
+          setActionsAnchor(null);
+        }}
+        onRename={handleRename}
+        onDelete={handleDelete}
+      />
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+});

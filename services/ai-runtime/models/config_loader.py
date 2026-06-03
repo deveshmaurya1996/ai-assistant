@@ -103,8 +103,10 @@ def get_rag_config() -> Dict[str, Any]:
     rag = cfg.get("rag") or {}
     return {
         "enabledByDefault": bool(rag.get("enabledByDefault", False)),
+        "minScore": float(rag.get("minScore", 0.35)),
         "timeoutSeconds": float(rag.get("timeoutSeconds", 5)),
         "limit": int(rag.get("limit", 3)),
+        "factLimit": int(rag.get("factLimit", 5)),
         "warmEmbedderOnStartup": bool(rag.get("warmEmbedderOnStartup", True)),
         "embeddingModel": str(rag.get("embeddingModel", "nvidia/nv-embed-v1")),
         "providerModel": str(rag.get("providerModel", "nvidia/nv-embed-v1")),
@@ -116,6 +118,13 @@ def get_rag_config() -> Dict[str, Any]:
         "collectionName": str(rag.get("collectionName", "kb_documents_nv")),
         "embeddingDim": int(rag.get("embeddingDim", 4096)),
         "rerankFetchLimit": int(rag.get("rerankFetchLimit", 12)),
+        "rerankEnabled": bool(rag.get("rerankEnabled", False)),
+        "preStreamBudgetMs": int(rag.get("preStreamBudgetMs", 300)),
+        "embeddingCacheTtlSeconds": int(rag.get("embeddingCacheTtlSeconds", 60)),
+        "embeddingCacheMaxEntries": int(rag.get("embeddingCacheMaxEntries", 256)),
+        "searchTimeoutSeconds": float(
+            rag.get("searchTimeoutSeconds", rag.get("timeoutSeconds", 5))
+        ),
     }
 
 

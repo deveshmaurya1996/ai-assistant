@@ -13,11 +13,26 @@ const SessionParamSchema = z.object({
   id: z.string().uuid(),
 });
 
+const ListSessionsQuerySchema = z.object({
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+});
+
+const UpdateSessionSchema = z.object({
+  title: z.string().min(1).max(100),
+});
+
 export class ChatController {
   static async listSessions(request: FastifyRequest, reply: FastifyReply) {
     try {
       const userId = requireUserId(request);
-      return reply.send(await chatService.listSessions(userId));
+      const query = ListSessionsQuerySchema.parse(request.query ?? {});
+      return reply.send(
+        await chatService.listSessions(userId, {
+          cursor: query.cursor,
+          limit: query.limit,
+        })
+      );
     } catch (error) {
       return sendError(reply, error);
     }
@@ -60,6 +75,17 @@ export class ChatController {
       const { id } = SessionParamSchema.parse(request.params);
       await chatService.deleteSession(userId, id);
       return reply.send({ success: true });
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  }
+
+  static async updateSession(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const userId = requireUserId(request);
+      const { id } = SessionParamSchema.parse(request.params);
+      const { title } = UpdateSessionSchema.parse(request.body ?? {});
+      return reply.send(await chatService.updateSession(userId, id, { title }));
     } catch (error) {
       return sendError(reply, error);
     }

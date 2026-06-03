@@ -164,7 +164,7 @@ infra/
    - Calls **`runAgentTurn`** (`services/gateway/src/services/agent-turn.service.ts`) with RAG enabled by default (`resolveRagEnabled`; ops can set `RAG_ENABLED=false`).
 5. **Agent turn** posts to **Cognitive Runtime** `POST /v1/agent/turn` (not directly to AI service).
 6. **Cognitive Runtime** (`services/cognitive-runtime/main.py`):
-   - Fetches RAG once per turn (when enabled) into `retrieved_context` (merged with file attachment context).
+   - Fetches RAG when enabled **and** the query implies long-term memory (`should_retrieve_rag_context`; default `RAG_RETRIEVAL_MODE=smart`), then merges into `retrieved_context` with file attachment context.
    - **Conversational fast path** (`hello`, short Q&A): skips manifest/tools/planner; streams directly with `task=fast_chat`.
    - **Full path**: `build_context` (reuses cached RAG block for planner) → `plan_tools` → tool execution.
    - RAG context is passed to AI service as `retrieved_context` on `/v1/chat/stream` (single injection point; `rag_enabled: false` on that call avoids duplicate search).
@@ -263,31 +263,54 @@ Mobile entry: `apps/mobile/src/features/voice-assistant/useVoiceAssistantSession
 
 ---
 
-## RAG & memory
+## RAG & memory (layered)
+
+| Layer | What | When |
+|-------|------|------|
+| **1 Working (per chat)** | Latest `CHAT_HISTORY_LIMIT` messages (default 20, **most recent first**) + `session_context` (files shared in this thread) + `file_retrieval_context` | Every non-casual turn |
+| **2 Episodic** | Qdrant vectors (`memory_kind: conversation`, `chat_session_id`) — **not** in Memory UI | Session-first search, then user-wide fallback |
+| **3 Curated (global)** | Postgres `MemoryItem` FACT/PREFERENCE + vectors (`memory_kind: fact`) | **Saved memories** screen; cross-chat |
+| **Background** | Selective LLM fact extraction (`shouldExtractFacts` + `MEMORY_EXTRACTION_ENABLED`) | Turns with durable user info, not every “hi” |
+
+### User-facing memory (provider-style)
+
+Mobile **Saved memories** lists **FACT / PREFERENCE** only (`GET /memory` defaults to curated; `?includeConversations=true` is debug-only). Full chats remain in the **Chats** screen.
+
+### Explicit remember (single store)
+
+When the user says **Remember:** / **Save this:** with a clear payload, the gateway stores **one curated FACT** via `upsertCuratedMemory` (fingerprint dedupe). No episodic Postgres row and no duplicate extraction pass.
+
+If save intent needs the assistant reply, `/v1/memory/extract` runs once with `explicit_save: true`. Normal turns: Qdrant episodic ingest only (unless `MEMORY_EPISODIC_POSTGRES=true`); extraction runs only when `shouldExtractFacts` is true.
 
 ### Vector RAG (AI service)
 
 - **Service:** `services/ai-runtime/memory/rag_service.py` (singleton).
-- **Store:** Qdrant (`QDRANT_URL`) or local `qdrant_db` if no URL.
-- **Embeddings:** `sentence-transformers` — `all-MiniLM-L6-v2` (384-dim).
-- **Collection:** `kb_documents`, filtered by `user_id` in payload.
+- **Store:** Qdrant (`QDRANT_URL`) or local `qdrant_db`; collection from `config/ai-models.yaml` (`kb_documents_nv`).
+- **Embeddings / rerank:** NVIDIA (`nv-embed-v1`, rerank QA) when `NVIDIA_API_KEY` set.
+- **Quality:** `rag.minScore` filters weak hits.
 
 | Endpoint | Purpose |
 |----------|---------|
 | `POST /v1/kb/ingest` | Ingest documents |
 | `GET /v1/kb/search` | Search (returns `{ success, results }`) |
-| `POST /v1/memory/ingest` | User memory ingest (Langfuse span) |
-| `GET /v1/memory/search` | User memory search |
+| `POST /v1/memory/ingest` | User memory ingest |
+| `GET /v1/memory/search` | User memory search (`session_id` optional — session-first) |
+| `DELETE /v1/memory/session/{id}` | Remove episodic vectors for a chat session |
+| `POST /v1/memory/extract` | Extract 0–3 curated facts from a turn |
+| `POST /v1/memory/should-retrieve` | LLM router (`RAG_ROUTER_MODE=llm`) |
+| `DELETE /v1/memory/points/{id}` | Remove Qdrant point |
 
-Used in chat stream when `rag_enabled=true` (`api/chat.py`).
+### Gateway memory
 
-### Conversation memory (API)
-
-- After each turn: `ingestConversationMemory(userId, userText, assistantText)` in `chat.service.ts` (async, non-blocking).
+- After each turn: `ingestConversationMemory` — explicit remember | Qdrant episodic | selective `extractAndStoreFacts` → `upsertCuratedMemory`.
+- `MEMORY_CLEANUP_CONVERSATION_ROWS=true` — one-time delete of legacy Postgres `CONVERSATION` rows on gateway start.
+- `GET /internal/memory/facts` (internal token) — curated facts for cognitive-runtime.
+- `GET /memory`, `DELETE /memory/:id` — mobile Saved memories (facts/preferences only by default).
 
 ### Orchestrator context
 
-- `orchestration/context.py` calls `/v1/kb/search` when building planner context (see [Known gaps](#known-gaps--inconsistencies)).
+- `fetch_layered_memory_context` merges curated facts + episodic search into `retrieved_context` (single inject to `/v1/chat/stream`).
+- `should_retrieve_rag_context_async` — heuristics by default; optional LLM via `RAG_ROUTER_MODE=llm`.
 
 ---
 

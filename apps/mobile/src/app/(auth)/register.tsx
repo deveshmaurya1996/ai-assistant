@@ -10,6 +10,7 @@ import { spacing } from '@/theme/tokens';
 import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton';
 import { useAuthStore } from '@/stores/auth';
 import { useSettingsStore } from '@/stores/settings';
+import { Routes } from '@/lib/routes';
 
 export default function RegisterScreen() {
   const signUp = useAuthStore((s) => s.signUp);
@@ -33,7 +34,7 @@ export default function RegisterScreen() {
     setLoading(true);
     try {
       await signUp(email.trim(), password, name.trim() || 'User');
-      router.replace('/(app)/(main)/chats');
+      router.replace(Routes.chatCompose);
     } catch (e) {
       Alert.alert('Registration failed', e instanceof Error ? e.message : 'Unknown error');
     } finally {
@@ -42,7 +43,7 @@ export default function RegisterScreen() {
   };
 
   return (
-    <Screen>
+    <Screen safeTop>
       <FadeIn style={styles.form}>
         <Text variant="h1">Create account</Text>
         <Input placeholder="Name" value={name} onChangeText={setName} style={{ marginTop: spacing.lg }} />

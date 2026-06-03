@@ -23,6 +23,7 @@ import { reminderRoutes } from './routes/reminder.routes';
 import { notesRoutes } from './routes/notes.routes';
 import { whatsappRoutes } from './routes/whatsapp.routes';
 import { internalIntegrationRoutes } from './routes/internal-integrations.routes';
+import { internalMemoryRoutes } from './routes/internal-memory.routes';
 import { setupSocketIO } from './socket';
 import { startAllWorkers } from './workers/queues';
 
@@ -93,6 +94,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(notesRoutes, { prefix: '/notes' });
   app.register(whatsappRoutes, { prefix: '/internal/whatsapp' });
   app.register(internalIntegrationRoutes, { prefix: '/internal' });
+  app.register(internalMemoryRoutes, { prefix: '/internal' });
 
   setupSocketIO(app);
   startAllWorkers();

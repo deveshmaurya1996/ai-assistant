@@ -28,3 +28,12 @@ export interface CreateChatSessionBody {
   title?: string;
   kind?: ChatSessionKind;
 }
+
+export interface ListChatSessionsResponse {
+  sessions: ChatSession[];
+  nextCursor: string | null;
+}
+
+export interface UpdateChatSessionBody {
+  title: string;
+}

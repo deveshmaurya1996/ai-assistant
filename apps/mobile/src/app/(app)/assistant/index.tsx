@@ -1,9 +1,8 @@
 import { View, StyleSheet } from 'react-native';
 import { useSettingsStore } from '@/stores/settings';
 import { useLocalSearchParams } from 'expo-router';
-import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
-import { AppHeader } from '@/components/layout/AppHeader';
+import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { VoiceConversationView } from '@/components/assistant/VoiceConversationView';
 import { AssistantStartButton } from '@/components/assistant/AssistantStartButton';
 import { AssistantActiveFooter } from '@/components/assistant/AssistantActiveFooter';
@@ -44,8 +43,13 @@ export default function AssistantScreen() {
   const idleEnd = error ? isVoiceIdleEndMessage(error) : false;
 
   return (
-    <Screen padded={false}>
-      <AppHeader title={assistantDisplayName} />
+    <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <ScreenHeader
+        title={assistantDisplayName}
+        variant="page"
+        leading="menu"
+        titleAlign="left"
+      />
       <View style={styles.body}>
         {isActive ? (
           <FadeIn style={styles.conversation}>
@@ -72,10 +76,7 @@ export default function AssistantScreen() {
                 {error}
               </Text>
             ) : null}
-            <Text variant="h2" style={styles.name}>
-              {assistantDisplayName}
-            </Text>
-            <Text variant="caption" muted style={styles.hint}>
+            <Text variant="body" muted style={styles.hint}>
               Tap to start a voice conversation
             </Text>
             <AssistantStartButton
@@ -104,11 +105,14 @@ export default function AssistantScreen() {
           onStop={() => void stopSession()}
         />
       ) : null}
-    </Screen>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   body: {
     flex: 1,
   },
@@ -125,10 +129,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     textAlign: 'center',
     paddingHorizontal: spacing.md,
-  },
-  name: {
-    marginBottom: spacing.sm,
-    textAlign: 'center',
   },
   hint: {
     marginBottom: spacing.lg,

@@ -3,15 +3,27 @@ import { prisma, Prisma, Role, type ChatSessionKind as PrismaChatSessionKind } f
 import {
   buildRetrievalContextForAttachments,
   resolveAttachments,
+  shouldBuildRetrievalContext,
 } from './file-resolver.service';
 import { toChatAttachmentRef, uploadUserFile } from './file.service';
 import { updateSessionFileContext } from './file-registry.service';
+import { loadRecentChatHistory } from './chat-history.service';
+import {
+  buildSessionWorkingContext,
+  shouldHydrateSessionFiles,
+} from './session-context.service';
+import { deleteEpisodicMemoryForSession, ingestConversationMemory } from './memory.service';
+import {
+  capAttachmentUserQuery,
+  routingQueryFromText,
+  truncateForPrompt,
+  attachmentFileContextMaxChars,
+} from './prompt-budget';
 
 type ChatSessionKind = 'text' | 'voice';
 import { fetchAi } from '../lib/http';
-import { forbidden, notFound } from '../lib/errors';
+import { badRequest, forbidden, notFound } from '../lib/errors';
 import { EventNames, publishEvent } from '@ai-assistant/events';
-import { ingestConversationMemory } from './memory.service';
 import { runAgentTurn, type AgentSource } from './agent-turn.service';
 import { ChatTurnAbortedError } from './chat-turn-errors';
 import {
@@ -38,6 +50,38 @@ export function resolveRagEnabled(explicit?: boolean): boolean {
   if (!isRagGloballyEnabled()) return false;
   if (explicit === false) return false;
   return true;
+}
+
+export function chatHistoryLimit(): number {
+  const raw = process.env.CHAT_HISTORY_LIMIT ?? '20';
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 50) : 20;
+}
+
+export function chatHistoryLimitForMessage(
+  text: string,
+  attachments: ChatAttachmentRef[] = []
+): number {
+  const base = chatHistoryLimit();
+  if (attachments.length > 0) {
+    const attachLimit = parseInt(process.env.ATTACHMENT_HISTORY_LIMIT ?? '8', 10);
+    return Number.isFinite(attachLimit) && attachLimit > 0
+      ? Math.min(base, attachLimit)
+      : Math.min(base, 8);
+  }
+  const trimmed = text.trim();
+  if (trimmed.length >= 80) return base;
+  if (
+    /\b(whatsapp|gmail|email|calendar|remember|summarize|pdf|file|search my|connected)\b/i.test(
+      trimmed
+    )
+  ) {
+    return base;
+  }
+  const shortLimit = parseInt(process.env.CONVERSATIONAL_HISTORY_LIMIT ?? '10', 10);
+  return Number.isFinite(shortLimit) && shortLimit > 0
+    ? Math.min(base, shortLimit)
+    : Math.min(base, 10);
 }
 
 function toApiSessionKind(kind: PrismaChatSessionKind): ChatSessionKind {
@@ -86,13 +130,63 @@ function shouldAutoTitle(
   return isPlaceholderTitle(title) || isFirstMessageTitle(title, userMessage);
 }
 
-export async function listSessions(userId: string) {
-  const sessions = await prisma.chatSession.findMany({
-    where: { userId },
-    orderBy: { updatedAt: 'desc' },
+export async function listSessions(
+  userId: string,
+  options?: { cursor?: string; limit?: number }
+) {
+  const limit = Math.min(Math.max(options?.limit ?? 30, 1), 50);
+  const where: Prisma.ChatSessionWhereInput = {
+    userId,
+    messages: { some: {} },
+  };
+
+  if (options?.cursor) {
+    const cursorSession = await prisma.chatSession.findUnique({
+      where: { id: options.cursor },
+    });
+    if (cursorSession && cursorSession.userId === userId) {
+      where.AND = [
+        {
+          OR: [
+            { updatedAt: { lt: cursorSession.updatedAt } },
+            { updatedAt: cursorSession.updatedAt, id: { lt: cursorSession.id } },
+          ],
+        },
+      ];
+    }
+  }
+
+  const rows = await prisma.chatSession.findMany({
+    where,
+    orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+    take: limit + 1,
     include: { _count: { select: { messages: true } } },
   });
-  return sessions.map(serializeSession);
+
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  return {
+    sessions: page.map(serializeSession),
+    nextCursor: hasMore ? (page[page.length - 1]?.id ?? null) : null,
+  };
+}
+
+export async function updateSession(
+  userId: string,
+  sessionId: string,
+  data: { title: string }
+) {
+  await assertSessionAccess(userId, sessionId);
+  const title = data.title.trim();
+  if (!title) throw badRequest('Title is required');
+  if (title.length > 100) throw badRequest('Title must be 100 characters or fewer');
+
+  const updated = await prisma.chatSession.update({
+    where: { id: sessionId },
+    data: { title },
+    include: { _count: { select: { messages: true } } },
+  });
+  return serializeSession(updated);
 }
 
 export async function getSession(userId: string, sessionId: string) {
@@ -149,6 +243,12 @@ export async function createSession(
 
 export async function deleteSession(userId: string, sessionId: string) {
   await assertSessionAccess(userId, sessionId);
+  await deleteEpisodicMemoryForSession(userId, sessionId).catch((err) => {
+    console.warn(
+      '[chat] episodic cleanup failed:',
+      err instanceof Error ? err.message : err
+    );
+  });
   await prisma.chatSession.delete({ where: { id: sessionId } });
 }
 
@@ -257,6 +357,7 @@ export async function processChatMessage(params: {
   personalityId?: string;
   assistantDisplayName?: string;
   onChunk: (chunk: string, sessionId: string) => void | Promise<void>;
+  onStatus?: (message: string, sessionId: string) => void | Promise<void>;
   onSessionCreated?: (sessionId: string) => void;
   onTitleUpdated?: (sessionId: string, title: string) => void;
   onActionConfirmRequired?: (payload: ActionConfirmPayload) => void;
@@ -297,31 +398,56 @@ export async function processChatMessage(params: {
     },
   });
 
-  const dbHistory = await prisma.message.findMany({
-    where: { chatSessionId: sessionId },
-    orderBy: { createdAt: 'asc' },
-    take: 10,
-  });
+  const historyTake = chatHistoryLimitForMessage(text, attachments);
+  const hydrateFiles = await shouldHydrateSessionFiles(
+    sessionId,
+    text,
+    attachments.length > 0
+  );
 
   const agentSource: AgentSource =
     params.agentSource ?? (source === 'socket' ? 'chat' : 'chat');
 
-  const resolvedAttachments = await resolveAttachments(userId, attachments, {
-    query: text,
-    sessionId,
-    forceInline: true,
-  });
+  const historyPromise = loadRecentChatHistory(sessionId, historyTake);
+  const needFileWork = hydrateFiles || attachments.length > 0;
 
-  const agentQuery =
+  const [dbHistory, resolvedAttachments] = await Promise.all([
+    historyPromise,
+    needFileWork
+      ? resolveAttachments(userId, attachments, {
+          query: text,
+          sessionId,
+          forceInline: attachments.some((a) => a.kind === 'image'),
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const loadChunkContext =
+    needFileWork &&
+    shouldBuildRetrievalContext(attachments, resolvedAttachments, text);
+
+  const [fileRetrievalContext, sessionWorkingContext] = await Promise.all([
+    loadChunkContext
+      ? buildRetrievalContextForAttachments(userId, attachments, text, sessionId)
+      : Promise.resolve(''),
+    historyPromise.then((rows) => buildSessionWorkingContext(userId, rows)),
+  ]);
+
+  const rawAgentQuery =
     text.trim() ||
     (attachments.length > 0 ? buildDefaultAttachmentQuery(resolvedAttachments) : '');
+  const agentQuery =
+    attachments.length > 0 ? capAttachmentUserQuery(rawAgentQuery) : rawAgentQuery;
+  const routingQuery = routingQueryFromText(text);
 
-  const fileRetrievalContext = await buildRetrievalContextForAttachments(
-    userId,
-    attachments,
-    text || agentQuery,
-    sessionId
-  );
+  const cappedFileContext =
+    attachments.length > 0 && fileRetrievalContext
+      ? truncateForPrompt(fileRetrievalContext, attachmentFileContextMaxChars())
+      : fileRetrievalContext;
+  const cappedSessionContext =
+    attachments.length > 0 && sessionWorkingContext
+      ? truncateForPrompt(sessionWorkingContext, attachmentFileContextMaxChars())
+      : sessionWorkingContext;
 
   if (attachments.length > 0) {
     await updateSessionFileContext(sessionId, {
@@ -338,6 +464,8 @@ export async function processChatMessage(params: {
       resolvedWithExcerpt: resolvedAttachments.filter((r) => r.textExcerpt).length,
       resolvedWithNote: resolvedAttachments.filter((r) => r.note).length,
       queryChars: agentQuery.length,
+      routingQueryChars: routingQuery.length,
+      fileContextChars: cappedFileContext.length,
     });
   }
 
@@ -352,6 +480,7 @@ export async function processChatMessage(params: {
       {
         userId,
         query: agentQuery,
+        routingQuery,
         chatSessionId: sessionId,
         chatHistory: dbHistory.map((m) => ({
           role: toAiRole(m.role),
@@ -365,10 +494,12 @@ export async function processChatMessage(params: {
         personalityId: assistantContext.personalityId,
         assistantDisplayName: assistantContext.displayName,
         systemPrompt: assistantContext.systemPrompt,
-        fileRetrievalContext,
+        fileRetrievalContext: cappedFileContext,
+        sessionContext: cappedSessionContext,
       },
       {
         onToken: (token) => onChunk(token, sessionId),
+        onStatus: (message) => params.onStatus?.(message, sessionId),
         onActionConfirmRequired: params.onActionConfirmRequired,
         onModelUsed: (modelId, label) =>
           params.onModelUsed?.(sessionId, modelId, label),
@@ -491,7 +622,7 @@ export async function processChatMessage(params: {
     data: { updatedAt: new Date() },
   });
 
-  ingestConversationMemory(userId, text, accumulated).catch((err) => {
+  ingestConversationMemory(userId, text, accumulated, sessionId).catch((err) => {
     console.error('[memory] ingest failed:', err instanceof Error ? err.message : err);
   });
 
@@ -513,12 +644,7 @@ export async function processChatMessage(params: {
 }
 
 async function loadTurnContext(userId: string, sessionId: string) {
-  const dbHistory = await prisma.message.findMany({
-    where: { chatSessionId: sessionId },
-    orderBy: { createdAt: 'asc' },
-    take: 10,
-  });
-
+  const dbHistory = await loadRecentChatHistory(sessionId, chatHistoryLimit());
   return { dbHistory };
 }
 

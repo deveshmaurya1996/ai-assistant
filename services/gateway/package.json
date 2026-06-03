@@ -9,6 +9,7 @@
     "predev": "node ../../node_modules/typescript/bin/tsc",
     "build": "node ../../node_modules/typescript/bin/tsc",
     "start": "node dist/index.js",
+    "test:unit": "npm run build && node --test dist/services/__tests__/*.test.js",
     "test:integration": "node -r @ai-assistant/config/register -r ts-node/register src/verify_integration.ts",
     "test:whatsapp-path": "node -r @ai-assistant/config/register dist/scripts/verify-whatsapp-path.js"
   },

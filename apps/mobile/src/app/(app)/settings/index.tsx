@@ -6,8 +6,9 @@ import { router } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
+import { UserAvatar } from '@/components/ui/UserAvatar';
 import { Button } from '@/components/ui/Button';
-import { AppHeader } from '@/components/layout/AppHeader';
+import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { SwitchRow } from '@/components/ui/SwitchRow';
 import { SettingsSection } from '@/components/settings/SettingsSection';
@@ -38,6 +39,7 @@ import {
   type OverlayPermissionLabel,
 } from '@/lib/permissions';
 import { PressableScale } from '@/components/motion/PressableScale';
+import { Routes } from '@/lib/routes';
 
 export default function SettingsScreen() {
   const { colors, mode, setMode } = useTheme();
@@ -86,8 +88,25 @@ export default function SettingsScreen() {
 
   return (
     <Screen padded={false}>
-      <AppHeader title="Settings" />
+      <ScreenHeader title="Settings" variant="page" leading="menu" titleAlign="left" />
       <ScrollView contentContainerStyle={styles.scroll}>
+        <View style={[styles.profile, { borderBottomColor: colors.border }]}>
+          <UserAvatar
+            image={session?.user?.image}
+            name={session?.user?.name}
+            email={session?.user?.email}
+            size={52}
+          />
+          <View style={styles.profileText}>
+            <Text variant="bodyMedium" numberOfLines={1}>
+              {session?.user?.name ?? 'Guest'}
+            </Text>
+            <Text variant="caption" muted numberOfLines={1}>
+              {session?.user?.email ?? '—'}
+            </Text>
+          </View>
+        </View>
+
         <SettingsSection title="Appearance">
           <SegmentedControl options={themeOptions} value={mode} onChange={setMode} />
         </SettingsSection>
@@ -176,14 +195,22 @@ export default function SettingsScreen() {
           />
         </SettingsSection>
 
-        <SettingsSection title="Account">
-          <Text variant="body" muted>
-            {session?.user?.email ?? '—'}
+        <SettingsSection title="Memory">
+          <PressableScale onPress={() => router.push(Routes.memory)}>
+            <View style={styles.row}>
+              <Text variant="bodyMedium">Saved facts</Text>
+              <ChevronRight color={colors.textMuted} size={18} />
+            </View>
+          </PressableScale>
+          <Text variant="caption" muted style={{ marginTop: spacing.xs }}>
+            View and delete what your assistant remembers about you
           </Text>
+        </SettingsSection>
+
+        <SettingsSection title="Account">
           <Button
             label="Sign out"
             variant="danger"
-            style={{ marginTop: spacing.md }}
             onPress={async () => {
               await signOut();
               router.replace('/(auth)/welcome');
@@ -213,7 +240,21 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  scroll: { padding: spacing.md, paddingBottom: 160 },
+  scroll: { paddingHorizontal: spacing.md, paddingBottom: spacing.xxl * 2 },
+  profile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    marginBottom: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  profileText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -9,12 +9,17 @@ import {
   type ReactNode,
 } from 'react';
 import type { AssistantSocket, ChatMessage } from '@ai-assistant/sdk';
-import type { ActionConfirmRequiredPayload, ChatAttachmentRef } from '@ai-assistant/types';
+import type {
+  ActionConfirmRequiredPayload,
+  ChatAttachmentRef,
+  ChatStatusPayload,
+} from '@ai-assistant/types';
 import { apiClient } from '@/lib/api-client';
 import { formatChatSocketError } from '@/lib/format-ai-error';
 import { useChatActionConfirmBridge } from './chatActionConfirmBridge';
 import { useSettingsStore } from '@/stores/settings';
 import { useOverlaySessionStore } from '@/features/overlay/overlaySessionStore';
+import { useChatSidebarStore } from './chatSidebarStore';
 import {
   PENDING_CHAT_STREAM_KEY,
   useChatStreamStore,
@@ -97,6 +102,7 @@ export function ChatSocketProvider({
   }, []);
 
   const beginTurn = useChatStreamStore((s) => s.beginTurn);
+  const setStatusMessage = useChatStreamStore((s) => s.setStatusMessage);
   const appendChunk = useChatStreamStore((s) => s.appendChunk);
   const endTurn = useChatStreamStore((s) => s.endTurn);
   const abortTurn = useChatStreamStore((s) => s.abortTurn);
@@ -172,6 +178,11 @@ export function ChatSocketProvider({
         appendChunk(data.chatSessionId, data.chunk);
       });
 
+      connected.on('chat:status', (data: ChatStatusPayload) => {
+        const key = streamKeyForSession(data.chatSessionId);
+        setStatusMessage(key, data.message);
+      });
+
       connected.on('chat:message_saved', (data) => {
         const sid = activeTurnSessionRef.current;
         if (sid) {
@@ -211,11 +222,9 @@ export function ChatSocketProvider({
       connected.on('chat:error', (payload) => {
         clearTurnTimeout();
         const message = formatChatSocketError(payload);
-        const { sessions } = useChatStreamStore.getState();
-        for (const key of Object.keys(sessions)) {
-          if (sessions[key]?.isGenerating) {
-            abortTurn(key);
-          }
+        const failedKey = activeStreamKeyRef.current;
+        if (useChatStreamStore.getState().sessions[failedKey]?.isGenerating) {
+          abortTurn(failedKey);
         }
         const sid = activeTurnSessionRef.current;
         activeTurnSessionRef.current = null;
@@ -230,6 +239,7 @@ export function ChatSocketProvider({
 
       connected.on('chat:title_updated', (data) => {
         useOverlaySessionStore.getState().setTitle(data.chatSessionId, data.title);
+        useChatSidebarStore.getState().patchTitle(data.chatSessionId, data.title);
         notifyMatching(data.chatSessionId, (l) => l.onTitleUpdated?.(data.title));
       });
 
@@ -295,10 +305,15 @@ export function ChatSocketProvider({
       const socket = socketRef.current;
       if ((!trimmed && attachments.length === 0) || !socket?.connected) return false;
 
-      const {
-        selectedPersonalityId,
-        assistantDisplayName,
-      } = useSettingsStore.getState();
+      const settings = useSettingsStore.getState();
+      if (!settings.hydrated) {
+        for (const entry of listenerMapRef.current.values()) {
+          entry.listeners.onError?.('Settings still loading. Try again in a moment.');
+        }
+        return false;
+      }
+
+      const { selectedPersonalityId, assistantDisplayName } = settings;
 
       const sessionKey = streamKeyForSession(sessionId);
       const { sessions } = useChatStreamStore.getState();

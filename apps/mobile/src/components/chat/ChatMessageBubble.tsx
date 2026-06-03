@@ -20,6 +20,7 @@ type Props = {
   streamActive?: boolean;
   streamTurnKey?: number;
   thinkingUserMessage?: string;
+  streamStatusMessage?: string | null;
   isSaved?: boolean;
   onSaveNote?: (content: string, messageId: string) => Promise<void>;
 };
@@ -35,6 +36,7 @@ function ChatMessageBubbleInner({
   showStreamCursor = false,
   streamActive = false,
   thinkingUserMessage,
+  streamStatusMessage,
   isSaved = false,
   onSaveNote,
 }: Props) {
@@ -86,6 +88,7 @@ function ChatMessageBubbleInner({
         <ChatThinkingIndicator
           userMessage={thinkingUserMessage}
           assistantLabel={assistantLabel}
+          statusOverride={streamStatusMessage}
         />
       ) : (
         <View

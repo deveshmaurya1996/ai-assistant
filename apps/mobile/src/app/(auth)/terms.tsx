@@ -27,7 +27,7 @@ export default function TermsScreen() {
   };
 
   return (
-    <Screen padded={false}>
+    <Screen safeTop padded={false}>
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text variant="h1" style={styles.heading}>
           Before you join

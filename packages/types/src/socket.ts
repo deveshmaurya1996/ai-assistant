@@ -5,6 +5,7 @@ export interface ChatOutgoingPayload {
   text: string;
   chatSessionId?: string;
   confirmed?: boolean;
+  ragEnabled?: boolean;
   source?: 'chat' | 'voice';
   attachments?: ChatAttachmentRef[];
   personalityId?: string;
@@ -14,6 +15,11 @@ export interface ChatOutgoingPayload {
 export interface ChatChunkPayload {
   chunk: string;
   chatSessionId: string;
+}
+
+export interface ChatStatusPayload {
+  chatSessionId: string;
+  message: string;
 }
 
 export interface ChatEndPayload {
@@ -128,6 +134,7 @@ export interface ServerToClientEvents {
   authenticated: (data: { userId: string }) => void;
   unauthorized: (data: { error: string }) => void;
   'chat:chunk': (data: ChatChunkPayload) => void;
+  'chat:status': (data: ChatStatusPayload) => void;
   'chat:end': (data: ChatEndPayload) => void;
   'chat:message_saved': (data: { message: ChatMessage }) => void;
   'chat:session_created': (data: { chatSessionId: string }) => void;

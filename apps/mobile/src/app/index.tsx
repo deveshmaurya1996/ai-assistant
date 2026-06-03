@@ -6,6 +6,8 @@ import { useSettingsStore } from '@/stores/settings';
 import { useTheme } from '@/theme/ThemeProvider';
 import { Text } from '@/components/ui/Text';
 
+import { Routes } from '@/lib/routes';
+
 export default function Index() {
   const { colors } = useTheme();
   const { session, loading, hydrate } = useAuthStore();
@@ -21,7 +23,7 @@ export default function Index() {
     if (loading || !settingsReady) return;
 
     if (session) {
-      router.replace('/(app)/(main)/chats');
+      router.replace(Routes.chatCompose);
     } else {
       router.replace('/(auth)/welcome');
     }

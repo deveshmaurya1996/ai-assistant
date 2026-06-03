@@ -12,6 +12,7 @@ export type AgentSource = 'chat' | 'voice' | 'automation' | 'workflow' | 'manual
 export type AgentTurnInput = {
   userId: string;
   query: string;
+  routingQuery?: string;
   chatSessionId: string;
   chatHistory: Array<{ role: string; content: string }>;
   attachments?: ChatAttachmentRef[];
@@ -23,6 +24,7 @@ export type AgentTurnInput = {
   assistantDisplayName?: string;
   systemPrompt?: string;
   fileRetrievalContext?: string;
+  sessionContext?: string;
 };
 
 export type ActionConfirmPayload = {
@@ -69,6 +71,9 @@ function logAttachmentTurnSummary(
     withImage: resolved.filter((r) => r.imageDataUrl).length,
     withExcerpt: resolved.filter((r) => r.textExcerpt).length,
     withNote: resolved.filter((r) => r.note).length,
+    queryChars: input.query.length,
+    routingQueryChars: (input.routingQuery ?? input.query.slice(0, 512)).length,
+    fileContextChars: (input.fileRetrievalContext ?? '').length,
     firstTokenMs: result.firstTokenMs,
     responseChars: result.fullText.length,
   };
@@ -84,6 +89,7 @@ export async function runAgentTurn(
   input: AgentTurnInput,
   callbacks: {
     onToken: (token: string) => void | Promise<void>;
+    onStatus?: (message: string) => void | Promise<void>;
     onActionConfirmRequired?: (payload: ActionConfirmPayload) => void;
     onModelUsed?: (modelId: string, label?: string) => void;
     onImageGenerated?: (payload: {
@@ -108,6 +114,7 @@ export async function runAgentTurn(
       signal,
       body: JSON.stringify({
         query: input.query,
+        routing_query: input.routingQuery ?? input.query.slice(0, 512),
         user_id: input.userId,
         chat_history: input.chatHistory,
         chat_session_id: input.chatSessionId,
@@ -120,6 +127,7 @@ export async function runAgentTurn(
         assistant_display_name: input.assistantDisplayName,
         system_prompt: input.systemPrompt,
         file_retrieval_context: input.fileRetrievalContext ?? '',
+        session_context: input.sessionContext ?? '',
       }),
     });
   } catch (err) {
@@ -161,6 +169,7 @@ export async function runAgentTurn(
   const reader = orchRes.body.getReader();
   const decoder = new TextDecoder('utf-8');
   let sseBuffer = '';
+  let earlyConfirm: AgentTurnResult | undefined;
 
   const processEvents = async (events: ReturnType<typeof parseSseBuffer>['events']) => {
     for (const ev of events) {
@@ -172,6 +181,28 @@ export async function runAgentTurn(
           }
           accumulated += payload.content;
           void callbacks.onToken(payload.content);
+        }
+      } else if (ev.event === 'status') {
+        const payload = safeParseJson<{ message?: string }>(ev.data, {});
+        if (payload.message) {
+          void callbacks.onStatus?.(payload.message);
+        }
+      } else if (ev.event === 'action_confirm') {
+        const payload = safeParseJson<{
+          requiresConfirmation?: boolean;
+          tools?: Array<{ tool: string; args?: Record<string, unknown>; executionId?: string }>;
+        }>(ev.data, {});
+        if (payload.requiresConfirmation && payload.tools?.length) {
+          const first = payload.tools[0]!;
+          earlyConfirm = {
+            requiresConfirmation: true,
+            fullText: accumulated,
+            confirmPayload: {
+              tool: first.tool,
+              args: first.args ?? {},
+              executionId: first.executionId,
+            },
+          };
         }
       } else if (ev.event === 'error') {
         const payload = safeParseJson<ChatErrorPayload>(ev.data, { message: 'Stream error' });
@@ -223,12 +254,15 @@ export async function runAgentTurn(
     const { events, rest } = parseSseBuffer(sseBuffer);
     sseBuffer = rest;
     await processEvents(events);
+    if (earlyConfirm) return earlyConfirm;
   }
 
   if (sseBuffer.trim()) {
     const { events } = parseSseBuffer(`${sseBuffer}\n\n`);
     await processEvents(events);
   }
+
+  if (earlyConfirm) return earlyConfirm;
 
   const result: AgentTurnResult = {
     requiresConfirmation: false,

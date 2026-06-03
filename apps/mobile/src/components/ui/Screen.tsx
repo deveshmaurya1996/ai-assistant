@@ -14,10 +14,11 @@ type Props = {
   children: ReactNode;
   scroll?: boolean;
   padded?: boolean;
+  safeTop?: boolean;
   style?: ViewStyle;
 };
 
-export function Screen({ children, scroll, padded = true, style }: Props) {
+export function Screen({ children, scroll, padded = true, safeTop = false, style }: Props) {
   const { colors } = useTheme();
   const { horizontalPadding, contentMaxWidth } = useResponsive();
 
@@ -38,14 +39,16 @@ export function Screen({ children, scroll, padded = true, style }: Props) {
   );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: colors.background }}
+      edges={safeTop ? ['top'] : []}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
         {scroll ? (
           <ScrollView
-            contentContainerStyle={{ flexGrow: 1, paddingBottom: 120 }}
+            contentContainerStyle={{ flexGrow: 1, paddingBottom: 32 }}
             keyboardShouldPersistTaps="handled">
             {content}
           </ScrollView>

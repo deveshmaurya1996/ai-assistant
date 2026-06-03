@@ -11,6 +11,8 @@ import type {
   ConnectChallenge,
   CreateChatSessionBody,
   CreateChatSessionResponse,
+  ListChatSessionsResponse,
+  UpdateChatSessionBody,
   FileAssetResponse,
   ModelsResponse,
   Reminder,
@@ -167,8 +169,12 @@ export class AssistantClient {
     this.cookie = cookie;
   }
 
-  async listSessions() {
-    return this.request<ChatSession[]>('/chat/sessions');
+  async listSessions(options?: { cursor?: string; limit?: number }) {
+    const params = new URLSearchParams();
+    if (options?.cursor) params.set('cursor', options.cursor);
+    if (options?.limit != null) params.set('limit', String(options.limit));
+    const q = params.toString();
+    return this.request<ListChatSessionsResponse>(`/chat/sessions${q ? `?${q}` : ''}`);
   }
 
   async getChatSession(sessionId: string) {
@@ -191,6 +197,13 @@ export class AssistantClient {
   async deleteSession(sessionId: string) {
     return this.request<{ success: boolean }>(`/chat/sessions/${sessionId}`, {
       method: 'DELETE',
+    });
+  }
+
+  async updateSession(sessionId: string, body: UpdateChatSessionBody) {
+    return this.request<ChatSession>(`/chat/sessions/${sessionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
     });
   }
 
@@ -224,6 +237,25 @@ export class AssistantClient {
     return this.request<import('@ai-assistant/types').PersonalitiesResponse>(
       '/assistant/personalities'
     );
+  }
+
+  async listMemoryItems(options?: {
+    type?: import('@ai-assistant/types').MemoryType;
+    includeConversations?: boolean;
+  }) {
+    const params = new URLSearchParams();
+    if (options?.type) params.set('type', options.type);
+    if (options?.includeConversations) params.set('includeConversations', 'true');
+    const q = params.toString();
+    return this.request<import('@ai-assistant/types').MemoryItem[]>(
+      `/memory${q ? `?${q}` : ''}`
+    );
+  }
+
+  async deleteMemoryItem(id: string) {
+    return this.request<{ success: boolean }>(`/memory/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
   }
 
   async transcribeVoice(

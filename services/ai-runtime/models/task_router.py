@@ -78,11 +78,31 @@ def classify_task(query: str, explicit_task: Optional[str] = None) -> str:
 
 
 def is_rag_relevant_query(query: str) -> bool:
-    q = query.lower()
-    signals = [
+    """Align with cognitive-runtime smart retrieval (see should_retrieve_rag_context)."""
+    import os
+
+    if os.getenv("RAG_RETRIEVAL_MODE", "smart").strip().lower() == "always":
+        return bool((query or "").strip())
+
+    q = (query or "").strip()
+    if not q:
+        return False
+
+    lower = q.lower()
+    if re.match(
+        r"^(?:hi|hello|hey|thanks|thank you|ok|okay|yes|no|sure|cool|great|bye|goodbye"
+        r"|good morning|good night)[\s!.?]*$",
+        q,
+        re.IGNORECASE,
+    ):
+        return False
+
+    signals = (
         "remember",
         "recall",
         "what did i",
+        "what did we",
+        "what have we",
         "from my notes",
         "from my memory",
         "search my",
@@ -90,5 +110,24 @@ def is_rag_relevant_query(query: str) -> bool:
         "knowledge base",
         "previously",
         "last time we",
-    ]
-    return any(s in q for s in signals)
+        "we discussed",
+        "we talked",
+        "you told me",
+        "do you remember",
+        "our conversation",
+        "my notes",
+        "about me",
+    )
+    if any(s in lower for s in signals):
+        return True
+
+    if re.search(
+        r"\b(?:what(?:'s| is) my|when did i|do you know my)\b",
+        lower,
+    ):
+        return True
+
+    if len(q) < 24 and "?" not in q:
+        return False
+
+    return False

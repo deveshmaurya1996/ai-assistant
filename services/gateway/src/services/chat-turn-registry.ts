@@ -1,72 +1,63 @@
+
+export const PENDING_CHAT_SESSION_KEY = '__pending__';
+
 type ActiveChatTurn = {
   controller: AbortController;
-  sessionId?: string;
+  sessionKey: string;
   socketId: string;
 };
 
-const turnsBySocket = new Map<string, ActiveChatTurn>();
 const turnsBySession = new Map<string, ActiveChatTurn>();
 
+function sessionKeyFrom(sessionId?: string): string {
+  return sessionId ?? PENDING_CHAT_SESSION_KEY;
+}
+
 function registerTurn(turn: ActiveChatTurn): void {
-  turnsBySocket.set(turn.socketId, turn);
-  if (turn.sessionId) {
-    turnsBySession.set(turn.sessionId, turn);
-  }
+  turnsBySession.set(turn.sessionKey, turn);
 }
 
 function unregisterTurn(turn: ActiveChatTurn): void {
-  turnsBySocket.delete(turn.socketId);
-  if (turn.sessionId) {
-    turnsBySession.delete(turn.sessionId);
-  }
+  turnsBySession.delete(turn.sessionKey);
 }
 
 export function beginChatTurn(socketId: string, sessionId?: string): AbortController {
-  if (sessionId) {
-    const sessionTurn = turnsBySession.get(sessionId);
-    if (sessionTurn) {
-      sessionTurn.controller.abort();
-      unregisterTurn(sessionTurn);
-    }
-  }
-
-  const existing = turnsBySocket.get(socketId);
-  if (existing) {
+  const sessionKey = sessionKeyFrom(sessionId);
+  const existing = turnsBySession.get(sessionKey);
+  if (existing && existing.socketId === socketId) {
     existing.controller.abort();
     unregisterTurn(existing);
   }
 
   const controller = new AbortController();
-  registerTurn({ controller, sessionId, socketId });
+  registerTurn({ controller, sessionKey, socketId });
   return controller;
 }
 
 export function setChatTurnSession(socketId: string, sessionId: string): void {
-  const turn = turnsBySocket.get(socketId);
-  if (!turn) return;
-  if (turn.sessionId) {
-    turnsBySession.delete(turn.sessionId);
-  }
-  turn.sessionId = sessionId;
-  turnsBySession.set(sessionId, turn);
+  const pending = turnsBySession.get(PENDING_CHAT_SESSION_KEY);
+  if (!pending || pending.socketId !== socketId) return;
+  if (pending.sessionKey === sessionId) return;
+
+  turnsBySession.delete(PENDING_CHAT_SESSION_KEY);
+  pending.sessionKey = sessionId;
+  turnsBySession.set(sessionId, pending);
 }
 
 export function detachChatTurn(socketId: string): void {
-  turnsBySocket.delete(socketId);
+  for (const [key, turn] of [...turnsBySession.entries()]) {
+    if (turn.socketId === socketId) {
+      turn.controller.abort();
+      turnsBySession.delete(key);
+    }
+  }
 }
 
-export function endChatTurn(socketId: string): void {
-  const attached = turnsBySocket.get(socketId);
-  if (attached) {
-    unregisterTurn(attached);
-    return;
-  }
-
-  for (const turn of turnsBySession.values()) {
-    if (turn.socketId === socketId) {
-      unregisterTurn(turn);
-      return;
-    }
+export function endChatTurn(socketId: string, sessionId?: string): void {
+  const sessionKey = sessionId ?? PENDING_CHAT_SESSION_KEY;
+  const turn = turnsBySession.get(sessionKey);
+  if (turn?.socketId === socketId) {
+    unregisterTurn(turn);
   }
 }
 
@@ -75,11 +66,15 @@ export function abortChatTurn(socketId: string, sessionId?: string): boolean {
     return abortChatTurnBySession(sessionId);
   }
 
-  const turn = turnsBySocket.get(socketId);
-  if (!turn) return false;
-  turn.controller.abort();
-  unregisterTurn(turn);
-  return true;
+  let aborted = false;
+  for (const turn of [...turnsBySession.values()]) {
+    if (turn.socketId === socketId) {
+      turn.controller.abort();
+      unregisterTurn(turn);
+      aborted = true;
+    }
+  }
+  return aborted;
 }
 
 export function abortChatTurnBySession(sessionId: string): boolean {

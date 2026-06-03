@@ -8,12 +8,20 @@ timeouts:
 
 rag:
   enabledByDefault: true
+  minScore: 0.35
+  factLimit: 5
   embeddingModel: nvidia/nv-embed-v1
   providerModel: nvidia/nv-embed-v1
   rerankModel: nvidia/rerank-qa-mistral-4b
   rerankProviderModel: nv-rerank-qa-mistral-4b:1
   collectionName: kb_documents_nv
   embeddingDim: 4096
+  rerankEnabled: false
+  rerankFetchLimit: 6
+  searchTimeoutSeconds: 5
+  preStreamBudgetMs: 300
+  embeddingCacheTtlSeconds: 60
+  embeddingCacheMaxEntries: 256
 
 providers:
   nvidia:
@@ -61,6 +69,7 @@ models:
     tier: C
 
 routing:
+  attachment_read: [nvidia/nemotron-mini-4b-instruct, nvidia/mistral-nemotron, nvidia/glm-5.1, pollinations/openai]
   fast_chat: [nvidia/glm-5.1, nvidia/mistral-nemotron, nvidia/nemotron-mini-4b-instruct, pollinations/openai]
   reasoning: [nvidia/glm-5.1, nvidia/mistral-nemotron, pollinations/openai]
   vision: [google/paligemma, nvidia/llama-4-maverick-17b-128e-instruct, pollinations/openai]

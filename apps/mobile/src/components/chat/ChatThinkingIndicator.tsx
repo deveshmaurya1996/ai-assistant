@@ -26,11 +26,13 @@ const BOUNCE_UP_MS = 240;
 type Props = {
   userMessage?: string;
   assistantLabel?: string;
+  statusOverride?: string | null;
 };
 
 export function ChatThinkingIndicator({
   userMessage = '',
   assistantLabel,
+  statusOverride,
 }: Props) {
   const { colors } = useTheme();
   const phrases = useMemo(() => buildThinkingPhrases(userMessage), [userMessage]);
@@ -44,11 +46,15 @@ export function ChatThinkingIndicator({
   const labelOpacity = useSharedValue(0.7);
 
   useEffect(() => {
+    if (statusOverride?.trim()) {
+      setStatusText(statusOverride.trim());
+      return;
+    }
     startedAt.current = Date.now();
     phraseIndex.current = 0;
     recentFunny.current.clear();
     setStatusText(phrases[0] ?? 'Thinking');
-  }, [phrases, userMessage]);
+  }, [phrases, userMessage, statusOverride]);
 
   useEffect(() => {
     translateY.value = withRepeat(
@@ -76,6 +82,7 @@ export function ChatThinkingIndicator({
   }, [scaleY, translateY]);
 
   useEffect(() => {
+    if (statusOverride?.trim()) return;
     const id = setInterval(() => {
       const elapsed = Date.now() - startedAt.current;
 
@@ -91,7 +98,7 @@ export function ChatThinkingIndicator({
     }, THINKING_PHRASE_INTERVAL_MS);
 
     return () => clearInterval(id);
-  }, [phrases]);
+  }, [phrases, statusOverride]);
 
   useEffect(() => {
     labelOpacity.value = withRepeat(

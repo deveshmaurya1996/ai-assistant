@@ -15,6 +15,7 @@ import {
   beginChatTurn,
   detachChatTurn,
   endChatTurn,
+  PENDING_CHAT_SESSION_KEY,
   setChatTurnSession,
 } from '../services/chat-turn-registry';
 import {
@@ -138,6 +139,7 @@ export function setupSocketIO(fastify: FastifyInstance) {
       }
 
       void (async () => {
+        let activeTurnSessionKey = data.chatSessionId ?? PENDING_CHAT_SESSION_KEY;
         const turnAbort = beginChatTurn(socket.id, data.chatSessionId);
         try {
           const trimmedText = data.text?.trim() ?? '';
@@ -220,11 +222,18 @@ export function setupSocketIO(fastify: FastifyInstance) {
               (data as { source?: 'chat' | 'voice' }).source === 'voice' ? 'voice' : 'chat',
             onSessionCreated: (sessionId) => {
               setChatTurnSession(socket.id, sessionId);
+              activeTurnSessionKey = sessionId;
               socket.emit('chat:session_created', { chatSessionId: sessionId });
             },
             onChunk: (chunk, sessionId) => {
               setChatTurnSession(socket.id, sessionId);
+              activeTurnSessionKey = sessionId;
               socket.emit('chat:chunk', { chunk, chatSessionId: sessionId });
+            },
+            onStatus: (message, sessionId) => {
+              setChatTurnSession(socket.id, sessionId);
+              activeTurnSessionKey = sessionId;
+              socket.emit('chat:status', { message, chatSessionId: sessionId });
             },
             onTitleUpdated: (sessionId, title) => {
               socket.emit('chat:title_updated', { chatSessionId: sessionId, title });
@@ -284,7 +293,7 @@ export function setupSocketIO(fastify: FastifyInstance) {
             ...(details !== undefined && { debug: details }),
           });
         } finally {
-          endChatTurn(socket.id);
+          endChatTurn(socket.id, activeTurnSessionKey);
         }
       })();
     });

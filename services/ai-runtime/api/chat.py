@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 from typing import Any, List, Dict, Optional, Union
 
@@ -97,9 +98,23 @@ def build_chat_messages(
     resolved_attachments = resolved_attachments or []
     if system_prompt and system_prompt.strip():
         system_instruction = system_prompt.strip()
+        system_instruction += (
+            " Past retrieved snippets or earlier assistant replies may be outdated; "
+            "your name and identity are defined in this system message only."
+        )
     else:
         system_instruction = "You are a helpful AI Assistant."
     system_instruction += " Use retrieved context when relevant."
+    if system_prompt and system_prompt.strip():
+        name_match = re.search(
+            r"Your name is ([^.]+)\.", system_prompt.strip(), re.IGNORECASE
+        )
+        if name_match:
+            identity_name = name_match.group(1).strip()
+            system_instruction += (
+                f" Identity reminder: you are {identity_name}. "
+                f"If asked your name, answer: My name is {identity_name}."
+            )
     if context_str:
         system_instruction += f"\n\nRetrieved Context:\n{context_str}"
     if resolved_attachments:

@@ -92,17 +92,49 @@ export function formatPersonalityGender(gender: PersonalityGender): string {
   }
 }
 
+export function reconcileDisplayName(
+  personalityId: string,
+  displayName?: string | null
+): string {
+  const personality = getAssistantPersonality(normalizePersonalityId(personalityId));
+  const trimmed = displayName?.trim().slice(0, ASSISTANT_NAME_MAX_LENGTH) ?? '';
+  if (!trimmed) return personality.name;
+
+  const lower = trimmed.toLowerCase();
+  if (lower === personality.name.toLowerCase()) return trimmed;
+
+  const matchesOtherPreset = ASSISTANT_PERSONALITIES.some(
+    (p) => p.id !== personality.id && p.name.toLowerCase() === lower
+  );
+  if (matchesOtherPreset) return personality.name;
+
+  return trimmed;
+}
+
+export function buildAssistantIdentityBlock(
+  displayName: string,
+  personalityId: string
+): string {
+  return [
+    `Assistant identity (authoritative): Your name is ${displayName}.`,
+    `Active personality preset: ${personalityId}.`,
+    'When asked who you are, your name, or to introduce yourself, answer using this identity only.',
+    'Never say you have no name, no personal identity, or that you are only a generic AI.',
+    'Never use a different name (including names from past chats or retrieved context).',
+  ].join(' ');
+}
+
 export function resolveAssistantContext(
   personalityId: string,
   displayName?: string
 ): AssistantContext {
   const personality = getAssistantPersonality(normalizePersonalityId(personalityId));
-  const name =
-    displayName?.trim().slice(0, ASSISTANT_NAME_MAX_LENGTH) || personality.name;
+  const name = reconcileDisplayName(personality.id, displayName);
   const basePrompt = personality.systemPrompt.replaceAll('{name}', name);
   const systemPrompt = [
     basePrompt,
     `Tone: ${personality.tagline}. Stay in character for both short and long replies.`,
+    buildAssistantIdentityBlock(name, personality.id),
   ].join('\n');
   return {
     personalityId: personality.id,

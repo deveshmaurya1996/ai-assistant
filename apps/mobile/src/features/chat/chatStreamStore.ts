@@ -5,12 +5,14 @@ export const PENDING_CHAT_STREAM_KEY = '__pending__';
 export type SessionStreamState = {
   streamText: string;
   isGenerating: boolean;
+  statusMessage: string | null;
   revision: number;
 };
 
 type ChatStreamState = {
   sessions: Record<string, SessionStreamState>;
   beginTurn: (sessionKey: string) => void;
+  setStatusMessage: (sessionKey: string, message: string | null) => void;
   appendChunk: (sessionKey: string, chunk: string) => void;
   endTurn: (sessionKey: string) => void;
   clearTurn: (sessionKey: string) => void;
@@ -20,7 +22,7 @@ type ChatStreamState = {
 };
 
 function emptySession(): SessionStreamState {
-  return { streamText: '', isGenerating: false, revision: 0 };
+  return { streamText: '', isGenerating: false, statusMessage: null, revision: 0 };
 }
 
 function bump(session: SessionStreamState): SessionStreamState {
@@ -34,9 +36,21 @@ export const useChatStreamStore = create<ChatStreamState>((set, get) => ({
     set((state) => ({
       sessions: {
         ...state.sessions,
-        [sessionKey]: { streamText: '', isGenerating: true, revision: 0 },
+        [sessionKey]: { streamText: '', isGenerating: true, statusMessage: null, revision: 0 },
       },
     }));
+  },
+
+  setStatusMessage: (sessionKey, message) => {
+    set((state) => {
+      const prev = state.sessions[sessionKey] ?? emptySession();
+      return {
+        sessions: {
+          ...state.sessions,
+          [sessionKey]: bump({ ...prev, statusMessage: message }),
+        },
+      };
+    });
   },
 
   appendChunk: (sessionKey, chunk) => {
@@ -50,6 +64,7 @@ export const useChatStreamStore = create<ChatStreamState>((set, get) => ({
             ...prev,
             streamText: prev.streamText + chunk,
             isGenerating: true,
+            statusMessage: chunk ? null : prev.statusMessage,
           }),
         },
       };
@@ -92,9 +107,10 @@ export const useChatStreamStore = create<ChatStreamState>((set, get) => ({
       const existing = next[sessionId];
       if (existing?.isGenerating || existing?.streamText) {
         next[sessionId] = bump({
+          ...existing,
           streamText: existing.streamText + pending.streamText,
           isGenerating: pending.isGenerating || existing.isGenerating,
-          revision: existing.revision,
+          statusMessage: pending.statusMessage ?? existing.statusMessage,
         });
       } else if (pending.isGenerating || pending.streamText) {
         next[sessionId] = { ...pending };

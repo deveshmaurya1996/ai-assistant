@@ -1,39 +1,153 @@
-import { type ReactNode } from 'react';
-import { View, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { View, StyleSheet, RefreshControl, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
-import { LogOut } from 'lucide-react-native';
-import { DrawerColorIcon } from '@/components/layout/DrawerColorIcon';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router, usePathname, useGlobalSearchParams } from 'expo-router';
+import { FlashList } from '@shopify/flash-list';
+import { LogOut, Pencil, Settings } from 'lucide-react-native';
+import type { ChatSession } from '@ai-assistant/sdk';
 import { Text } from '@/components/ui/Text';
 import { UserAvatar } from '@/components/ui/UserAvatar';
+import { DrawerColorIcon } from '@/components/layout/DrawerColorIcon';
+import { AssistantIcon } from '@/components/assistant/AssistantIcon';
+import { ChatSessionActionsModal, type MenuAnchorRect } from '@/components/chat/ChatSessionActionsModal';
+import { PulseDot } from '@/components/motion/PulseDot';
+import { PressableScale } from '@/components/motion/PressableScale';
 import { useTheme } from '@/theme/ThemeProvider';
 import { useAuthStore } from '@/stores/auth';
+import { spacing, radii } from '@/theme/tokens';
+import { Routes, assistantRoute, chatSessionRoute } from '@/lib/routes';
+import { useChatSessions } from '@/features/chat/useChatSessions';
+import { useChatStreamStore } from '@/features/chat/chatStreamStore';
 import { useSettingsStore } from '@/stores/settings';
-import { spacing } from '@/theme/tokens';
-import { PressableScale } from '@/components/motion/PressableScale';
-import { toggleOverlay } from '@/lib/overlay';
-import { Routes } from '@/lib/routes';
-import { useVoiceSessionBridge } from '@/features/voice-assistant/voiceSessionBridge';
-import type { ThemeMode } from '@/theme/tokens';
+import { MessageSquare, Mic, MoreVertical } from 'lucide-react-native';
 import Constants from 'expo-constants';
+
+type DrawerContentProps = {
+  navigation: { closeDrawer: () => void };
+};
+
+const COLLAPSED_CHAT_COUNT = 5;
+
+function getCollapsedSessions(
+  sessions: ChatSession[],
+  activeSessionId?: string,
+  limit = COLLAPSED_CHAT_COUNT
+): ChatSession[] {
+  if (sessions.length <= limit) return sessions;
+
+  const head = sessions.slice(0, limit);
+  if (!activeSessionId || head.some((s) => s.id === activeSessionId)) {
+    return head;
+  }
+
+  const active = sessions.find((s) => s.id === activeSessionId);
+  if (!active) return head;
+
+  return [...sessions.slice(0, limit - 1), active];
+}
+
+function DrawerSessionRow({
+  item,
+  isActive,
+  isGenerating,
+  onOpen,
+  onMenuPress,
+}: {
+  item: ChatSession;
+  isActive: boolean;
+  isGenerating?: boolean;
+  onOpen: (item: ChatSession) => void;
+  onMenuPress: (item: ChatSession, anchor: MenuAnchorRect) => void;
+}) {
+  const { colors } = useTheme();
+  const menuRef = useRef<View>(null);
+  const isVoice = item.kind === 'voice';
+
+  const handleMenuPress = () => {
+    menuRef.current?.measureInWindow((x, y, width, height) => {
+      onMenuPress(item, { x, y, width, height });
+    });
+  };
+
+  return (
+    <View
+      style={[
+        styles.row,
+        isActive && {
+          backgroundColor: colors.primaryMuted,
+          borderRadius: radii.lg,
+        },
+      ]}>
+      <Pressable style={styles.rowMain} onPress={() => onOpen(item)}>
+        <View
+          style={[
+            styles.iconWrap,
+            {
+              backgroundColor: colors.surfaceElevated,
+              borderColor: isVoice ? colors.primary : colors.border,
+              borderWidth: isVoice ? 1 : StyleSheet.hairlineWidth,
+            },
+          ]}>
+          {isVoice ? (
+            <Mic color={colors.primary} size={16} />
+          ) : (
+            <MessageSquare color={colors.primary} size={16} />
+          )}
+        </View>
+        <View style={styles.rowText}>
+          <Text variant="bodyMedium" numberOfLines={1}>
+            {item.title ?? (isVoice ? 'Voice chat' : 'Untitled')}
+          </Text>
+          {isGenerating ? (
+            <View style={styles.generatingRow}>
+              <PulseDot color={colors.primary} />
+            </View>
+          ) : isVoice ? (
+            <Text variant="caption" muted>
+              Voice
+            </Text>
+          ) : null}
+        </View>
+      </Pressable>
+      <PressableScale
+        onPress={handleMenuPress}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityLabel={`Actions for ${item.title ?? 'chat'}`}
+        accessibilityRole="button">
+        <View ref={menuRef} collapsable={false} style={styles.menuBtn}>
+          <MoreVertical color={colors.textMuted} size={18} />
+        </View>
+      </PressableScale>
+    </View>
+  );
+}
 
 function NavRow({
   icon,
   label,
   onPress,
-  disabled,
   badge,
+  active = false,
 }: {
   icon: ReactNode;
   label: string;
   onPress: () => void;
-  disabled?: boolean;
   badge?: string;
+  active?: boolean;
 }) {
   const { colors } = useTheme();
+
   return (
-    <PressableScale onPress={onPress} disabled={disabled}>
-      <View style={[styles.navRow, disabled && { opacity: 0.45 }]}>
+    <PressableScale onPress={onPress}>
+      <View
+        style={[
+          styles.navRow,
+          active && {
+            backgroundColor: colors.primaryMuted,
+            borderRadius: radii.lg,
+          },
+        ]}>
         {icon}
         <Text variant="bodyMedium" style={{ flex: 1 }}>
           {label}
@@ -48,169 +162,485 @@ function NavRow({
   );
 }
 
-type DrawerContentProps = {
-  navigation: { closeDrawer: () => void };
-};
-
 export function DrawerContent({ navigation }: DrawerContentProps) {
   const insets = useSafeAreaInsets();
-  const { colors, mode, setMode } = useTheme();
+  const { colors } = useTheme();
+  const pathname = usePathname();
+  const params = useGlobalSearchParams<{ id?: string }>();
   const session = useAuthStore((s) => s.session);
   const signOut = useAuthStore((s) => s.signOut);
-  const overlayEnabled = useSettingsStore((s) => s.overlayEnabled);
-  const setOverlayEnabled = useSettingsStore((s) => s.setOverlayEnabled);
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
-  const voiceActive = useVoiceSessionBridge((s) => s.isActive);
+  const generatingSessions = useChatStreamStore((s) => s.sessions);
+
+  const {
+    sessions,
+    nextCursor,
+    refreshing,
+    loadingMore,
+    refresh,
+    loadMore,
+    renameSession,
+    deleteSession,
+  } = useChatSessions();
+
+  const [actionsSession, setActionsSession] = useState<ChatSession | null>(null);
+  const [actionsAnchor, setActionsAnchor] = useState<MenuAnchorRect | null>(null);
+  const [chatsExpanded, setChatsExpanded] = useState(false);
+
+  const activeSessionId =
+    pathname.includes('/chat/') && params.id ? String(params.id) : undefined;
+
+  const isAssistantActive = pathname.includes('/assistant');
+  const isSettingsActive = pathname.includes('/settings');
+  const isNotesActive = pathname.includes('/notes');
+  const isIntegrationsActive = pathname.includes('/integrations');
+  const isAutomationsActive = pathname.includes('/automations');
+
+  const visibleSessions = useMemo(
+    () =>
+      chatsExpanded
+        ? sessions
+        : getCollapsedSessions(sessions, activeSessionId),
+    [chatsExpanded, sessions, activeSessionId]
+  );
+
+  const hasMoreChats =
+    !chatsExpanded &&
+    (sessions.length > visibleSessions.length || Boolean(nextCursor));
+
+  const hiddenChatCount = Math.max(0, sessions.length - visibleSessions.length);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    setChatsExpanded(false);
+  }, [pathname]);
+
+  const closeAnd = useCallback(
+    (fn: () => void) => {
+      navigation.closeDrawer();
+      fn();
+    },
+    [navigation]
+  );
+
+  const openSession = useCallback(
+    (item: ChatSession) => {
+      closeAnd(() => {
+        router.push(
+          chatSessionRoute(item.id, {
+            title: item.title ?? undefined,
+            kind: item.kind,
+          })
+        );
+      });
+    },
+    [closeAnd]
+  );
+
+  const handleNewChat = useCallback(() => {
+    closeAnd(() => {
+      router.replace(Routes.chatCompose);
+    });
+  }, [closeAnd]);
+
+  const handleDelete = useCallback(
+    async (sessionId: string) => {
+      await deleteSession(sessionId);
+      if (activeSessionId === sessionId) {
+        router.replace(Routes.chatCompose);
+      }
+    },
+    [activeSessionId, deleteSession]
+  );
 
   const user = session?.user;
 
-  const cycleTheme = () => {
-    const order: ThemeMode[] = ['system', 'light', 'dark'];
-    const idx = order.indexOf(mode);
-    setMode(order[(idx + 1) % order.length]);
-  };
+  const handleMenuPress = useCallback((item: ChatSession, anchor: MenuAnchorRect) => {
+    setActionsAnchor(anchor);
+    setActionsSession(item);
+  }, []);
 
-  const themeIconName =
-    mode === 'dark' ? 'themeDark' : mode === 'light' ? 'themeLight' : 'themeSystem';
+  const renderSession = useCallback(
+    ({ item }: { item: ChatSession }) => (
+      <DrawerSessionRow
+        item={item}
+        isActive={item.id === activeSessionId}
+        isGenerating={generatingSessions[item.id]?.isGenerating}
+        onOpen={openSession}
+        onMenuPress={handleMenuPress}
+      />
+    ),
+    [activeSessionId, generatingSessions, handleMenuPress, openSession]
+  );
 
-  const onToggleOverlay = async () => {
-    const next = !overlayEnabled;
-    await setOverlayEnabled(next);
-    if (next) {
-      await toggleOverlay(true);
-    } else {
-      await toggleOverlay(false);
-    }
-  };
-
-  return (
-    <ScrollView
-      contentContainerStyle={{
-        flexGrow: 1,
-        backgroundColor: colors.surface,
-        paddingTop: insets.top,
-        paddingBottom: insets.bottom,
-      }}>
+  const listHeader = (
+    <View style={{ paddingTop: insets.top }}>
       <View style={[styles.profile, { borderBottomColor: colors.border }]}>
-        <View style={styles.avatarWrap}>
-          <UserAvatar
-            image={user?.image}
-            name={user?.name}
-            email={user?.email}
-            size={48}
-          />
+        <UserAvatar
+          image={user?.image}
+          name={user?.name}
+          email={user?.email}
+          size={44}
+        />
+        <View style={styles.profileText}>
+          <Text variant="bodyMedium" numberOfLines={1}>
+            {user?.name ?? 'Guest'}
+          </Text>
+          <Text variant="caption" muted numberOfLines={1}>
+            {user?.email}
+          </Text>
         </View>
-        <Text variant="bodyMedium">{user?.name ?? 'Guest'}</Text>
-        <Text variant="caption" muted>
-          {user?.email}
-        </Text>
+        <PressableScale
+          onPress={() =>
+            closeAnd(() => {
+              router.push(Routes.settings);
+            })
+          }
+          accessibilityLabel="Settings"
+          accessibilityRole="button">
+          <View
+            style={[
+              styles.settingsBtn,
+              {
+                backgroundColor: isSettingsActive
+                  ? colors.primaryMuted
+                  : colors.surfaceElevated,
+                borderColor: colors.border,
+              },
+            ]}>
+            <Settings
+              color={isSettingsActive ? colors.primary : colors.text}
+              size={20}
+            />
+          </View>
+        </PressableScale>
       </View>
 
-      <ScrollView style={styles.menu}>
+      <PressableScale onPress={handleNewChat} style={styles.newChatWrap}>
+        <View style={[styles.newChatBtn, { backgroundColor: colors.primary }]}>
+          <Pencil color={colors.onPrimary} size={18} />
+          <Text variant="bodyMedium" style={{ color: colors.onPrimary }}>
+            New Chat
+          </Text>
+        </View>
+      </PressableScale>
+
+      <Text variant="caption" muted style={styles.sectionLabel}>
+        Recent chats
+      </Text>
+    </View>
+  );
+
+  const listFooter = (
+    <View style={{ paddingBottom: insets.bottom + spacing.md }}>
+      {hasMoreChats ? (
+        <PressableScale
+          onPress={() => setChatsExpanded(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Show all chats">
+          <View style={styles.expandTeaser}>
+            <View style={styles.peekStack} pointerEvents="none">
+              {[0, 1].map((i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.peekRow,
+                    {
+                      opacity: 0.22 - i * 0.06,
+                      marginTop: i === 0 ? 0 : -6,
+                    },
+                  ]}>
+                  <View
+                    style={[
+                      styles.iconWrap,
+                      { backgroundColor: colors.surfaceElevated },
+                    ]}
+                  />
+                  <View
+                    style={[styles.peekBar, { backgroundColor: colors.border }]}
+                  />
+                </View>
+              ))}
+            </View>
+            <LinearGradient
+              colors={[`${colors.background}00`, colors.background]}
+              style={styles.expandFade}
+              pointerEvents="none"
+            />
+            <Text variant="caption" muted style={styles.expandLabel}>
+              {hiddenChatCount > 0
+                ? `Show all chats (${hiddenChatCount} more)`
+                : 'Show all chats'}
+            </Text>
+          </View>
+        </PressableScale>
+      ) : null}
+
+      <View style={[styles.divider, { backgroundColor: colors.border }]} />
+      <View style={styles.navSection}>
         <NavRow
-          icon={<DrawerColorIcon name="newChat" drawer />}
-          label="New chat"
-          onPress={() => {
-            navigation.closeDrawer();
-            router.push(Routes.chatCompose);
-          }}
-        />
-        <NavRow
-          icon={<DrawerColorIcon name="assistant" drawer />}
+          icon={<AssistantIcon drawer size={26} />}
           label={assistantDisplayName}
-          onPress={() => {
-            navigation.closeDrawer();
-            router.push(Routes.assistant);
-          }}
-          badge={voiceActive ? 'Active' : undefined}
-        />
-        <NavRow
-          icon={<DrawerColorIcon name="settings" drawer />}
-          label="Settings"
-          onPress={() => {
-            navigation.closeDrawer();
-            router.push(Routes.settings);
-          }}
-        />
-        <NavRow
-          icon={<DrawerColorIcon name="overlay" drawer />}
-          label="Floating overlay"
-          onPress={onToggleOverlay}
-          badge={overlayEnabled ? 'On' : 'Off'}
-        />
-        <NavRow
-          icon={<DrawerColorIcon name={themeIconName} drawer />}
-          label={`Theme: ${mode}`}
-          onPress={cycleTheme}
+          active={isAssistantActive}
+          onPress={() =>
+            closeAnd(() => {
+              router.push(assistantRoute());
+            })
+          }
         />
         <NavRow
           icon={<DrawerColorIcon name="notes" drawer />}
           label="Notes"
-          onPress={() => {
-            navigation.closeDrawer();
-            router.push(Routes.notes);
-          }}
+          active={isNotesActive}
+          onPress={() =>
+            closeAnd(() => {
+              router.push(Routes.notes);
+            })
+          }
         />
         <NavRow
           icon={<DrawerColorIcon name="connectApps" drawer />}
           label="Connect Apps"
-          onPress={() => {
-            navigation.closeDrawer();
-            router.push(Routes.integrations);
-          }}
+          active={isIntegrationsActive}
+          onPress={() =>
+            closeAnd(() => {
+              router.push(Routes.integrations);
+            })
+          }
         />
         <NavRow
           icon={<DrawerColorIcon name="automations" drawer />}
           label="Automations"
-          onPress={() => {
-            navigation.closeDrawer();
-            router.push(Routes.automations);
-          }}
+          active={isAutomationsActive}
+          onPress={() =>
+            closeAnd(() => {
+              router.push(Routes.automations);
+            })
+          }
         />
-      </ScrollView>
-
-      <View style={styles.footer}>
-        <Pressable
-          onPress={async () => {
-            await signOut();
-            router.replace(Routes.welcome);
-          }}
-          style={styles.signOut}>
-          <LogOut color={colors.danger} size={18} />
-          <Text variant="bodyMedium" style={{ color: colors.danger }}>
-            Sign out
-          </Text>
-        </Pressable>
-        <Text variant="caption" muted style={{ marginTop: spacing.sm }}>
-          v{Constants.expoConfig?.version ?? '1.0.0'}
-        </Text>
       </View>
-    </ScrollView>
+
+      <View style={[styles.signOutBar, { backgroundColor: colors.border }]} />
+
+      <Pressable
+        onPress={async () => {
+          navigation.closeDrawer();
+          await signOut();
+          router.replace(Routes.welcome);
+        }}
+        style={styles.signOut}>
+        <LogOut color={colors.danger} size={18} />
+        <Text variant="bodyMedium" style={{ color: colors.danger }}>
+          Sign out
+        </Text>
+      </Pressable>
+      <Text variant="caption" muted style={styles.version}>
+        v{Constants.expoConfig?.version ?? '1.0.0'}
+      </Text>
+    </View>
+  );
+
+  return (
+    <>
+      <View style={[styles.root, { backgroundColor: colors.background }]}>
+        <FlashList
+          data={visibleSessions}
+          keyExtractor={(item) => item.id}
+          renderItem={renderSession}
+          ListHeaderComponent={listHeader}
+          ListFooterComponent={listFooter}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />
+          }
+          onEndReached={
+            chatsExpanded ? () => void loadMore() : undefined
+          }
+          onEndReachedThreshold={0.4}
+          ListEmptyComponent={
+            !refreshing ? (
+              <View style={styles.empty}>
+                <Text variant="caption" muted>
+                  No chats yet
+                </Text>
+              </View>
+            ) : null
+          }
+        />
+      </View>
+
+      <ChatSessionActionsModal
+        session={actionsSession}
+        visible={actionsSession != null}
+        anchor={actionsAnchor}
+        onClose={() => {
+          setActionsSession(null);
+          setActionsAnchor(null);
+        }}
+        onRename={async (sessionId, title) => {
+          await renameSession(sessionId, title);
+        }}
+        onDelete={handleDelete}
+      />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   profile: {
-    padding: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: spacing.xs,
-    alignItems: 'flex-start',
   },
-  avatarWrap: {
+  profileText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  settingsBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: radii.full,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  newChatWrap: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+  },
+  newChatBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius: radii.lg,
+  },
+  sectionLabel: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xs,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: spacing.sm,
+    marginVertical: 3,
+    borderRadius: radii.lg,
+    paddingRight: spacing.xs,
+    overflow: 'hidden',
+  },
+  rowMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingLeft: spacing.sm,
+    minHeight: 48,
+  },
+  iconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: radii.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowText: {
+    flex: 1,
+    gap: 2,
+  },
+  generatingRow: {
+    height: 18,
+    justifyContent: 'center',
+  },
+  menuBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  empty: {
+    paddingVertical: spacing.lg,
+    alignItems: 'center',
+  },
+  expandTeaser: {
+    marginHorizontal: spacing.sm,
+    marginTop: spacing.xs,
     marginBottom: spacing.sm,
+    minHeight: 72,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
   },
-  menu: { flex: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
+  peekStack: {
+    position: 'absolute',
+    left: spacing.sm,
+    right: spacing.sm,
+    top: 0,
+  },
+  peekRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingLeft: spacing.sm,
+    minHeight: 44,
+  },
+  peekBar: {
+    flex: 1,
+    height: 10,
+    borderRadius: radii.sm,
+    marginRight: spacing.xl,
+  },
+  expandFade: {
+    ...StyleSheet.absoluteFill,
+  },
+  expandLabel: {
+    textAlign: 'center',
+    paddingVertical: spacing.sm,
+  },
+  divider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: spacing.md,
+    marginVertical: spacing.sm,
+  },
+  navSection: {
+    paddingHorizontal: spacing.md,
+    gap: spacing.md,
+  },
   navRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
     minHeight: 44,
   },
-  footer: {
-    padding: spacing.lg,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'transparent',
+  signOutBar: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
   },
-  signOut: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  signOut: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+  },
+  version: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+  },
 });

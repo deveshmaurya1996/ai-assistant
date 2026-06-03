@@ -10,6 +10,7 @@ import {
 import { useAuthStore } from '@/stores/auth';
 import { writeWebSessionCache } from '@/lib/web-session-cache';
 import { useTheme } from '@/theme/ThemeProvider';
+import { Routes } from '@/lib/routes';
 
 export default function AuthCallbackScreen() {
   const { colors } = useTheme();
@@ -35,7 +36,7 @@ export default function AuthCallbackScreen() {
       if (session) {
         if (Platform.OS === 'web') writeWebSessionCache(session);
         useAuthStore.setState({ session, loading: false });
-        router.replace('/(app)/(main)/chats');
+        router.replace(Routes.chatCompose);
         return;
       }
 

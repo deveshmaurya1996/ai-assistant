@@ -1,7 +1,7 @@
 import { View, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Sparkles } from 'lucide-react-native';
+import { AssistantIcon } from '@/components/assistant/AssistantIcon';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -13,7 +13,7 @@ export default function WelcomeScreen() {
   const { colors } = useTheme();
 
   return (
-    <Screen style={styles.center}>
+    <Screen safeTop style={styles.center}>
       <FadeIn>
         <LinearGradient
           colors={[colors.primary, colors.primaryMuted]}
@@ -21,7 +21,7 @@ export default function WelcomeScreen() {
           end={{ x: 1, y: 1 }}
           style={styles.iconGradient}>
           <View style={[styles.iconWrap, { backgroundColor: colors.surface }]}>
-            <Sparkles color={colors.primary} size={48} />
+            <AssistantIcon size={48} />
           </View>
         </LinearGradient>
       </FadeIn>

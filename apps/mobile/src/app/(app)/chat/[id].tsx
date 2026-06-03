@@ -1,19 +1,14 @@
-import { useRef } from 'react';
-import { View, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, AudioLines } from 'lucide-react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme } from '@/theme/ThemeProvider';
-import { Text } from '@/components/ui/Text';
-import { spacing } from '@/theme/tokens';
-import { PressableScale } from '@/components/motion/PressableScale';
-import { useChatRoom } from '@/features/chat/useChatRoom';
+import { AudioLines } from 'lucide-react-native';
 import { useSaveNote } from '@/features/notes/useSaveNote';
-import {
-  ChatMessageList,
-  type ChatMessageListHandle,
-} from '@/components/chat/ChatMessageList';
-import { ChatComposer } from '@/components/chat/ChatComposer';
+import { useChatRoom } from '@/features/chat/useChatRoom';
+import { ChatScreenShell } from '@/components/chat/ChatScreenShell';
+import { Text } from '@/components/ui/Text';
+import { PressableScale } from '@/components/motion/PressableScale';
+import { spacing } from '@/theme/tokens';
+import { useTheme } from '@/theme/ThemeProvider';
+import { assistantRoute } from '@/lib/routes';
 import {
   getAssistantSubtitle,
   useSettingsStore,
@@ -26,7 +21,6 @@ export default function ChatScreen() {
     kind?: string;
   }>();
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
   const saveNote = useSaveNote();
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
   const selectedPersonalityId = useSettingsStore((s) => s.selectedPersonalityId);
@@ -36,110 +30,75 @@ export default function ChatScreen() {
     selectedPersonalityId,
     personalities
   );
-  const messageListRef = useRef<ChatMessageListHandle>(null);
 
   const {
     title,
+    kind,
     isVoice,
     displayMessages,
     visibleText,
     streamTurnKey,
     isStreaming,
     isGenerating,
+    streamStatusMessage,
     send,
     stopGeneration,
     savedMessageIds,
+    setTitle,
   } = useChatRoom({
     sessionId: id,
     initialTitle: titleParam,
     initialKind: kindParam,
   });
 
-  return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
+  const voiceBanner =
+    isVoice && id ? (
       <View
         style={[
-          styles.topBar,
-          {
-            paddingTop: insets.top + spacing.sm,
-            borderBottomColor: colors.border,
-            backgroundColor: colors.surface,
-          },
+          styles.voiceBanner,
+          { backgroundColor: colors.primaryMuted, borderBottomColor: colors.border },
         ]}>
-        <PressableScale onPress={() => router.back()}>
-          <ArrowLeft color={colors.text} size={24} />
+        <AudioLines color={colors.primary} size={18} />
+        <Text variant="caption" style={{ color: colors.primary, flex: 1 }}>
+          Voice chat — type below or resume hands-free on Assistant
+        </Text>
+        <PressableScale
+          onPress={() => router.push(assistantRoute({ resumeSessionId: id }))}>
+          <View style={[styles.resumeBtn, { backgroundColor: colors.primary }]}>
+            <Text variant="caption" style={{ color: colors.onPrimary }}>
+              Resume voice
+            </Text>
+          </View>
         </PressableScale>
-        <View style={{ flex: 1, marginLeft: spacing.md }}>
-          <Text variant="h2" numberOfLines={1}>
-            {title}
-          </Text>
-          <Text variant="caption" muted numberOfLines={1}>
-            {isVoice ? `${assistantSubtitle} · Voice chat` : assistantSubtitle}
-          </Text>
-        </View>
       </View>
+    ) : null;
 
-      {isVoice && id ? (
-        <View
-          style={[
-            styles.voiceBanner,
-            { backgroundColor: colors.primaryMuted, borderBottomColor: colors.border },
-          ]}>
-          <AudioLines color={colors.primary} size={18} />
-          <Text variant="caption" style={{ color: colors.primary, flex: 1 }}>
-            Voice chat — type below or resume hands-free on Assistant
-          </Text>
-          <PressableScale
-            onPress={() =>
-              router.push({
-                pathname: '/(app)/(main)/assistant',
-                params: { resumeSessionId: id },
-              })
-            }>
-            <View style={[styles.resumeBtn, { backgroundColor: colors.primary }]}>
-              <Text variant="caption" style={{ color: colors.onPrimary }}>
-                Resume voice
-              </Text>
-            </View>
-          </PressableScale>
-        </View>
-      ) : null}
-
-      <ChatMessageList
-        ref={messageListRef}
-        messages={displayMessages}
-        visibleText={visibleText}
-        streamTurnKey={streamTurnKey}
-        isStreaming={isStreaming}
-        isGenerating={isGenerating}
-        savedMessageIds={savedMessageIds}
-        assistantLabel={assistantDisplayName}
-        onSaveNote={saveNote}
-      />
-
-      <ChatComposer
-        onSend={send}
-        sendDisabled={isGenerating}
-        isGenerating={isGenerating}
-        onStop={stopGeneration}
-        onInputFocus={() => messageListRef.current?.scrollToEnd(true)}
-      />
-    </KeyboardAvoidingView>
+  return (
+    <ChatScreenShell
+      title={title}
+      subtitle={
+        isVoice ? `${assistantSubtitle} · Voice chat` : assistantSubtitle
+      }
+      sessionId={id}
+      sessionKind={kind}
+      onSessionRenamed={setTitle}
+      banner={voiceBanner}
+      messages={displayMessages}
+      visibleText={visibleText}
+      streamTurnKey={streamTurnKey}
+      isStreaming={isStreaming}
+      isGenerating={isGenerating}
+      streamStatusMessage={streamStatusMessage}
+      savedMessageIds={savedMessageIds}
+      assistantLabel={assistantDisplayName}
+      onSaveNote={saveNote}
+      onSend={send}
+      onStop={stopGeneration}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
   voiceBanner: {
     flexDirection: 'row',
     alignItems: 'center',

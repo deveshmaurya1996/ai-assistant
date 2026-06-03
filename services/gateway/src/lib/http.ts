@@ -10,14 +10,18 @@ function buildAiHeaders(init?: RequestInit): Record<string, string> {
   return headers;
 }
 
+export type FetchAiInit = RequestInit & { timeoutMs?: number };
+
 export async function fetchAi<T>(
   path: string,
-  init?: RequestInit
+  init?: FetchAiInit
 ): Promise<T> {
+  const { timeoutMs = 120_000, ...rest } = init ?? {};
   const url = getAiServiceUrl(path);
   const res = await fetch(url, {
-    ...init,
-    headers: buildAiHeaders(init),
+    ...rest,
+    headers: buildAiHeaders(rest),
+    signal: rest.signal ?? AbortSignal.timeout(timeoutMs),
   });
 
   if (!res.ok) {

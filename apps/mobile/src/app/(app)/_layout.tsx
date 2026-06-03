@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
+import { ActivityIndicator, Platform, View } from 'react-native';
+import { Redirect } from 'expo-router';
 import { Drawer } from 'expo-router/drawer';
 import { DrawerContent } from '@/components/layout/DrawerContent';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -8,6 +9,8 @@ import { ChatImagePreviewHost } from '@/features/chat/ChatImagePreviewHost';
 import { VoiceSessionHost } from '@/features/voice-assistant/VoiceSessionHost';
 import { ActionConfirmSheet } from '@/components/integrations/ActionConfirmSheet';
 import { useChatActionConfirmBridge } from '@/features/chat/chatActionConfirmBridge';
+import { useAuthStore } from '@/stores/auth';
+import { Routes } from '@/lib/routes';
 
 function AppDrawerLayoutContent() {
   const { colors } = useTheme();
@@ -31,22 +34,34 @@ function AppDrawerLayoutContent() {
         screenOptions={{
           headerShown: false,
           drawerType: 'front',
-          drawerStyle: { backgroundColor: colors.surface, width: 300 },
+          drawerStyle: { backgroundColor: colors.background, width: 320 },
           overlayColor: colors.overlay,
+          drawerContentContainerStyle: { flex: 1 },
+          swipeEnabled: true,
+          swipeEdgeWidth: 56,
         }}>
-        <Drawer.Screen name="(main)" options={{ title: 'Main' }} />
-        <Drawer.Screen
-          name="chat/[id]"
-          options={{
-            drawerItemStyle: { display: 'none' },
-            swipeEnabled: false,
-          }}
-        />
         <Drawer.Screen
           name="chat/compose"
           options={{
             drawerItemStyle: { display: 'none' },
-            swipeEnabled: false,
+          }}
+        />
+        <Drawer.Screen
+          name="chat/[id]"
+          options={{
+            drawerItemStyle: { display: 'none' },
+          }}
+        />
+        <Drawer.Screen
+          name="assistant"
+          options={{
+            drawerItemStyle: { display: 'none' },
+          }}
+        />
+        <Drawer.Screen
+          name="settings"
+          options={{
+            drawerItemStyle: { display: 'none' },
           }}
         />
         <Drawer.Screen
@@ -70,13 +85,26 @@ function AppDrawerLayoutContent() {
             swipeEnabled: false,
           }}
         />
+        <Drawer.Screen
+          name="memory"
+          options={{
+            drawerItemStyle: { display: 'none' },
+            swipeEnabled: false,
+          }}
+        />
       </Drawer>
     </>
   );
 }
 
 export default function AppDrawerLayout() {
+  const { colors } = useTheme();
+  const { session, loading, hydrate } = useAuthStore();
   const overlayPrompted = useRef(false);
+
+  useEffect(() => {
+    void hydrate();
+  }, [hydrate]);
 
   useEffect(() => {
     if (Platform.OS !== 'android' || overlayPrompted.current) return;
@@ -86,6 +114,24 @@ export default function AppDrawerLayout() {
     }, 800);
     return () => clearTimeout(timer);
   }, []);
+
+  if (loading) {
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: colors.background,
+        }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (!session) {
+    return <Redirect href={Routes.welcome} />;
+  }
 
   return (
     <ChatImagePreviewHost>

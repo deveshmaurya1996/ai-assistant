@@ -35,6 +35,16 @@ class MemoryIngestRequest(BaseModel):
     user_id: str
 
 
+class MemoryExtractRequest(BaseModel):
+    user_text: str
+    assistant_text: str
+    explicit_save: bool = False
+
+
+class ShouldRetrieveRequest(BaseModel):
+    query: str
+
+
 class AgentRunRequest(BaseModel):
     agent_type: str
     task: str
@@ -86,10 +96,10 @@ def kb_ingest(payload: IngestRequest):
 
 
 @router.get("/kb/search")
-def kb_search(query: str, limit: int = 3, user_id: Optional[str] = None):
+async def kb_search(query: str, limit: int = 3, user_id: Optional[str] = None):
     try:
         rag = RAGService()
-        results = rag.search_context(query, limit, user_id=user_id)
+        results = await rag.search_context_async(query, limit, user_id=user_id)
         return {"success": True, "results": results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -108,13 +118,67 @@ def memory_ingest(payload: MemoryIngestRequest):
 
 
 @router.get("/memory/search")
-def memory_search(query: str, user_id: str, limit: int = 5):
+async def memory_search(
+    query: str,
+    user_id: str,
+    limit: int = 5,
+    session_id: Optional[str] = None,
+):
+    import time
+
+    t0 = time.perf_counter()
     try:
+        from memory.embed_cache import cache_stats
+
         rag = RAGService()
-        results = rag.search_context(query, limit, user_id=user_id)
-        return {"success": True, "results": results}
+        results = await rag.search_context_async(
+            query, limit, user_id=user_id, chat_session_id=session_id
+        )
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        stats = cache_stats()
+        return {
+            "success": True,
+            "results": results,
+            "timings": {"search_ms": round(elapsed_ms, 2), **stats},
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/memory/extract")
+async def memory_extract(payload: MemoryExtractRequest):
+    from memory.extraction import extract_facts
+
+    facts = await extract_facts(
+        payload.user_text,
+        payload.assistant_text,
+        explicit_save=payload.explicit_save,
+    )
+    return {"success": True, "facts": facts}
+
+
+@router.post("/memory/should-retrieve")
+async def memory_should_retrieve(payload: ShouldRetrieveRequest):
+    from memory.extraction import should_retrieve_via_llm
+
+    retrieve = await should_retrieve_via_llm(payload.query)
+    return {"retrieve": retrieve}
+
+
+@router.delete("/memory/session/{chat_session_id}")
+def memory_delete_session(chat_session_id: str, user_id: str):
+    rag = RAGService()
+    deleted = rag.delete_session_vectors(user_id, chat_session_id)
+    return {"success": True, "deleted": deleted}
+
+
+@router.delete("/memory/points/{point_id}")
+def memory_delete_point(point_id: str):
+    rag = RAGService()
+    ok = rag.delete_point(point_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Point not found or delete failed")
+    return {"success": True}
 
 
 @router.post("/agents/run")

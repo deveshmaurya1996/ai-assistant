@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from typing import List
 
-import httpx
-
 from models.config_loader import get_rag_config
+from models.providers.http_pool import nvidia_sync_client
 from models.providers.nvidia_integrate import integrate_base_url, nvidia_api_key
 
 
@@ -27,8 +26,9 @@ def embed_texts(texts: List[str], *, input_type: str) -> List[List[float]]:
         "truncate": "NONE",
     }
 
-    with httpx.Client(timeout=float(cfg.get("timeoutSeconds", 8)) + 30) as client:
-        response = client.post(url, headers=headers, json=payload)
+    timeout = float(cfg.get("searchTimeoutSeconds", cfg.get("timeoutSeconds", 5))) + 10
+    client = nvidia_sync_client(timeout)
+    response = client.post(url, headers=headers, json=payload, timeout=timeout)
         response.raise_for_status()
         data = response.json()
 

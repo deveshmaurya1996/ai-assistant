@@ -29,7 +29,7 @@ export default function ProviderDetailScreen() {
 
   return (
     <Screen padded={false}>
-      <AppHeader title={displayName} />
+      <AppHeader title={displayName} leading="back" />
       <ScrollView contentContainerStyle={styles.scroll}>
         <Card>
           <Text variant="body" muted>

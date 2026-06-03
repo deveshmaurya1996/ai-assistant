@@ -6,6 +6,7 @@ import { Text } from '@/components/ui/Text';
 import { spacing } from '@/theme/tokens';
 import { useAuthStore } from '@/stores/auth';
 import { GOOGLE_AUTH_ENABLED } from '@/lib/config';
+import { Routes } from '@/lib/routes';
 
 export function GoogleSignInButton() {
   const signInWithGoogle = useAuthStore((s) => s.signInWithGoogle);
@@ -30,7 +31,7 @@ export function GoogleSignInButton() {
           setLoading(true);
           try {
             await signInWithGoogle();
-            router.replace('/(app)/(main)/chats');
+            router.replace(Routes.chatCompose);
           } catch (e) {
             Alert.alert(
               'Google sign-in failed',

@@ -4,6 +4,7 @@ import {
   ASSISTANT_NAME_MAX_LENGTH,
   formatPersonalityGender,
   getAssistantPersonality,
+  reconcileDisplayName,
   type AssistantPersonality,
   type PersonalityGender,
 } from '@ai-assistant/types';
@@ -93,11 +94,10 @@ function normalizeDisplayName(
   personalityId: PersonalityId,
   personalities: AssistantPersonality[]
 ): string {
-  const trimmed = raw?.trim();
-  if (trimmed) {
-    return trimmed.slice(0, ASSISTANT_NAME_MAX_LENGTH);
-  }
-  return getPersonalityPreset(personalityId, personalities).name;
+  return reconcileDisplayName(
+    personalityId,
+    raw?.trim() ? raw.trim().slice(0, ASSISTANT_NAME_MAX_LENGTH) : null
+  );
 }
 
 async function fetchPersonalities(): Promise<AssistantPersonality[]> {
@@ -160,6 +160,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         personalities
       );
 
+      const assistantDisplayName = normalizeDisplayName(
+        assistantName,
+        personalityId,
+        personalities
+      );
+      if (assistantName?.trim() && assistantDisplayName !== assistantName.trim()) {
+        await setItemAsync(KEYS.assistantDisplayName, assistantDisplayName);
+      }
+
       set({
         hydrated: true,
         personalities,
@@ -167,11 +176,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           termsVersion === TERMS_VERSION && termsAccepted ? termsAccepted : null,
         speakRepliesEnabled: speakReplies !== 'false',
         selectedPersonalityId: personalityId,
-        assistantDisplayName: normalizeDisplayName(
-          assistantName,
-          personalityId,
-          personalities
-        ),
+        assistantDisplayName,
         assistantContinuousListening: backgroundVoice !== 'false',
         autoSendAfterTranscribe: autoSend === 'true',
         overlayEnabled: overlay === 'true',
@@ -201,10 +206,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   setAssistantDisplayName: async (name) => {
-    const { personalities, selectedPersonalityId } = get();
-    const trimmed = name.trim().slice(0, ASSISTANT_NAME_MAX_LENGTH);
-    const value =
-      trimmed || getPersonalityPreset(selectedPersonalityId, personalities).name;
+    const { selectedPersonalityId } = get();
+    const value = reconcileDisplayName(
+      selectedPersonalityId,
+      name.trim().slice(0, ASSISTANT_NAME_MAX_LENGTH) || null
+    );
     await setItemAsync(KEYS.assistantDisplayName, value);
     set({ assistantDisplayName: value });
   },

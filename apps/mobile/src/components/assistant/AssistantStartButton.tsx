@@ -1,6 +1,6 @@
 import { View, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Sparkles } from 'lucide-react-native';
+import { AssistantIcon } from '@/components/assistant/AssistantIcon';
 import { PressableScale } from '@/components/motion/PressableScale';
 import { PulseRing } from '@/components/motion/PulseRing';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -29,7 +29,7 @@ export function AssistantStartButton({ assistantName, onPress }: Props) {
           end={{ x: 1, y: 1 }}
           style={styles.gradient}>
           <View style={[styles.inner, { backgroundColor: colors.surface }]}>
-            <Sparkles color={colors.primary} size={ICON_SIZE} />
+            <AssistantIcon size={ICON_SIZE} />
           </View>
         </LinearGradient>
       </PressableScale>

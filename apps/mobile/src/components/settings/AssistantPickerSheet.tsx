@@ -59,6 +59,9 @@ export const AssistantPickerSheet = forwardRef<BottomSheetModalType>(
           <Text variant="caption" muted>
             What should I call your assistant?
           </Text>
+          <Text variant="caption" muted style={{ marginTop: spacing.xs }}>
+            Display name is how the assistant introduces itself in chat.
+          </Text>
           <Input
             value={nameDraft}
             onChangeText={(t) => setNameDraft(t.slice(0, ASSISTANT_NAME_MAX_LENGTH))}

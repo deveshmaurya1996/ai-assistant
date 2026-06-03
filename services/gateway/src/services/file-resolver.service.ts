@@ -1,4 +1,5 @@
 import type { ChatAttachmentRef, ResolvedAttachment } from '@ai-assistant/types';
+import { attachmentExcerptSkipRetrievalThreshold } from './prompt-budget';
 import { extractFileContent, TEXT_EXCERPT_MAX } from '@ai-assistant/file-processing';
 import { prisma } from '@ai-assistant/database';
 import {
@@ -7,6 +8,12 @@ import {
   readUserFileBytes,
 } from './file.service';
 import { getSessionFileContext } from './file-registry.service';
+import {
+  queryReferencesSessionFiles,
+  shouldHydrateSessionFiles,
+} from './session-context.service';
+
+export { queryReferencesSessionFiles } from './session-context.service';
 
 const CONTEXT_PREVIEW_MAX = 4_000;
 
@@ -19,31 +26,6 @@ type FileAnalysisJson = {
   objects?: string[];
   textExcerpt?: string;
 };
-
-export function queryReferencesSessionFiles(query: string): boolean {
-  const q = query.trim().toLowerCase();
-  if (!q) return false;
-  const signals = [
-    'page ',
-    'uploaded',
-    'my pdf',
-    'my document',
-    'attached file',
-    'attached pdf',
-    'the contract',
-    'my file',
-    'that file',
-    'this file',
-    'the document',
-    'in the pdf',
-    'in the document',
-    'summarize',
-    'summary',
-    'what did page',
-    'what does page',
-  ];
-  return signals.some((s) => q.includes(s));
-}
 
 function analysisFromAsset(asset: {
   analysis: unknown;
@@ -194,13 +176,17 @@ export async function resolveAttachments(
     forceInline?: boolean;
   }
 ): Promise<ResolvedAttachment[]> {
-  const forceInline = options?.forceInline !== false;
+  const forceInline = options?.forceInline === true;
   const mergedRefs = [...refs];
-  if (
+  const hydrateSession =
     options?.sessionId &&
     refs.length === 0 &&
-    queryReferencesSessionFiles(options.query ?? '')
-  ) {
+    (await shouldHydrateSessionFiles(
+      options.sessionId,
+      options.query ?? '',
+      false
+    ));
+  if (hydrateSession && options?.sessionId) {
     const ctx = await getSessionFileContext(options.sessionId);
     for (const fileId of ctx.lastReferencedFileIds ?? []) {
       const asset = await prisma.fileAsset.findFirst({
@@ -218,17 +204,15 @@ export async function resolveAttachments(
     }
   }
 
-  const out: ResolvedAttachment[] = [];
-  for (const ref of mergedRefs) {
-    out.push(
-      await resolveAttachment(userId, ref, {
+  return Promise.all(
+    mergedRefs.map((ref) =>
+      resolveAttachment(userId, ref, {
         query: options?.query,
         forceInline,
         preferRegistry: !forceInline,
       })
-    );
-  }
-  return out;
+    )
+  );
 }
 
 export function buildAttachmentContext(
@@ -297,6 +281,25 @@ export async function loadFileChunksForQuery(
     .join('\n\n');
 }
 
+export function shouldBuildRetrievalContext(
+  refs: ChatAttachmentRef[],
+  resolved: ResolvedAttachment[],
+  query: string
+): boolean {
+  if (refs.length === 0) return false;
+  if (/\bpage\s+\d+\b/i.test(query)) return true;
+  if (queryReferencesSessionFiles(query)) return true;
+
+  const threshold = attachmentExcerptSkipRetrievalThreshold();
+  const newRefs = new Set(refs.map((r) => r.id));
+  const hasLargeExcerpt = resolved.some(
+    (r) =>
+      newRefs.has(r.id) &&
+      (r.textExcerpt?.length ?? 0) >= threshold
+  );
+  return !hasLargeExcerpt;
+}
+
 export async function buildRetrievalContextForAttachments(
   userId: string,
   refs: ChatAttachmentRef[],
@@ -312,28 +315,29 @@ export async function buildRetrievalContextForAttachments(
     }
   }
 
-  const parts: string[] = [];
-  for (const fileId of fileIds) {
-    const asset = await prisma.fileAsset.findFirst({
-      where: { id: fileId, userId },
-    });
-    if (!asset) continue;
+  const fileIdList = [...fileIds];
+  const segments = await Promise.all(
+    fileIdList.map(async (fileId) => {
+      const asset = await prisma.fileAsset.findFirst({
+        where: { id: fileId, userId },
+      });
+      if (!asset) return '';
 
-    if (asset.status !== 'ready') {
-      parts.push(
-        `[File ${asset.filename}] Indexing in progress (status: ${asset.status}).`
-      );
-      continue;
-    }
+      if (asset.status !== 'ready') {
+        return `[File ${asset.filename}] Indexing in progress (status: ${asset.status}).`;
+      }
 
-    if (asset.summary) {
-      parts.push(`[File ${asset.filename} summary]\n${asset.summary}`);
-    }
+      const sectionParts: string[] = [];
+      if (asset.summary) {
+        sectionParts.push(`[File ${asset.filename} summary]\n${asset.summary}`);
+      }
 
-    const chunkText = await loadFileChunksForQuery(userId, fileId, query);
-    if (chunkText) {
-      parts.push(`[File ${asset.filename} excerpts]\n${chunkText}`);
-    }
-  }
-  return parts.join('\n\n');
+      const chunkText = await loadFileChunksForQuery(userId, fileId, query);
+      if (chunkText) {
+        sectionParts.push(`[File ${asset.filename} excerpts]\n${chunkText}`);
+      }
+      return sectionParts.join('\n\n');
+    })
+  );
+  return segments.filter((s) => s.trim()).join('\n\n');
 }

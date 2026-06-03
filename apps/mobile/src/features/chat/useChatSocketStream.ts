@@ -41,6 +41,9 @@ export function useChatSocketStream({
   const isGenerating = useChatStreamStore(
     (s) => selectSessionStream(s.sessions, sessionId ?? null)?.isGenerating ?? false
   );
+  const streamStatusMessage = useChatStreamStore(
+    (s) => selectSessionStream(s.sessions, sessionId ?? null)?.statusMessage ?? null
+  );
 
   const onSessionCreatedRef = useRef(onSessionCreated);
   const onExchangeCompleteRef = useRef(onExchangeComplete);
@@ -183,6 +186,7 @@ export function useChatSocketStream({
     visibleText: streamText,
     isStreaming: showStreamBubble,
     isGenerating,
+    streamStatusMessage,
     streamTurnKey,
     emitMessage,
     abortGeneration,

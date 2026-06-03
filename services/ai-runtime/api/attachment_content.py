@@ -1,6 +1,16 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List, Union
+
+
+def _attachment_excerpt_stream_max() -> int:
+    raw = os.getenv("ATTACHMENT_EXCERPT_STREAM_MAX", "6000")
+    try:
+        n = int(raw)
+        return min(max(n, 500), 20_000)
+    except ValueError:
+        return 6000
 
 
 def collect_vision_urls(resolved_attachments: List[Dict[str, Any]]) -> List[str]:
@@ -31,14 +41,18 @@ def attachment_text_parts(
     resolved_attachments: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     parts: List[Dict[str, Any]] = []
+    max_excerpt = _attachment_excerpt_stream_max()
     for item in resolved_attachments:
         excerpt = item.get("textExcerpt")
         if excerpt:
+            text = str(excerpt)
+            if len(text) > max_excerpt:
+                text = text[:max_excerpt] + "\n…(truncated)"
             filename = item.get("filename", "file")
             parts.append(
                 {
                     "type": "text",
-                    "text": f"[Attached file: {filename}]\n{excerpt}",
+                    "text": f"[Attached file: {filename}]\n{text}",
                 }
             )
         note = item.get("note")

@@ -44,6 +44,7 @@ export function useChatRoom({
     streamTurnKey,
     isStreaming,
     isGenerating,
+    streamStatusMessage,
     emitMessage,
     abortGeneration,
   } = useChatSocketStream({
@@ -167,10 +168,12 @@ export function useChatRoom({
     streamTurnKey,
     isStreaming,
     isGenerating,
+    streamStatusMessage,
     send,
     stopGeneration: abortGeneration,
     loadMessages,
     refreshSessionMeta,
     savedMessageIds,
+    setTitle,
   };
 }

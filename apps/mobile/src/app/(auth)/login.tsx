@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { spacing } from '@/theme/tokens';
 import { GoogleSignInButton } from '@/components/auth/GoogleSignInButton';
 import { useAuthStore } from '@/stores/auth';
+import { Routes } from '@/lib/routes';
 
 export default function LoginScreen() {
   const signIn = useAuthStore((s) => s.signIn);
@@ -20,7 +21,7 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await signIn(email.trim(), password);
-      router.replace('/(app)/(main)/chats');
+      router.replace(Routes.chatCompose);
     } catch (e) {
       Alert.alert('Sign in failed', e instanceof Error ? e.message : 'Unknown error');
     } finally {
@@ -29,7 +30,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <Screen>
+    <Screen safeTop>
       <FadeIn style={styles.form}>
         <Text variant="h1">Welcome back</Text>
         <Text variant="body" muted style={{ marginBottom: spacing.lg }}>

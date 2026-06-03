@@ -1,9 +1,24 @@
 import '@ai-assistant/telemetry/register';
 import { config } from '@ai-assistant/config';
 import { buildApp } from './app';
+import { cleanupLegacyConversationMemoryRows } from './services/memory.service';
 import { stopAutomationWorker } from './workers/automation.worker';
 
+function isLegacyConversationCleanupEnabled(): boolean {
+  const raw = (process.env.MEMORY_CLEANUP_CONVERSATION_ROWS ?? 'false').trim().toLowerCase();
+  return raw === 'true' || raw === '1' || raw === 'yes';
+}
+
 async function main() {
+  if (isLegacyConversationCleanupEnabled()) {
+    await cleanupLegacyConversationMemoryRows().catch((err) => {
+      console.warn(
+        '[memory] legacy CONVERSATION cleanup failed:',
+        err instanceof Error ? err.message : err
+      );
+    });
+  }
+
   const app = await buildApp();
 
   const shutdown = async (signal: string) => {

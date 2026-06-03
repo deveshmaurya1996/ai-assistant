@@ -35,6 +35,7 @@ type Props = {
   contentPaddingBottom?: number;
   savedMessageIds?: Set<string>;
   assistantLabel?: string;
+  streamStatusMessage?: string | null;
   onSaveNote?: (content: string, messageId: string) => Promise<void>;
 };
 
@@ -53,6 +54,7 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function
   contentPaddingBottom,
   savedMessageIds,
   assistantLabel,
+  streamStatusMessage,
   onSaveNote,
 }, ref) {
   const listRef = useRef<FlashListRef<ChatMessage>>(null);
@@ -111,6 +113,9 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function
         thinkingUserMessage={
           item.id === STREAMING_MESSAGE_ID ? thinkingUserMessage : undefined
         }
+        streamStatusMessage={
+          item.id === STREAMING_MESSAGE_ID ? streamStatusMessage : undefined
+        }
         isSaved={savedMessageIds?.has(item.id) ?? false}
         onSaveNote={onSaveNote}
       />
@@ -124,6 +129,7 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function
       showStreamCursor,
       streamTurnKey,
       thinkingUserMessage,
+      streamStatusMessage,
     ]
   );
 
