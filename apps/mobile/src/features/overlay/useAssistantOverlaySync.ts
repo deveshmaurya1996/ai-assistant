@@ -20,6 +20,7 @@ const ROTATION_MS = 5000;
 
 export function useAssistantOverlaySync() {
   const overlayEnabled = useSettingsStore((s) => s.overlayEnabled);
+  const voiceOverlayEnabled = useSettingsStore((s) => s.voiceOverlayEnabled);
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
   const userDismissed = useOverlaySessionStore((s) => s.userDismissed);
   const setUserDismissed = useOverlaySessionStore((s) => s.setUserDismissed);
@@ -114,6 +115,7 @@ export function useAssistantOverlaySync() {
     void syncAssistantOverlay({
       appState,
       overlayEnabled,
+      voiceOverlayEnabled,
       userDismissed,
       activeItem,
       rotationHint,
@@ -123,6 +125,7 @@ export function useAssistantOverlaySync() {
   }, [
     appState,
     overlayEnabled,
+    voiceOverlayEnabled,
     userDismissed,
     activeItem,
     rotationHint,

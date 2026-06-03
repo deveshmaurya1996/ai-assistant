@@ -153,6 +153,7 @@ export function buildOverlayActivities(
 export type ShouldShowOverlayInput = {
   appState: string;
   overlayEnabled: boolean;
+  voiceOverlayEnabled: boolean;
   userDismissed: boolean;
   activeItem: OverlayActivity | null;
   foregroundScreen: OverlayForegroundScreen;
@@ -162,30 +163,26 @@ export type ShouldShowOverlayInput = {
 export function shouldShowOverlay({
   appState,
   overlayEnabled,
+  voiceOverlayEnabled,
   userDismissed,
   activeItem,
   foregroundScreen,
-  currentChatSessionKey,
 }: ShouldShowOverlayInput): boolean {
   if (!activeItem || userDismissed) return false;
 
   const inBackground = appState !== 'active';
-  if (inBackground) return true;
 
-  if (activeItem.kind === 'voice') {
-    return foregroundScreen === 'voice' || overlayEnabled;
+  if (activeItem.kind === 'chat') {
+    if (!inBackground && foregroundScreen === 'chat') return false;
+    if (inBackground) return activeItem.isGenerating;
+    return overlayEnabled && activeItem.isGenerating;
   }
 
-  if (foregroundScreen === 'chat') {
-    if (!activeItem.isGenerating) return false;
-    if (
-      currentChatSessionKey &&
-      activeItem.sessionKey !== currentChatSessionKey
-    ) {
-      return false;
-    }
+  if (activeItem.kind === 'voice') {
+    if (inBackground) return true;
+    if (foregroundScreen === 'voice') return voiceOverlayEnabled;
     return overlayEnabled;
   }
 
-  return overlayEnabled;
+  return false;
 }

@@ -165,7 +165,7 @@ export default function SettingsScreen() {
         <SettingsSection title="Overlay">
           <SwitchRow
             label="Floating overlay"
-            description="While on: shows chat and voice replies in-app. In background: auto-shows AI responses with chat title. Tap corner when minimized to close."
+            description="While on: shows overlay on other screens. In background: auto-shows during chat generation and voice."
             value={overlayEnabled}
             onValueChange={async (v) => {
               if (v) {

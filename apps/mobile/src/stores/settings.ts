@@ -23,6 +23,7 @@ const KEYS = {
   backgroundVoice: 'background_voice_enabled',
   autoSendVoice: 'auto_send_voice',
   overlayEnabled: 'overlay_enabled',
+  voiceOverlayEnabled: 'voice_overlay_enabled',
   lastAiModelLabel: 'last_ai_model_label',
   lastTranscript: 'last_transcript',
 } as const;
@@ -63,6 +64,7 @@ type SettingsState = {
   assistantContinuousListening: boolean;
   autoSendAfterTranscribe: boolean;
   overlayEnabled: boolean;
+  voiceOverlayEnabled: boolean;
   lastAiModelLabel: string | null;
   lastTranscript: string | null;
   hydrate: () => Promise<void>;
@@ -74,6 +76,7 @@ type SettingsState = {
   setAssistantContinuousListening: (v: boolean) => Promise<void>;
   setAutoSend: (v: boolean) => Promise<void>;
   setOverlayEnabled: (v: boolean) => Promise<void>;
+  setVoiceOverlayEnabled: (v: boolean) => Promise<void>;
   setLastAiModelLabel: (label: string | null) => Promise<void>;
   setLastTranscript: (text: string | null) => Promise<void>;
   getSelectedTtsVoice: () => string;
@@ -122,6 +125,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   assistantContinuousListening: true,
   autoSendAfterTranscribe: false,
   overlayEnabled: false,
+  voiceOverlayEnabled: false,
   lastAiModelLabel: null,
   lastTranscript: null,
 
@@ -138,6 +142,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         backgroundVoice,
         autoSend,
         overlay,
+        voiceOverlay,
         lastModel,
         transcript,
       ] = await Promise.all([
@@ -151,6 +156,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         getItemAsync(KEYS.backgroundVoice),
         getItemAsync(KEYS.autoSendVoice),
         getItemAsync(KEYS.overlayEnabled),
+        getItemAsync(KEYS.voiceOverlayEnabled),
         getItemAsync(KEYS.lastAiModelLabel),
         getItemAsync(KEYS.lastTranscript),
       ]);
@@ -180,6 +186,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         assistantContinuousListening: backgroundVoice !== 'false',
         autoSendAfterTranscribe: autoSend === 'true',
         overlayEnabled: overlay === 'true',
+        voiceOverlayEnabled: voiceOverlay === 'true',
         lastAiModelLabel: lastModel,
         lastTranscript: transcript,
       });
@@ -239,6 +246,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setOverlayEnabled: async (v) => {
     await setItemAsync(KEYS.overlayEnabled, String(v));
     set({ overlayEnabled: v });
+  },
+
+  setVoiceOverlayEnabled: async (v) => {
+    await setItemAsync(KEYS.voiceOverlayEnabled, String(v));
+    set({ voiceOverlayEnabled: v });
   },
 
   setLastAiModelLabel: async (label) => {

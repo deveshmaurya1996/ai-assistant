@@ -21,11 +21,17 @@ export type VoiceOverlaySyncInput = {
 export type AssistantOverlaySyncInput = {
   appState: string;
   overlayEnabled: boolean;
+  voiceOverlayEnabled: boolean;
   userDismissed: boolean;
   activeItem: OverlayActivity | null;
   rotationHint?: string;
   foregroundScreen: OverlayForegroundScreen;
   currentChatSessionKey: string | null;
+};
+
+export type OverlayNavigationTarget = {
+  kind: 'chat' | 'voice';
+  sessionKey: string;
 };
 
 type OverlayModule = {
@@ -42,9 +48,10 @@ type OverlayModule = {
   requestOverlayPermission?: () => Promise<void>;
   startVoiceService?: () => Promise<void>;
   stopVoiceService?: () => Promise<void>;
+  setOverlayNavigationTarget?: (kind: string, sessionKey: string) => Promise<void>;
   addListener?: (
     eventName: string,
-    listener: () => void
+    listener: (payload: Record<string, string>) => void
   ) => EventSubscription;
 };
 
@@ -161,12 +168,24 @@ export async function setOverlayExpanded(expanded: boolean): Promise<void> {
   await setOverlaySizeTier(expanded ? 'medium' : 'compact');
 }
 
+export async function setOverlayNavigationTarget(
+  target: OverlayNavigationTarget | null
+): Promise<void> {
+  if (Platform.OS !== 'android' || !NativeOverlay?.setOverlayNavigationTarget) return;
+  if (!target) {
+    await NativeOverlay.setOverlayNavigationTarget('', '');
+    return;
+  }
+  await NativeOverlay.setOverlayNavigationTarget(target.kind, target.sessionKey);
+}
+
 export async function syncAssistantOverlay(input: AssistantOverlaySyncInput): Promise<void> {
   if (Platform.OS !== 'android') return;
 
   const {
     appState,
     overlayEnabled,
+    voiceOverlayEnabled,
     userDismissed,
     activeItem,
     rotationHint,
@@ -178,12 +197,14 @@ export async function syncAssistantOverlay(input: AssistantOverlaySyncInput): Pr
     !shouldShowOverlay({
       appState,
       overlayEnabled,
+      voiceOverlayEnabled,
       userDismissed,
       activeItem,
       foregroundScreen,
       currentChatSessionKey,
     })
   ) {
+    await setOverlayNavigationTarget(null);
     await hideOverlayPanel();
     await setBubbleState('idle');
     return;
@@ -193,9 +214,15 @@ export async function syncAssistantOverlay(input: AssistantOverlaySyncInput): Pr
   if (!can) return;
 
   if (!activeItem) {
+    await setOverlayNavigationTarget(null);
     await hideOverlayPanel();
     return;
   }
+
+  await setOverlayNavigationTarget({
+    kind: activeItem.kind,
+    sessionKey: activeItem.sessionKey,
+  });
 
   const contextWithRotation = rotationHint
     ? `${activeItem.contextLabel} · ${rotationHint}`
@@ -227,6 +254,7 @@ export async function syncVoiceOverlay(input: VoiceOverlaySyncInput): Promise<vo
   await syncAssistantOverlay({
     appState: input.appState,
     overlayEnabled: false,
+    voiceOverlayEnabled: true,
     userDismissed: false,
     foregroundScreen: 'voice',
     currentChatSessionKey: null,
@@ -254,7 +282,22 @@ export function subscribeOverlayDismissed(onDismissed: () => void): () => void {
   if (Platform.OS !== 'android' || !NativeOverlay?.addListener) {
     return () => {};
   }
-  const sub = NativeOverlay.addListener('onOverlayDismissed', onDismissed);
+  const sub = NativeOverlay.addListener('onOverlayDismissed', () => onDismissed());
+  return () => sub.remove();
+}
+
+export function subscribeOverlayOpened(
+  onOpened: (target: OverlayNavigationTarget) => void
+): () => void {
+  if (Platform.OS !== 'android' || !NativeOverlay?.addListener) {
+    return () => {};
+  }
+  const sub = NativeOverlay.addListener('onOverlayOpened', (payload) => {
+    const kind = payload.kind;
+    const sessionKey = payload.sessionKey;
+    if ((kind !== 'chat' && kind !== 'voice') || !sessionKey) return;
+    onOpened({ kind, sessionKey });
+  });
   return () => sub.remove();
 }
 

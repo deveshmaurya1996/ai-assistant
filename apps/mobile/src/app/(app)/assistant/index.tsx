@@ -6,6 +6,7 @@ import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { VoiceConversationView } from '@/components/assistant/VoiceConversationView';
 import { AssistantStartButton } from '@/components/assistant/AssistantStartButton';
 import { AssistantActiveFooter } from '@/components/assistant/AssistantActiveFooter';
+import { VoiceOverlayToggle } from '@/components/assistant/VoiceOverlayToggle';
 import { PressableScale } from '@/components/motion/PressableScale';
 import { FadeIn } from '@/components/motion/FadeIn';
 import { useVoiceSession } from '@/features/voice-assistant/VoiceSessionProvider';
@@ -99,11 +100,14 @@ export default function AssistantScreen() {
       </View>
 
       {isActive ? (
-        <AssistantActiveFooter
-          phase={phase}
-          meteringDataPoints={meteringDataPoints}
-          onStop={() => void stopSession()}
-        />
+        <>
+          <VoiceOverlayToggle />
+          <AssistantActiveFooter
+            phase={phase}
+            meteringDataPoints={meteringDataPoints}
+            onStop={() => void stopSession()}
+          />
+        </>
       ) : null}
     </View>
   );
