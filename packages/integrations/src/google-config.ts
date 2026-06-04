@@ -17,6 +17,8 @@ export function resolveGoogleIntegrationConfig(): GoogleIntegrationConfig {
   const apiBase = (
     process.env.API_PUBLIC_URL?.trim() ||
     process.env.BETTER_AUTH_URL?.trim() ||
+    process.env.GATEWAY_URL?.trim() ||
+    process.env.API_URL?.trim() ||
     'http://localhost:3000'
   ).replace(/\/$/, '');
   const redirectUri = (

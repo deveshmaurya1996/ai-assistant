@@ -218,9 +218,7 @@ def port_env():
         'INTERNAL_SERVICE_TOKEN': 'dev-internal-token',
         'NEXT_PUBLIC_API_URL': 'http://localhost:' + api,
         'EXPO_PUBLIC_API_URL': 'http://localhost:' + api,
-        'BETTER_AUTH_URL': 'http://localhost:' + api,
-        'GATEWAY_URL': 'http://localhost:' + api,
-        'API_URL': 'http://localhost:' + api,
+        'API_PUBLIC_URL': 'http://localhost:' + api,
     }
 
 def apply_compose_env():

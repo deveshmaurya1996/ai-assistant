@@ -7,8 +7,16 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const targets = [
   { example: path.join(root, '.env.example'), env: path.join(root, '.env') },
   {
+    example: path.join(root, '.env.production.example'),
+    env: path.join(root, '.env.production'),
+  },
+  {
     example: path.join(root, 'apps', 'mobile', '.env.example'),
     env: path.join(root, 'apps', 'mobile', '.env'),
+  },
+  {
+    example: path.join(root, 'apps', 'mobile', '.env.production.example'),
+    env: path.join(root, 'apps', 'mobile', '.env.production'),
   },
 ];
 
@@ -62,4 +70,6 @@ for (const { example, env } of targets) {
   console.log(`Merged: ${path.relative(root, env)} (kept existing values)`);
 }
 
-console.log('\nEdit .env files with your API keys (GEMINI_API_KEY, OPENAI_API_KEY).');
+console.log('\nLocal dev:  .env + apps/mobile/.env');
+console.log('Production: .env.production (local test) or Render env vars');
+console.log('On Render:  paste from .env.production into each service dashboard');

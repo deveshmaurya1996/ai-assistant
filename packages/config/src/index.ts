@@ -50,7 +50,10 @@ export const config: AppConfig = {
     'postgresql://ai_assistant:ai_assistant@localhost:5432/ai_assistant'
   ),
   betterAuthSecret: envOptional('BETTER_AUTH_SECRET', 'dev-secret-change-in-production'),
-  betterAuthUrl: envOptional('BETTER_AUTH_URL', 'http://localhost:3000'),
+  betterAuthUrl: envOptional(
+    'API_PUBLIC_URL',
+    envOptional('BETTER_AUTH_URL', 'http://localhost:3000')
+  ),
   redisUrl: envOptional('REDIS_URL', 'redis://localhost:6379'),
   googleClientId: process.env.GOOGLE_CLIENT_ID,
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -72,7 +75,7 @@ export const config: AppConfig = {
   ingestionEngineUrl: envOptional('INGESTION_ENGINE_URL', 'http://localhost:3012'),
   whatsappBridgeUrl: envOptional(
     'WHATSAPP_BRIDGE_URL',
-    `http://localhost:${envInt('API_PORT', 3000)}/internal/whatsapp`
+    `${envOptional('API_PUBLIC_URL', envOptional('BETTER_AUTH_URL', `http://localhost:${envInt('API_PORT', 3000)}`))}/internal/whatsapp`
   ),
   integrationEncryptionKey: envOptional(
     'INTEGRATION_ENCRYPTION_KEY',

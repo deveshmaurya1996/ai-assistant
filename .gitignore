@@ -4,8 +4,11 @@ dist/
 .turbo/
 *.log
 .env
+.env.production
 .env.local
 .env.*.local
+apps/mobile/.env
+apps/mobile/.env.production
 .tilt/
 tilt_config.json
 .DS_Store

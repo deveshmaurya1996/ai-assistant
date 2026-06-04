@@ -6,9 +6,9 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 
-GATEWAY_URL = os.getenv(
-    "GATEWAY_URL", os.getenv("API_URL", os.getenv("BETTER_AUTH_URL", "http://localhost:3050"))
-)
+from env_loader import resolve_public_api_url
+
+GATEWAY_URL = resolve_public_api_url()
 INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev-internal-token")
 SKILL_RUNTIME_URL = os.getenv("SKILL_RUNTIME_URL", "http://localhost:3014")
 TOOL_RUNTIME_URL = os.getenv("TOOL_RUNTIME_URL", "http://localhost:3011")

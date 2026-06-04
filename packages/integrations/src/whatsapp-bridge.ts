@@ -1,9 +1,17 @@
 function defaultBridgeUrl(): string {
-  const explicit = process.env.GATEWAY_URL ?? process.env.WHATSAPP_BRIDGE_URL;
-  if (explicit) {
-    const base = explicit.replace(/\/internal\/whatsapp\/?$/, '').replace(/\/$/, '');
-    return `${base}/internal/whatsapp`;
-  }
+  const explicit = process.env.WHATSAPP_BRIDGE_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, '');
+
+  const publicBase = (
+    process.env.API_PUBLIC_URL?.trim() ||
+    process.env.GATEWAY_URL?.trim() ||
+    process.env.API_URL?.trim() ||
+    process.env.BETTER_AUTH_URL?.trim() ||
+    ''
+  ).replace(/\/$/, '');
+
+  if (publicBase) return `${publicBase}/internal/whatsapp`;
+
   const port = process.env.API_PORT ?? process.env.GATEWAY_PORT ?? '3050';
   return `http://localhost:${port}/internal/whatsapp`;
 }

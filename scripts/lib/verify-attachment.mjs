@@ -5,14 +5,21 @@ import { io } from 'socket.io-client';
 
 export function apiBase() {
   const port = Number(process.env.API_PORT || process.env.GATEWAY_PORT || 3000);
-  return (process.env.GATEWAY_URL || process.env.API_URL || `http://localhost:${port}`).replace(
-    /\/$/,
-    ''
-  );
+  return (
+    process.env.API_PUBLIC_URL ||
+    process.env.GATEWAY_URL ||
+    process.env.API_URL ||
+    `http://localhost:${port}`
+  ).replace(/\/$/, '');
 }
 
 export function authOrigin() {
-  return process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || apiBase();
+  return (
+    process.env.API_PUBLIC_URL ||
+    process.env.BETTER_AUTH_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    apiBase()
+  );
 }
 
 function parseCookies(setCookieHeaders) {

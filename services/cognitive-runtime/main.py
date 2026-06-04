@@ -18,9 +18,10 @@ app = FastAPI(title="Cognitive Runtime", version="1.0.0")
 SKILL_RUNTIME_URL = os.getenv("SKILL_RUNTIME_URL", "http://localhost:3014")
 TOOL_RUNTIME_URL = os.getenv("TOOL_RUNTIME_URL", "http://localhost:3011")
 AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://localhost:8000")
-GATEWAY_URL = os.getenv(
-    "GATEWAY_URL", os.getenv("API_URL", os.getenv("BETTER_AUTH_URL", "http://localhost:3050"))
-)
+from env_loader import load_service_env, resolve_public_api_url
+
+load_service_env()
+GATEWAY_URL = resolve_public_api_url()
 INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev-internal-token")
 
 MEMORY_STATUS_MESSAGE = os.getenv(

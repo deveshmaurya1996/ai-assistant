@@ -11,9 +11,9 @@ import httpx
 logger = logging.getLogger(__name__)
 
 AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://localhost:8000")
-GATEWAY_URL = os.getenv(
-    "GATEWAY_URL", os.getenv("API_URL", os.getenv("BETTER_AUTH_URL", "http://localhost:3050"))
-)
+from env_loader import resolve_public_api_url
+
+GATEWAY_URL = resolve_public_api_url()
 SKILL_RUNTIME_URL = os.getenv("SKILL_RUNTIME_URL", "http://localhost:3014")
 INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev-internal-token")
 MAX_HISTORY = 20

@@ -31,8 +31,16 @@ def resolve_env_file(root: Path) -> Path | None:
     return None
 
 
-def load_monorepo_env() -> None:
+def load_service_env() -> None:
     root = find_monorepo_root()
     env_path = resolve_env_file(root)
     if env_path:
         load_dotenv(env_path)
+
+
+def resolve_public_api_url() -> str:
+    for key in ("API_PUBLIC_URL", "GATEWAY_URL", "API_URL", "BETTER_AUTH_URL"):
+        raw = os.getenv(key, "").strip()
+        if raw:
+            return raw.rstrip("/")
+    return "http://localhost:3000"

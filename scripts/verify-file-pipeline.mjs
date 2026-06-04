@@ -8,7 +8,10 @@ import path from 'node:path';
 
 const gateway = process.argv.includes('--gateway')
   ? process.argv[process.argv.indexOf('--gateway') + 1]
-  : process.env.GATEWAY_URL ?? process.env.API_URL ?? `http://localhost:${process.env.API_PORT || 3000}`;
+  : process.env.API_PUBLIC_URL ??
+    process.env.GATEWAY_URL ??
+    process.env.API_URL ??
+    `http://localhost:${process.env.API_PORT || 3000}`;
 
 const tokenIdx = process.argv.indexOf('--token');
 const token = tokenIdx >= 0 ? process.argv[tokenIdx + 1] : process.env.VERIFY_FILE_TOKEN;
