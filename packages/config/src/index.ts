@@ -1,6 +1,30 @@
 import { loadMonorepoEnv } from './load-env';
+import { loadMobileReleaseManifest } from './mobile-release';
 
 loadMonorepoEnv();
+
+const mobileManifest = loadMobileReleaseManifest();
+
+function envOrManifestString(
+  envKey: string,
+  manifestValue: string | undefined,
+  fallback: string
+): string {
+  const fromEnv = process.env[envKey]?.trim();
+  if (fromEnv) return fromEnv;
+  if (manifestValue) return manifestValue;
+  return fallback;
+}
+
+function envOrManifestInt(
+  envKey: string,
+  manifestValue: number | undefined,
+  fallback: number
+): number {
+  if (process.env[envKey] !== undefined) return envInt(envKey, fallback);
+  if (manifestValue != null && !Number.isNaN(manifestValue)) return manifestValue;
+  return fallback;
+}
 
 function envOptional(key: string, fallback: string): string {
   return process.env[key] ?? fallback;
@@ -38,6 +62,12 @@ export interface AppConfig {
   ingestionEngineUrl: string;
   whatsappBridgeUrl: string;
   integrationEncryptionKey: string;
+  mobileLatestVersion: string;
+  mobileMinVersion: string;
+  mobileMinAndroidVersionCode: number;
+  mobileAndroidPlayStoreUrl: string | undefined;
+  mobileAndroidApkUrl: string | undefined;
+  mobileUpdateUrlMode: 'play' | 'apk' | 'auto';
 }
 
 export const config: AppConfig = {
@@ -81,6 +111,28 @@ export const config: AppConfig = {
     'INTEGRATION_ENCRYPTION_KEY',
     'dev-integration-key-change-me'
   ),
+  mobileLatestVersion: envOrManifestString(
+    'MOBILE_LATEST_VERSION',
+    mobileManifest?.version,
+    '1.0.0'
+  ),
+  mobileMinVersion: envOrManifestString(
+    'MOBILE_MIN_VERSION',
+    mobileManifest?.minVersion,
+    '1.0.0'
+  ),
+  mobileMinAndroidVersionCode: envOrManifestInt(
+    'MOBILE_MIN_ANDROID_VERSION_CODE',
+    mobileManifest?.minAndroidVersionCode,
+    1
+  ),
+  mobileAndroidPlayStoreUrl: process.env.MOBILE_ANDROID_PLAY_STORE_URL,
+  mobileAndroidApkUrl: process.env.MOBILE_ANDROID_APK_URL,
+  mobileUpdateUrlMode: (() => {
+    const raw = envOptional('MOBILE_UPDATE_URL_MODE', 'auto');
+    if (raw === 'play' || raw === 'apk') return raw;
+    return 'auto';
+  })(),
 };
 
 export function getAiServiceUrl(path: string): string {

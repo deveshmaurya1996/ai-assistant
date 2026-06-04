@@ -24,7 +24,7 @@ import { prepareNewCompose, useComposeDraftStore } from '@/features/chat/chatSes
 import { useChatStreamStore } from '@/features/chat/chatStreamStore';
 import { useSettingsStore } from '@/stores/settings';
 import { MessageSquare, Mic, MoreVertical } from 'lucide-react-native';
-import Constants from 'expo-constants';
+import { getVersionDisplayLines } from '@/lib/version-display';
 
 type DrawerContentProps = {
   navigation: { closeDrawer: () => void };
@@ -167,6 +167,7 @@ function NavRow({
 }
 
 export function DrawerContent({ navigation }: DrawerContentProps) {
+  const versionLines = getVersionDisplayLines();
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const pathname = usePathname();
@@ -438,8 +439,13 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
         </Text>
       </Pressable>
       <Text variant="caption" muted style={styles.version}>
-        v{Constants.expoConfig?.version ?? '1.0.0'}
+        v{versionLines.primary}
       </Text>
+      {versionLines.secondary ? (
+        <Text variant="caption" muted style={styles.versionSub}>
+          {versionLines.secondary}
+        </Text>
+      ) : null}
     </View>
   );
 
@@ -642,5 +648,10 @@ const styles = StyleSheet.create({
   version: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
+  },
+  versionSub: {
+    paddingHorizontal: spacing.md,
+    paddingTop: 2,
+    paddingBottom: spacing.sm,
   },
 });

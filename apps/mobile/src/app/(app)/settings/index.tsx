@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { BottomSheetModal } from '@gorhom/bottom-sheet';
-import Constants from 'expo-constants';
+import { getVersionDisplayLines } from '@/lib/version-display';
 import { router } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
 import { Screen } from '@/components/ui/Screen';
@@ -42,6 +42,7 @@ import { PressableScale } from '@/components/motion/PressableScale';
 import { Routes } from '@/lib/routes';
 
 export default function SettingsScreen() {
+  const versionLines = getVersionDisplayLines();
   const { colors, mode, setMode } = useTheme();
   const session = useAuthStore((s) => s.session);
   const signOut = useAuthStore((s) => s.signOut);
@@ -221,8 +222,13 @@ export default function SettingsScreen() {
         <SettingsSection title="About">
           <Text variant="bodyMedium">AI Assistant</Text>
           <Text variant="caption" muted style={{ marginTop: spacing.xs }}>
-            Version {Constants.expoConfig?.version ?? '1.0.0'}
+            Version {versionLines.primary}
           </Text>
+          {versionLines.secondary ? (
+            <Text variant="caption" muted style={{ marginTop: spacing.xs }}>
+              {versionLines.secondary}
+            </Text>
+          ) : null}
           <Button
             label="Terms & Privacy"
             variant="secondary"

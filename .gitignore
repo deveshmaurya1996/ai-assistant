@@ -1,3 +1,6 @@
+
+.easignore
+
 node_modules/
 dist/
 .next/

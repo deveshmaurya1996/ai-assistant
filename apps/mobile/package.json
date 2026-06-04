@@ -43,6 +43,8 @@
     "expo-status-bar": "~56.0.4",
     "expo-symbols": "~56.0.5",
     "expo-system-ui": "~56.0.5",
+    "expo-application": "~56.0.3",
+    "expo-updates": "~56.0.6",
     "expo-video": "~56.1.2",
     "expo-web-browser": "~56.0.5",
     "lucide-react-native": "^1.16.0",
@@ -61,6 +63,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "eas-cli": "^16.17.4",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -71,7 +74,13 @@
     "android": "node scripts/adb-reverse.mjs && expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "release:sync": "node ../../scripts/sync-mobile-release.mjs",
+    "release:sync:eas": "node ../../scripts/sync-mobile-release.mjs --from-eas",
+    "eas:build:android:prod": "node scripts/sync-root-easignore.mjs && pnpm exec eas build -p android --profile production && node ../../scripts/sync-mobile-release.mjs --from-eas",
+    "eas:build:android:preview": "node scripts/sync-root-easignore.mjs && pnpm exec eas build -p android --profile preview && node ../../scripts/sync-mobile-release.mjs --from-eas",
+    "eas:update:production": "pnpm exec eas update --channel production",
+    "eas:update:preview": "pnpm exec eas update --channel preview"
   },
   "private": true
 }

@@ -15,6 +15,8 @@ import { ThemeProvider } from '@/theme/ThemeProvider';
 import { AppSplash } from '@/components/boot/AppSplash';
 import { hydrateAuthStorage } from '@/lib/secure-storage';
 import { useAppBootstrap } from '@/hooks/useAppBootstrap';
+import { useUpdateBootstrap } from '@/hooks/useUpdateBootstrap';
+import { UpdateGate } from '@/features/updates/UpdateGate';
 
 SplashScreen.preventAutoHideAsync();
 SplashScreen.setOptions({ fade: true, duration: 280 });
@@ -27,8 +29,9 @@ export default function RootLayout() {
     Inter_700Bold,
   });
   const bootstrapReady = useAppBootstrap(fontsLoaded);
+  const otaReady = useUpdateBootstrap(fontsLoaded, bootstrapReady);
   const [splashDone, setSplashDone] = useState(false);
-  const appReady = bootstrapReady && splashDone;
+  const appReady = bootstrapReady && otaReady && splashDone;
 
   useEffect(() => {
     void hydrateAuthStorage();
@@ -52,12 +55,14 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <ThemeProvider>
         <BottomSheetModalProvider>
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="index" />
-            <Stack.Screen name="(auth)" />
-            <Stack.Screen name="(app)" />
-            <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
-          </Stack>
+          <UpdateGate>
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="index" />
+              <Stack.Screen name="(auth)" />
+              <Stack.Screen name="(app)" />
+              <Stack.Screen name="auth/callback" options={{ headerShown: false }} />
+            </Stack>
+          </UpdateGate>
         </BottomSheetModalProvider>
       </ThemeProvider>
     </GestureHandlerRootView>

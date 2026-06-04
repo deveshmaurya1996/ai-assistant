@@ -24,6 +24,7 @@ import { notesRoutes } from './routes/notes.routes';
 import { whatsappRoutes } from './routes/whatsapp.routes';
 import { internalIntegrationRoutes } from './routes/internal-integrations.routes';
 import { internalMemoryRoutes } from './routes/internal-memory.routes';
+import { mobileRoutes } from './routes/mobile.routes';
 import { setupSocketIO } from './socket';
 import { startAllWorkers } from './workers/queues';
 
@@ -56,6 +57,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   client.collectDefaultMetrics({ register });
 
   app.get('/health', async () => ({ status: 'ok', service: 'api' }));
+
+  app.register(mobileRoutes, { prefix: '/mobile' });
 
   app.get('/metrics', async (_, reply) => {
     reply.header('Content-Type', register.contentType);

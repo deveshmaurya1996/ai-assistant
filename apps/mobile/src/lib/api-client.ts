@@ -1,4 +1,6 @@
-import { AssistantClient } from '@ai-assistant/sdk';
+import { AssistantClient, type MobileVersionInfo } from '@ai-assistant/sdk';
+
+export type { MobileVersionInfo };
 import { getAuthCookie, getAuthSessionToken } from '@/lib/auth-cookies';
 import { API_URL } from './config';
 

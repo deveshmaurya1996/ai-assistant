@@ -1,5 +1,7 @@
 import type { ExpoConfig } from 'expo/config';
 
+const EAS_PROJECT_ID = 'e571137a-6ce6-4d5f-bba1-ee812975eb4a';
+
 const config: ExpoConfig = {
   name: 'AI Assistant',
   slug: 'ai-assistant',
@@ -7,9 +9,19 @@ const config: ExpoConfig = {
   scheme: 'ai-assistant',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
+  runtimeVersion: {
+    policy: 'appVersion',
+  },
+  updates: {
+    url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
+    enabled: true,
+    checkAutomatically: 'ON_LOAD',
+    fallbackToCacheTimeout: 0,
+  },
   ios: {
     supportsTablet: true,
     bundleIdentifier: 'com.aiassistant.app',
+    buildNumber: '1',
     infoPlist: {
       UIBackgroundModes: ['audio'],
       NSMicrophoneUsageDescription:
@@ -18,6 +30,7 @@ const config: ExpoConfig = {
   },
   android: {
     package: 'com.aiassistant.app',
+    versionCode: 1,
     softwareKeyboardLayoutMode: 'resize',
     permissions: [
       'android.permission.RECORD_AUDIO',
@@ -71,7 +84,7 @@ const config: ExpoConfig = {
   extra: {
     apiUrl: process.env.EXPO_PUBLIC_API_URL,
     eas: {
-      projectId: 'ai-assistant-local',
+      projectId: EAS_PROJECT_ID,
     },
   },
 };

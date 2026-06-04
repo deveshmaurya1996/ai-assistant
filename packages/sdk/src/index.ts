@@ -42,6 +42,15 @@ export type AuthCredentials = {
 
 export type AuthProvider = () => Promise<AuthCredentials | null>;
 
+export type MobileVersionInfo = {
+  latestVersion: string;
+  minVersion: string;
+  minAndroidVersionCode: number;
+  forceUpdate: boolean;
+  updateUrl: string | null;
+  updateUrlMode: 'play' | 'apk' | 'auto';
+};
+
 const SESSION_COOKIE_NAME = 'better-auth.session_token';
 
 export class AssistantClient {
@@ -177,6 +186,10 @@ export class AssistantClient {
 
   getSessionToken(): string {
     return this.sessionToken;
+  }
+
+  async getMobileVersion(): Promise<MobileVersionInfo> {
+    return this.request<MobileVersionInfo>('/mobile/version');
   }
 
   setSessionCookie(cookie: string) {

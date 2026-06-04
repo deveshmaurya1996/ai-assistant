@@ -393,3 +393,63 @@ src/
   stores/        Auth + settings (Zustand)
 modules/overlay/ Native Android overlay module
 ```
+
+---
+
+## Production releases (EAS Build + EAS Update)
+
+EAS project ID: `e571137a-6ce6-4d5f-bba1-ee812975eb4a`
+
+### One-time setup
+
+```bash
+npm install --global eas-cli
+cd apps/mobile
+eas login
+eas init --id e571137a-6ce6-4d5f-bba1-ee812975eb4a
+eas credentials   # Android keystore (first cloud build)
+```
+
+Config lives in [`app.config.ts`](app.config.ts) and [`eas.json`](eas.json). Run all `eas` commands from `apps/mobile`.
+
+### First Android production build
+
+From repo root:
+
+```bash
+pnpm mobile:eas:build:android
+```
+
+Or from `apps/mobile`: `pnpm eas:build:android:prod` (AAB, `production` channel).
+
+Optional Play internal track submit:
+
+```bash
+cd apps/mobile
+eas submit -p android --profile production
+```
+
+### JS-only changes (OTA, no reinstall)
+
+```bash
+pnpm mobile:eas:update
+# or: cd apps/mobile && eas update --channel production --message "your message"
+```
+
+Production builds check for updates on launch and reload automatically.
+
+### Native changes (permissions, native modules, SDK)
+
+1. Bump `version` in `app.config.ts` (EAS `autoIncrement` bumps Android `versionCode` on cloud builds).
+2. `pnpm mobile:eas:build:android`
+3. Commit the updated [`release-manifest.json`](release-manifest.json) (auto-written after EAS build) and redeploy the gateway so `/mobile/version` picks up the new minimums.
+
+To **force** older native installs to update, run after a release build:
+
+```bash
+node scripts/sync-mobile-release.mjs --from-eas --promote-min
+```
+
+Then commit the manifest and redeploy gateway. You do **not** need to hand-edit `MOBILE_LATEST_VERSION` on Render unless you want to override the manifest.
+
+See [docs/ENV.md](../../docs/ENV.md) for gateway env vars (Play/APK URLs) and `GET /mobile/version`.
