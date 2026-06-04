@@ -648,6 +648,9 @@ importers:
       '@fastify/multipart':
         specifier: ^9.0.0
         version: 9.4.0
+      '@types/qrcode':
+        specifier: ^1.5.5
+        version: 1.5.6
       '@whiskeysockets/baileys':
         specifier: ~6.7.23
         version: 6.7.23(audio-decode@2.2.3)(sharp@0.34.5)
@@ -688,9 +691,6 @@ importers:
       '@types/pdf-parse':
         specifier: ^1.1.5
         version: 1.1.5
-      '@types/qrcode':
-        specifier: ^1.5.5
-        version: 1.5.6
       socket.io-client:
         specifier: ^4.8.3
         version: 4.8.3
