@@ -19,6 +19,21 @@ def _nvidia_embed_available() -> bool:
     return bool(os.getenv("NVIDIA_API_KEY", "").strip())
 
 
+def _qdrant_client_from_env():
+    qdrant_url = os.getenv("QDRANT_URL", "").strip().rstrip("/")
+    api_key = os.getenv("QDRANT_API_KEY", "").strip()
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    db_path = os.path.join(base_dir, "qdrant_db")
+    os.makedirs(db_path, exist_ok=True)
+
+    if qdrant_url:
+        kwargs: dict = {"url": qdrant_url}
+        if api_key:
+            kwargs["api_key"] = api_key
+        return QdrantClient(**kwargs)
+    return QdrantClient(path=db_path)
+
+
 class RAGService:
     _instance = None
     _warm_lock = asyncio.Lock()
@@ -38,15 +53,7 @@ class RAGService:
         self.rerank_enabled = bool(cfg.get("rerankEnabled", False))
         self.min_score = float(cfg.get("minScore", 0.35))
 
-        qdrant_url = os.getenv("QDRANT_URL")
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        db_path = os.path.join(base_dir, "qdrant_db")
-        os.makedirs(db_path, exist_ok=True)
-
-        if qdrant_url:
-            self.client = QdrantClient(url=qdrant_url)
-        else:
-            self.client = QdrantClient(path=db_path)
+        self.client = _qdrant_client_from_env()
 
         self._ensure_collection()
 

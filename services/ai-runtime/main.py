@@ -1,8 +1,5 @@
-import asyncio
 import logging
 import os
-from urllib.error import URLError
-from urllib.request import urlopen
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -89,12 +86,16 @@ def health():
 
 @app.get("/health/ready")
 def health_ready():
-    qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333").rstrip("/")
+    qdrant_url = os.getenv("QDRANT_URL", "").strip()
+    if not qdrant_url:
+        return {"status": "ready", "qdrant": "local"}
     try:
-        with urlopen(f"{qdrant_url}/readyz", timeout=3) as resp:
-            if resp.status == 200:
-                return {"status": "ready", "qdrant": "ok"}
-    except (URLError, TimeoutError, OSError) as err:
+        from memory.rag_service import _qdrant_client_from_env
+
+        client = _qdrant_client_from_env()
+        client.get_collections()
+        return {"status": "ready", "qdrant": "ok"}
+    except Exception as err:
         return JSONResponse(
             status_code=503,
             content={
@@ -103,10 +104,6 @@ def health_ready():
                 "message": str(err),
             },
         )
-    return JSONResponse(
-        status_code=503,
-        content={"status": "degraded", "qdrant": "unavailable"},
-    )
 
 
 if __name__ == "__main__":
