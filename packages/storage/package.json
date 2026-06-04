@@ -4,6 +4,14 @@
   "description": "Object storage adapters (Cloudflare R2, local disk)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
   "scripts": {
     "build": "node ../../node_modules/typescript/bin/tsc"
   },

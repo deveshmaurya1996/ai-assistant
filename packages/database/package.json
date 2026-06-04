@@ -6,12 +6,14 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
       "default": "./dist/index.js"
     }
   },
   "scripts": {
     "prepare": "node ../../scripts/prisma-generate.mjs",
-    "build": "node ../../scripts/prisma-generate.mjs && node ../../node_modules/typescript/bin/tsc",
+    "build": "node ../../scripts/prisma-generate.mjs --lenient && node ../../node_modules/typescript/bin/tsc",
     "db:generate": "node ../../scripts/prisma-generate.mjs",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
