@@ -35,3 +35,13 @@ export function assistantRoute(params?: { resumeSessionId?: string }): Href {
   }
   return '/assistant' as Href;
 }
+
+export function integrationProviderRoute(
+  provider: string,
+  params?: { connectionId?: string }
+): Href {
+  return {
+    pathname: '/(app)/integrations/[provider]',
+    params: { provider, ...params },
+  };
+}

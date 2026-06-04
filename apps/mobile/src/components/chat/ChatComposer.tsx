@@ -1,6 +1,14 @@
 import { ArrowUp, Plus, Square } from 'lucide-react-native';
 import { useCallback, useRef, useState } from 'react';
-import { Alert, View, StyleSheet, Platform, type TextInputKeyPressEvent } from 'react-native';
+import {
+  Alert,
+  Keyboard,
+  View,
+  StyleSheet,
+  Platform,
+  type TextInput,
+  type TextInputKeyPressEvent,
+} from 'react-native';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import type { ChatAttachmentRef } from '@ai-assistant/types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -51,15 +59,14 @@ export function ChatComposer({
   const [input, setInput] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
   const sheetRef = useRef<BottomSheetModal>(null);
+  const inputRef = useRef<TextInput>(null);
 
   const attachments = useChatAttachments();
   const { error, hint, isRecording, isProcessing, toggleRecording } =
     useChatDictation();
 
   const hasText = input.trim().length > 0;
-  const hasAttachments = attachments.items.some(
-    (i) => !i.error && (i.uploaded || i.uri)
-  );
+  const hasAttachments = attachments.items.some((i) => !i.error && i.uploaded);
   const hasContent = hasText || hasAttachments;
 
   const canSend =
@@ -81,7 +88,7 @@ export function ChatComposer({
       const text = (textOverride ?? input).trim();
       const hasTextToSend = text.length > 0;
       const hasAttachmentsToSend = attachments.items.some(
-        (i) => !i.error && (i.uploaded || i.uri)
+        (i) => !i.error && i.uploaded
       );
       if ((!hasTextToSend && !hasAttachmentsToSend) || sendDisabled || attachments.isUploading) {
         return;
@@ -146,7 +153,11 @@ export function ChatComposer({
       Alert.alert('Limit reached', 'You can attach up to 4 files per message.');
       return;
     }
-    sheetRef.current?.present();
+    inputRef.current?.blur();
+    Keyboard.dismiss();
+    requestAnimationFrame(() => {
+      sheetRef.current?.present();
+    });
   }, [attachments.canAddMore, attachments.hasImage]);
 
   const runPickerAction = useCallback(
@@ -213,6 +224,7 @@ export function ChatComposer({
         </PressableScale>
 
         <Input
+          ref={inputRef}
           value={input}
           onChangeText={setInput}
           placeholder="Ask anything…"

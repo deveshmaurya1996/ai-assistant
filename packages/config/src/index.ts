@@ -29,6 +29,7 @@ export interface AppConfig {
   logQueries: boolean;
   qdrantUrl: string;
   nvidiaApiKey: string | undefined;
+  groqApiKey: string | undefined;
   pollinationsApiKey: string | undefined;
   toolRuntimeUrl: string;
   skillRuntimeUrl: string;
@@ -56,6 +57,7 @@ export const config: AppConfig = {
   logQueries: process.env.PRISMA_LOG_QUERIES === 'true',
   qdrantUrl: envOptional('QDRANT_URL', 'http://localhost:6333'),
   nvidiaApiKey: process.env.NVIDIA_API_KEY,
+  groqApiKey: process.env.GROQ_API_KEY,
   pollinationsApiKey: process.env.POLLINATIONS_API_KEY,
   toolRuntimeUrl: envOptional('TOOL_RUNTIME_URL', 'http://localhost:3011'),
   skillRuntimeUrl: envOptional('SKILL_RUNTIME_URL', 'http://localhost:3014'),

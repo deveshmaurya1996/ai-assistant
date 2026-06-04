@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { ActivityIndicator, Platform, View } from 'react-native';
+import { Platform } from 'react-native';
 import { Redirect } from 'expo-router';
 import { Drawer } from 'expo-router/drawer';
 import { DrawerContent } from '@/components/layout/DrawerContent';
@@ -10,6 +10,7 @@ import { VoiceSessionHost } from '@/features/voice-assistant/VoiceSessionHost';
 import { ActionConfirmSheet } from '@/components/integrations/ActionConfirmSheet';
 import { useChatActionConfirmBridge } from '@/features/chat/chatActionConfirmBridge';
 import { useAuthStore } from '@/stores/auth';
+import { AppSplash } from '@/components/boot/AppSplash';
 import { Routes } from '@/lib/routes';
 
 function AppDrawerLayoutContent() {
@@ -98,13 +99,8 @@ function AppDrawerLayoutContent() {
 }
 
 export default function AppDrawerLayout() {
-  const { colors } = useTheme();
-  const { session, loading, hydrate } = useAuthStore();
+  const { session, loading } = useAuthStore();
   const overlayPrompted = useRef(false);
-
-  useEffect(() => {
-    void hydrate();
-  }, [hydrate]);
 
   useEffect(() => {
     if (Platform.OS !== 'android' || overlayPrompted.current) return;
@@ -116,17 +112,7 @@ export default function AppDrawerLayout() {
   }, []);
 
   if (loading) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          justifyContent: 'center',
-          alignItems: 'center',
-          backgroundColor: colors.background,
-        }}>
-        <ActivityIndicator size="large" color={colors.primary} />
-      </View>
-    );
+    return <AppSplash />;
   }
 
   if (!session) {

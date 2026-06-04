@@ -25,3 +25,21 @@ def sse_done(model: str | None = None, label: str | None = None) -> str:
 
 def sse_error(message: str) -> str:
     return format_sse("error", {"message": message})
+
+
+def sse_provider_switch(
+    from_provider: str,
+    to_provider: str,
+    from_model: str,
+    to_model: str,
+) -> str:
+    return format_sse(
+        "provider_switch",
+        {
+            "from_provider": from_provider,
+            "to_provider": to_provider,
+            "from_model": from_model,
+            "to_model": to_model,
+            "message": f"Switching provider ({from_provider} → {to_provider})…",
+        },
+    )

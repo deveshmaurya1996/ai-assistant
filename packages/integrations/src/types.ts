@@ -49,10 +49,15 @@ export interface SyncResult {
   cursor?: string;
 }
 
+export type ConnectUrlOptions = {
+  loginHint?: string;
+  hasRefreshToken?: boolean;
+};
+
 export interface IntegrationConnector {
   providerId: string;
   capabilities: Capability[];
-  getConnectUrl?(userId: string, state: string): Promise<ConnectChallenge>;
+  getConnectUrl?(userId: string, state: string, options?: ConnectUrlOptions): Promise<ConnectChallenge>;
   handleCallback?(userId: string, payload: unknown): Promise<ConnectionMeta>;
   refreshTokens?(connectionId: string, credentials: JsonObject): Promise<JsonObject>;
   disconnect?(connectionId: string): Promise<void>;

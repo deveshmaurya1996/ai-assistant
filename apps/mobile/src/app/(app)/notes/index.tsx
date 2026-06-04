@@ -21,6 +21,9 @@ import { spacing, radii } from '@/theme/tokens';
 import { apiClient } from '@/lib/api-client';
 import type { UserNote } from '@ai-assistant/types';
 import { useSavedNotesStore } from '@/features/notes/savedNotesStore';
+import { NoteDetailModal } from '@/features/notes/NoteDetailModal';
+import { PressableScale } from '@/components/motion/PressableScale';
+import { stripMarkdownForPreview } from '@/components/markdown/stripMarkdownForPreview';
 
 function formatWhen(iso: string): string {
   const d = new Date(iso);
@@ -37,6 +40,7 @@ export default function NotesScreen() {
   const [notes, setNotes] = useState<UserNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedNote, setSelectedNote] = useState<UserNote | null>(null);
   const removeSavedMessageId = useSavedNotesStore((s) => s.removeSavedMessageId);
 
   const load = useCallback(async () => {
@@ -71,6 +75,7 @@ export default function NotesScreen() {
                 removeSavedMessageId(note.sourceMessageId);
               }
               setNotes((prev) => prev.filter((n) => n.id !== note.id));
+              setSelectedNote((prev) => (prev?.id === note.id ? null : prev));
             } catch (e) {
               Alert.alert('Could not delete', e instanceof Error ? e.message : 'Try again');
             }
@@ -121,9 +126,15 @@ export default function NotesScreen() {
         renderItem={({ item }) => (
           <Card style={styles.card}>
             <View style={styles.cardHeader}>
-              <Text variant="bodyMedium" numberOfLines={2} style={styles.title}>
-                {item.title}
-              </Text>
+              <PressableScale
+                style={styles.cardTap}
+                onPress={() => setSelectedNote(item)}
+                accessibilityRole="button"
+                accessibilityLabel={`Open note: ${item.title}`}>
+                <Text variant="bodyMedium" numberOfLines={2} style={styles.title}>
+                  {item.title}
+                </Text>
+              </PressableScale>
               <Pressable
                 onPress={() => onDelete(item)}
                 hitSlop={12}
@@ -131,14 +142,24 @@ export default function NotesScreen() {
                 <Trash2 color={colors.textMuted} size={18} />
               </Pressable>
             </View>
-            <Text variant="body" numberOfLines={6} style={styles.preview}>
-              {item.content}
-            </Text>
-            <Text variant="caption" muted>
-              {formatWhen(item.updatedAt)}
-            </Text>
+            <PressableScale
+              onPress={() => setSelectedNote(item)}
+              accessibilityRole="button"
+              accessibilityLabel={`Open note: ${item.title}`}>
+              <Text variant="body" numberOfLines={6} style={styles.preview}>
+                {stripMarkdownForPreview(item.content)}
+              </Text>
+              <Text variant="caption" muted>
+                {formatWhen(item.updatedAt)}
+              </Text>
+            </PressableScale>
           </Card>
         )}
+      />
+      <NoteDetailModal
+        note={selectedNote}
+        visible={selectedNote !== null}
+        onClose={() => setSelectedNote(null)}
       />
     </Screen>
   );
@@ -155,6 +176,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
+  cardTap: { flex: 1, minWidth: 0 },
   title: { flex: 1 },
   preview: { lineHeight: 22 },
 });

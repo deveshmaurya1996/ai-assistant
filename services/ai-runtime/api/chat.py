@@ -1,9 +1,11 @@
+import asyncio
 import logging
+import os
 import re
 import time
 from typing import Any, List, Dict, Optional, Union
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -215,7 +217,7 @@ def chat_title(payload: ChatTitleRequest):
 
 
 @router.post("/chat/stream")
-async def chat_stream(payload: ChatStreamRequest):
+async def chat_stream(payload: ChatStreamRequest, request: Request):
     t0 = time.perf_counter()
     context_str = await _resolve_context(payload)
     resolved_task = resolve_task_for_payload(
@@ -236,6 +238,13 @@ async def chat_stream(payload: ChatStreamRequest):
         payload.personality_id or "default",
     )
 
+    cancel_on_disconnect = os.getenv("ORCHESTRATOR_CANCEL_ON_DISCONNECT", "true").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    cancel_event = asyncio.Event()
+
     async def generate():
         langfuse = get_langfuse()
         trace_obj = None
@@ -247,8 +256,16 @@ async def chat_stream(payload: ChatStreamRequest):
                 metadata={"rag_enabled": payload.rag_enabled, "task": resolved_task},
             )
         try:
-            async for frame in stream_completion_sse(messages, resolved_task):
+            async for frame in stream_completion_sse(
+                messages, resolved_task, cancel_event=cancel_event
+            ):
+                if cancel_on_disconnect and await request.is_disconnected():
+                    cancel_event.set()
+                    break
                 yield frame
+        except asyncio.CancelledError:
+            cancel_event.set()
+            raise
         finally:
             logger.info("[chat] stream_end total_ms=%.0f", (time.perf_counter() - t0) * 1000)
             if trace_obj:

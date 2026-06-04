@@ -343,7 +343,9 @@ Example chains (see [build.nvidia.com/models](https://build.nvidia.com/models)):
 
 ### API keys (`.env`)
 
-`NVIDIA_API_KEY`, `POLLINATIONS_API_KEY` — availability gates models in YAML; no `TEXT_MODEL` env vars.
+`NVIDIA_API_KEY`, `GROQ_API_KEY`, `POLLINATIONS_API_KEY` — availability gates models in YAML; no `TEXT_MODEL` env vars.
+
+Groq is used as a **resilience layer** (tiered parallel racing with NVIDIA, rate-based circuit breaker). Check provider health: `GET /v1/providers/health` on ai-runtime.
 
 ---
 
@@ -491,7 +493,11 @@ GEMINI_API_KEY=
 OPENAI_API_KEY=
 ANTHROPIC_API_KEY=
 NVIDIA_API_KEY=
+GROQ_API_KEY=
 POLLINATIONS_API_KEY=
+ORCHESTRATOR_TIMEOUT_MS=35000
+ORCHESTRATOR_STREAM_TIMEOUT=45
+ORCHESTRATOR_CANCEL_ON_DISCONNECT=true
 
 # Optional YAML override
 # AI_MODELS_CONFIG=/path/to/ai-models.yaml

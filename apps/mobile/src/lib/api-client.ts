@@ -11,11 +11,18 @@ apiClient.setAuthProvider(async () => {
   return { cookie, token };
 });
 
+export function clearApiAuth(): void {
+  apiClient.clearAuth();
+}
+
 export function fileImageSource(fileId: string): { uri: string; headers?: { Cookie: string } } {
   const cookie = getAuthCookie();
   const token = getAuthSessionToken();
+  const effectiveCookie =
+    cookie ||
+    (token ? `better-auth.session_token=${encodeURIComponent(token)}` : '');
   return {
     uri: apiClient.fileContentUrl(fileId, token),
-    headers: cookie ? { Cookie: cookie } : undefined,
+    headers: effectiveCookie ? { Cookie: effectiveCookie } : undefined,
   };
 }

@@ -91,6 +91,7 @@ export async function agentRoutes(fastify: FastifyInstance) {
         probe('tool-runtime', () => toolRuntimeFetch('/health')),
         probe('skill-runtime', () => skillRuntimeFetch('/health')),
         probe('cognitive-runtime', () => orchestratorFetch('/health')),
+        probe('ai-runtime-providers', () => fetchAi('/v1/providers/health')),
         probe('cognitive-diagnostics', () =>
           orchestratorFetch(`/v1/agent/diagnostics?userId=${encodeURIComponent(userId)}`)
         ),

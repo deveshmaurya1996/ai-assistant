@@ -14,6 +14,7 @@ import { Routes } from '@/lib/routes';
 
 export default function RegisterScreen() {
   const signUp = useAuthStore((s) => s.signUp);
+  const ensureAuthenticated = useAuthStore((s) => s.ensureAuthenticated);
   const hasAcceptedTerms = useSettingsStore((s) => s.hasAcceptedTerms);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -34,6 +35,10 @@ export default function RegisterScreen() {
     setLoading(true);
     try {
       await signUp(email.trim(), password, name.trim() || 'User');
+      const ok = await ensureAuthenticated();
+      if (!ok) {
+        throw new Error('Could not verify your session. Try again.');
+      }
       router.replace(Routes.chatCompose);
     } catch (e) {
       Alert.alert('Registration failed', e instanceof Error ? e.message : 'Unknown error');

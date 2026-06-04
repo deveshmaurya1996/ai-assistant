@@ -41,6 +41,7 @@ export function ChatThinkingIndicator({
   const translateY = useSharedValue(0);
   const scaleY = useSharedValue(1);
   const labelOpacity = useSharedValue(0.7);
+  const enterOpacity = useSharedValue(0);
 
   useEffect(() => {
     if (statusOverride?.trim()) {
@@ -52,6 +53,14 @@ export function ChatThinkingIndicator({
     recentFunny.current.clear();
     setStatusText(phrases[0] ?? 'Thinking');
   }, [phrases, userMessage, statusOverride]);
+
+  useEffect(() => {
+    enterOpacity.value = 0;
+    enterOpacity.value = withTiming(1, {
+      duration: 280,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [enterOpacity]);
 
   useEffect(() => {
     translateY.value = withRepeat(
@@ -116,8 +125,12 @@ export function ChatThinkingIndicator({
     opacity: labelOpacity.value,
   }));
 
+  const enterStyle = useAnimatedStyle(() => ({
+    opacity: enterOpacity.value,
+  }));
+
   return (
-    <View style={styles.row}>
+    <Animated.View style={[styles.row, enterStyle]}>
       <View style={styles.bounceLane}>
         <Animated.View
           style={[
@@ -135,7 +148,7 @@ export function ChatThinkingIndicator({
           {`${statusText}…`}
         </Text>
       </Animated.View>
-    </View>
+    </Animated.View>
   );
 }
 

@@ -45,12 +45,13 @@ export function InlineStreamingCursor({ color }: Props) {
   }));
 
   return (
-    <Animated.Text style={[typography.body, styles.cursor, { color }, style]}>|</Animated.Text>
+    <Animated.Text style={[styles.cursor, { color }, style]}>|</Animated.Text>
   );
 }
 
 const styles = StyleSheet.create({
   cursor: {
+    ...typography.body,
     fontWeight: '600',
   },
 });

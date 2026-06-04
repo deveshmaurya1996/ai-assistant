@@ -29,6 +29,7 @@
     "mobile:android": "pnpm --filter @ai-assistant/mobile android"
   },
   "devDependencies": {
+    "is-unicode-supported": "^2.1.0",
     "prettier": "latest",
     "turbo": "latest"
   },

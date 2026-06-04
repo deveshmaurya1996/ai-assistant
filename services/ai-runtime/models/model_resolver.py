@@ -33,9 +33,15 @@ def _infer_provider(model_id: str, entry: Optional[Dict[str, Any]]) -> str:
         return str(entry["provider"])
     if model_id.startswith("pollinations/"):
         return "pollinations"
+    if model_id.startswith("groq/"):
+        return "groq"
     if model_id.startswith("nvidia/") or model_id.startswith("google/"):
         return "nvidia"
     return ""
+
+
+def provider_for_model(model_id: str) -> str:
+    return _infer_provider(model_id, model_def(model_id))
 
 
 def model_is_available(model_id: str) -> bool:
@@ -43,6 +49,8 @@ def model_is_available(model_id: str) -> bool:
     if not entry:
         if model_id.startswith("pollinations/"):
             return bool(_api_key("POLLINATIONS_API_KEY"))
+        if model_id.startswith("groq/"):
+            return bool(_api_key("GROQ_API_KEY"))
         if model_id.startswith("nvidia/") or model_id.startswith("google/"):
             return bool(_api_key("NVIDIA_API_KEY"))
         return False
@@ -72,8 +80,14 @@ _VISION_FALLBACK_TASKS = frozenset({"vision", "file_analysis"})
 
 
 def resolve_chain(task: str) -> List[str]:
+    from models.orchestration.circuit_breaker import circuit_breaker
+
     candidates = routing_for_task(task)
-    available = [m for m in candidates if model_is_available(m)]
+    available = [
+        m
+        for m in candidates
+        if model_is_available(m) and not circuit_breaker.is_open(provider_for_model(m))
+    ]
     if task in _VISION_FALLBACK_TASKS:
         for model_id in routing_for_task("fallback"):
             if model_is_available(model_id) and model_id not in available:
@@ -98,6 +112,9 @@ def _litellm_default_params(entry: Dict[str, Any]) -> Dict[str, Any]:
     ):
         if raw.get(key) is not None:
             out[key] = raw[key]
+    extra = raw.get("extra_body")
+    if isinstance(extra, dict) and extra:
+        out["extra_body"] = extra
     return out
 
 
@@ -131,6 +148,19 @@ def litellm_kwargs(model_id: str, *, stream: bool = True) -> Dict[str, Any]:
         )
         return kwargs
 
+    if kind == "groq" or provider == "groq" or model_id.startswith("groq/"):
+        prov = _provider_cfg("groq")
+        provider_model = entry.get("providerModel") or model_id.split("/", 1)[-1]
+        base = str(prov.get("baseUrl", "https://api.groq.com/openai/v1")).rstrip("/")
+        kwargs.update(
+            {
+                "model": f"openai/{provider_model}",
+                "api_base": base if base.endswith("/v1") else f"{base}/v1",
+                "api_key": _api_key(prov.get("apiKeyEnv", "GROQ_API_KEY")),
+            }
+        )
+        return kwargs
+
     if kind == "openai_compatible" or provider == "nvidia" or model_id.startswith(
         ("nvidia/", "google/", "meta/", "mistralai/", "z-ai/", "qwen/", "microsoft/")
     ):
@@ -160,7 +190,6 @@ def pollinations_api_key() -> str:
 
 
 def pollinations_base_url() -> str:
-    """Pollinations root URL (no /v1) for audio/image routes."""
     prov = _provider_cfg("pollinations")
     base = str(prov.get("baseUrl", "https://gen.pollinations.ai/v1")).rstrip("/")
     if base.endswith("/v1"):

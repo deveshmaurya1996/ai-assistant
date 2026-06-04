@@ -10,6 +10,7 @@ import { Routes } from '@/lib/routes';
 
 export function GoogleSignInButton() {
   const signInWithGoogle = useAuthStore((s) => s.signInWithGoogle);
+  const ensureAuthenticated = useAuthStore((s) => s.ensureAuthenticated);
   const [loading, setLoading] = useState(false);
 
   if (!GOOGLE_AUTH_ENABLED) return null;
@@ -31,6 +32,10 @@ export function GoogleSignInButton() {
           setLoading(true);
           try {
             await signInWithGoogle();
+            const ok = await ensureAuthenticated();
+            if (!ok) {
+              throw new Error('Could not verify your session. Try again.');
+            }
             router.replace(Routes.chatCompose);
           } catch (e) {
             Alert.alert(

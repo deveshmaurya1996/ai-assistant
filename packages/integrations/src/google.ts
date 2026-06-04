@@ -1,6 +1,7 @@
 import type {
   Capability,
   ConnectChallenge,
+  ConnectUrlOptions,
   ConnectionMeta,
   ExecutionContext,
   HealthStatus,
@@ -42,7 +43,11 @@ export class GoogleConnector implements IntegrationConnector {
   providerId = 'google';
   capabilities: Capability[] = ['search', 'read', 'write', 'schedule'];
 
-  async getConnectUrl(userId: string, state: string): Promise<ConnectChallenge> {
+  async getConnectUrl(
+    userId: string,
+    state: string,
+    options?: ConnectUrlOptions
+  ): Promise<ConnectChallenge> {
     const { clientId, redirectUri } = assertGoogleIntegrationConfigured();
 
     const params = new URLSearchParams({
@@ -51,13 +56,16 @@ export class GoogleConnector implements IntegrationConnector {
       response_type: 'code',
       scope: GOOGLE_SCOPES,
       access_type: 'offline',
-      prompt: 'consent',
+      prompt: options?.hasRefreshToken ? 'none' : 'consent',
       state: `${userId}:${state}`,
     });
+    if (options?.loginHint) {
+      params.set('login_hint', options.loginHint);
+    }
 
     return {
       type: 'oauth',
-      url: `https://accounts.google.com/o/oauth2/v2/auth?${params}`,
+      url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
       state,
     };
   }
@@ -95,6 +103,39 @@ export class GoogleConnector implements IntegrationConnector {
       throw new Error(`Google token exchange failed: ${await res.text()}`);
     }
     return (await res.json()) as JsonObject;
+  }
+
+  async refreshTokens(
+    _connectionId: string,
+    credentials: JsonObject
+  ): Promise<JsonObject> {
+    const refreshToken = credentials.refresh_token as string | undefined;
+    if (!refreshToken) {
+      throw new Error('No Google refresh token — reconnect Google in Connect Apps');
+    }
+
+    const { clientId, clientSecret } = assertGoogleIntegrationConfigured();
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token',
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Google token refresh failed: ${await res.text()}`);
+    }
+
+    const tokens = (await res.json()) as JsonObject;
+    return {
+      ...credentials,
+      ...tokens,
+      refresh_token: (tokens.refresh_token as string | undefined) ?? refreshToken,
+    };
   }
 
   async healthCheck(_connectionId: string, credentials: JsonObject): Promise<HealthStatus> {

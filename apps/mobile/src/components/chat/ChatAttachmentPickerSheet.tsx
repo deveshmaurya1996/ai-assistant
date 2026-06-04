@@ -42,8 +42,11 @@ export const ChatAttachmentPickerSheet = forwardRef<BottomSheetModalType, Props>
     return (
       <BottomSheetModal
         ref={ref}
-        snapPoints={['32%']}
+        snapPoints={['35%']}
         enablePanDownToClose
+        keyboardBehavior="extend"
+        keyboardBlurBehavior="restore"
+        android_keyboardInputMode="adjustResize"
         backgroundStyle={{ backgroundColor: colors.surface }}>
         <BottomSheetView style={styles.content}>
           <Text variant="h2" style={styles.title}>

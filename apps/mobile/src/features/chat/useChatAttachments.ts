@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -237,6 +237,62 @@ export function useChatAttachments() {
     );
   }, [queue]);
 
+  const commitUpload = useCallback(
+    (
+      item: PendingUpload<ChatUploadMeta>,
+      result: NonNullable<Awaited<ReturnType<typeof queue.uploadOne>>>
+    ): ChatAttachmentRef => {
+      const kind = item.meta?.kind ?? kindFromMime(result.mimeType);
+      const chatRef = toChatRef(result, kind);
+
+      queue.setItems((prev) =>
+        prev.map((p) =>
+          p.localId === item.localId
+            ? {
+                ...p,
+                meta: { kind, chatRef },
+              }
+            : p
+        )
+      );
+
+      if (kind === 'image') {
+        setPreview(chatRef.id, item.source.uri);
+      }
+
+      return chatRef;
+    },
+    [queue, setPreview]
+  );
+
+  const uploadPendingRef = useRef(new Set<string>());
+
+  const uploadPendingItem = useCallback(
+    async (item: PendingUpload<ChatUploadMeta>) => {
+      if (item.error || item.meta?.chatRef || item.status !== 'pending') return;
+      if (uploadPendingRef.current.has(item.localId)) return;
+
+      uploadPendingRef.current.add(item.localId);
+      try {
+        const result = await queue.uploadOne(item);
+        if (result) commitUpload(item, result);
+      } catch {
+        // per-item error is stored on the queue item
+      } finally {
+        uploadPendingRef.current.delete(item.localId);
+      }
+    },
+    [commitUpload, queue]
+  );
+
+  useEffect(() => {
+    for (const item of queue.items) {
+      if (item.status === 'pending' && !item.error && !item.meta?.chatRef) {
+        void uploadPendingItem(item);
+      }
+    }
+  }, [queue.items, uploadPendingItem]);
+
   const uploadAll = useCallback(async (): Promise<ChatAttachmentRef[]> => {
     const snapshot = [...queue.items];
     const refs: ChatAttachmentRef[] = [];
@@ -251,25 +307,7 @@ export function useChatAttachments() {
       try {
         const result = await queue.uploadOne(item);
         if (!result) continue;
-
-        const kind = item.meta?.kind ?? kindFromMime(result.mimeType);
-        const chatRef = toChatRef(result, kind);
-
-        queue.setItems((prev) =>
-          prev.map((p) =>
-            p.localId === item.localId
-              ? {
-                  ...p,
-                  meta: { kind, chatRef },
-                }
-              : p
-          )
-        );
-
-        if (kind === 'image') {
-          setPreview(chatRef.id, item.source.uri);
-        }
-        refs.push(chatRef);
+        refs.push(commitUpload(item, result));
       } catch {
         throw new Error(
           queue.items.find((i) => i.error)?.error ?? 'Upload failed'
@@ -278,7 +316,7 @@ export function useChatAttachments() {
     }
 
     return refs;
-  }, [queue, setPreview]);
+  }, [commitUpload, queue]);
 
   return {
     items,

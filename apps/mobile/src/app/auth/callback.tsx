@@ -1,19 +1,18 @@
 import { useEffect, useRef } from 'react';
-import { ActivityIndicator, Platform, View } from 'react-native';
+import { Platform } from 'react-native';
 import * as Linking from 'expo-linking';
 import { router, useLocalSearchParams } from 'expo-router';
-import { fetchSession } from '@/lib/auth-client';
+import { fetchVerifiedSession } from '@/lib/auth-client';
 import {
   applyOAuthCookieFromUrl,
   applyOAuthCookieParam,
 } from '@/lib/auth-cookies';
 import { useAuthStore } from '@/stores/auth';
 import { writeWebSessionCache } from '@/lib/web-session-cache';
-import { useTheme } from '@/theme/ThemeProvider';
+import { AppSplash } from '@/components/boot/AppSplash';
 import { Routes } from '@/lib/routes';
 
 export default function AuthCallbackScreen() {
-  const { colors } = useTheme();
   const params = useLocalSearchParams<{ cookie?: string }>();
   const handled = useRef(false);
 
@@ -32,10 +31,10 @@ export default function AuthCallbackScreen() {
         await applyOAuthCookieFromUrl(incomingUrl);
       }
 
-      const session = await fetchSession();
+      const session = await fetchVerifiedSession();
       if (session) {
         if (Platform.OS === 'web') writeWebSessionCache(session);
-        useAuthStore.setState({ session, loading: false });
+        useAuthStore.setState({ session, loading: false, hydrated: true });
         router.replace(Routes.chatCompose);
         return;
       }
@@ -58,15 +57,5 @@ export default function AuthCallbackScreen() {
     return () => subscription.remove();
   }, [params.cookie]);
 
-  return (
-    <View
-      style={{
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: colors.background,
-      }}>
-      <ActivityIndicator size="large" color={colors.primary} />
-    </View>
-  );
+  return <AppSplash />;
 }

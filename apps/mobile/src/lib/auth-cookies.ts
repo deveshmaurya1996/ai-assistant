@@ -1,6 +1,6 @@
 import { getCookie, getSetCookie } from '@better-auth/expo/client';
 import { authClient, readBetterAuthStoredSession } from '@/lib/auth-client';
-import { authStorage } from '@/lib/secure-storage';
+import { authStorage, deleteItemAsync } from '@/lib/secure-storage';
 
 export const AUTH_COOKIE_STORAGE_KEY = 'ai-assistant_cookie';
 
@@ -35,6 +35,14 @@ export function getAuthSessionToken(): string | undefined {
 
 export function getSocketSessionToken(): string | undefined {
   return getAuthSessionToken();
+}
+
+export function hasAuthCredentials(): boolean {
+  return Boolean(getAuthCookie() || getAuthSessionToken());
+}
+
+export async function clearAuthCookie(): Promise<void> {
+  await deleteItemAsync(AUTH_COOKIE_STORAGE_KEY);
 }
 
 function decodeCookieParam(raw: string): string {

@@ -12,7 +12,10 @@ import { isFeatureEnabled } from '@ai-assistant/feature-flags';
 import { authenticateRequest } from '../utils/auth.middleware';
 import { requireUserId } from '../lib/auth';
 import { sendError } from '../lib/errors';
-import { encryptCredentials } from '../services/encryption.service';
+import {
+  decryptCredentials,
+  encryptCredentials,
+} from '../services/encryption.service';
 import { sessionManager } from '../whatsapp/session-manager';
 import { markConnectionActive } from '../whatsapp/connection-lifecycle';
 import { randomBytes } from 'crypto';
@@ -270,7 +273,27 @@ export async function integrationRoutes(fastify: FastifyInstance) {
       }
 
       const state = randomBytes(16).toString('hex');
-      const challenge = await connector.getConnectUrl(userId, state);
+
+      const [user, existingConnection] = await Promise.all([
+        prisma.user.findUnique({ where: { id: userId }, select: { email: true } }),
+        prisma.userConnection.findUnique({ where: { id: connectionId } }),
+      ]);
+
+      let hasRefreshToken = false;
+      if (existingConnection?.encryptedCredentials) {
+        try {
+          const raw = decryptCredentials(existingConnection.encryptedCredentials);
+          const creds = JSON.parse(raw) as { refresh_token?: string };
+          hasRefreshToken = Boolean(creds.refresh_token);
+        } catch {
+          hasRefreshToken = false;
+        }
+      }
+
+      const challenge = await connector.getConnectUrl(userId, state, {
+        loginHint: user?.email,
+        hasRefreshToken,
+      });
 
       const metadata: Record<string, unknown> = {
         state,

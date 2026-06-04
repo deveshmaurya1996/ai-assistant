@@ -1,11 +1,16 @@
+import { forwardRef } from 'react';
 import { TextInput, StyleSheet, type TextInputProps } from 'react-native';
 import { useTheme } from '@/theme/ThemeProvider';
 import { radii, spacing, typography } from '@/theme/tokens';
 
-export function Input({ style, ...props }: TextInputProps) {
+export const Input = forwardRef<TextInput, TextInputProps>(function Input(
+  { style, ...props },
+  ref
+) {
   const { colors, colorScheme } = useTheme();
   return (
     <TextInput
+      ref={ref}
       placeholderTextColor={colors.textMuted}
       keyboardAppearance={colorScheme === 'dark' ? 'dark' : 'light'}
       selectionColor={colors.primary}
@@ -22,7 +27,7 @@ export function Input({ style, ...props }: TextInputProps) {
       {...props}
     />
   );
-}
+});
 
 const styles = StyleSheet.create({
   input: {

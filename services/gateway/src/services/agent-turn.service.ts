@@ -187,6 +187,18 @@ export async function runAgentTurn(
         if (payload.message) {
           void callbacks.onStatus?.(payload.message);
         }
+      } else if (ev.event === 'provider_switch') {
+        const payload = safeParseJson<{
+          message?: string;
+          to_provider?: string;
+          to_model?: string;
+        }>(ev.data, {});
+        const message =
+          payload.message ??
+          (payload.to_provider
+            ? `Switching provider (${payload.to_provider})…`
+            : 'Switching provider…');
+        void callbacks.onStatus?.(message);
       } else if (ev.event === 'action_confirm') {
         const payload = safeParseJson<{
           requiresConfirmation?: boolean;

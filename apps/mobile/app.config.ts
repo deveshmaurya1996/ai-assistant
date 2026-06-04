@@ -51,6 +51,19 @@ const config: ExpoConfig = {
       },
     ],
     './modules/overlay/app.plugin.js',
+    'expo-video',
+    [
+      'expo-splash-screen',
+      {
+        backgroundColor: '#F4F5F7',
+        image: './assets/images/splash-icon.png',
+        imageWidth: 120,
+        dark: {
+          backgroundColor: '#0B0D10',
+          image: './assets/images/splash-icon.png',
+        },
+      },
+    ],
   ],
   experiments: {
     typedRoutes: true,

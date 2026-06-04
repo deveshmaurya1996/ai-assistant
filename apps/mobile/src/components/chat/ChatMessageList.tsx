@@ -61,9 +61,9 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function
   onSaveNote,
 }, ref) {
   const listRef = useRef<FlashListRef<ChatMessage>>(null);
-  const scrollThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedRevision = useSavedNotesStore((s) => s.revision);
   const thinkingUserMessage = useMemo(() => lastUserMessageText(messages), [messages]);
+  const streamActive = isStreaming || isGenerating;
 
   const scrollToEnd = useCallback(
     (animated = true) => {
@@ -78,25 +78,31 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function
   useImperativeHandle(ref, () => ({ scrollToEnd }), [scrollToEnd]);
 
   useEffect(() => {
-    const animated = !isStreaming && !isGenerating;
-    if (animated) {
+    if (messages.length === 0) return;
+    if (!streamActive) {
       scrollToEnd(true);
       return;
     }
 
-    if (scrollThrottleRef.current != null) return;
-    scrollThrottleRef.current = setTimeout(() => {
-      scrollThrottleRef.current = null;
-      scrollToEnd(false);
-    }, 250);
+    let frame = 0;
+    let lastScrollAt = 0;
 
-    return () => {
-      if (scrollThrottleRef.current != null) {
-        clearTimeout(scrollThrottleRef.current);
-        scrollThrottleRef.current = null;
+    const followStream = (time: number) => {
+      if (time - lastScrollAt >= 48) {
+        lastScrollAt = time;
+        listRef.current?.scrollToEnd({ animated: true });
       }
+      frame = requestAnimationFrame(followStream);
     };
-  }, [messages.length, streamRevision, isStreaming, isGenerating, scrollToEnd]);
+
+    frame = requestAnimationFrame(followStream);
+    return () => cancelAnimationFrame(frame);
+  }, [messages.length, streamActive, scrollToEnd]);
+
+  useEffect(() => {
+    if (!streamActive) return;
+    scrollToEnd(true);
+  }, [streamRevision, visibleText, streamActive, scrollToEnd]);
 
   useEffect(() => {
     const sub = Keyboard.addListener('keyboardDidShow', () => scrollToEnd(true));
@@ -107,24 +113,27 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function
     ({ item }) => {
       const isStreamRow = item.id === STREAMING_MESSAGE_ID;
       return (
-        <ChatMessageBubble
-          message={item}
-          assistantLabel={messageAssistantLabel(item, streamingAssistantLabel)}
-          showGeneratingSpinner={isStreamRow && isGenerating}
-          showStreamCursor={isStreamRow && showStreamCursor && isStreaming}
-          streamActive={isStreamRow && (isStreaming || isGenerating)}
-          streamTurnKey={streamTurnKey}
-          thinkingUserMessage={isStreamRow ? thinkingUserMessage : undefined}
-          streamStatusMessage={isStreamRow ? streamStatusMessage : undefined}
-          isSaved={savedMessageIds?.has(item.id) ?? false}
-          onSaveNote={onSaveNote}
-        />
+        <View style={styles.row}>
+          <ChatMessageBubble
+            message={item}
+            assistantLabel={messageAssistantLabel(item, streamingAssistantLabel)}
+            showGeneratingSpinner={isStreamRow && isGenerating}
+            showStreamCursor={isStreamRow && showStreamCursor && isStreaming}
+            streamActive={isStreamRow && streamActive}
+            streamTurnKey={streamTurnKey}
+            thinkingUserMessage={isStreamRow ? thinkingUserMessage : undefined}
+            streamStatusMessage={isStreamRow ? streamStatusMessage : undefined}
+            isSaved={savedMessageIds?.has(item.id) ?? false}
+            onSaveNote={onSaveNote}
+          />
+        </View>
       );
     },
     [
       streamingAssistantLabel,
       isGenerating,
       isStreaming,
+      streamActive,
       onSaveNote,
       savedMessageIds,
       showStreamCursor,
@@ -148,7 +157,7 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function
     <FlashList
       ref={listRef}
       data={messages}
-      extraData={`${streamRevision}|${isStreaming}|${isGenerating}|${streamTurnKey}|${savedRevision}`}
+      extraData={`${streamRevision}|${visibleText.length}|${streamActive}|${streamTurnKey}|${savedRevision}`}
       keyExtractor={(item) => item.id}
       contentContainerStyle={[
         styles.list,
@@ -164,6 +173,10 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function
 
 const styles = StyleSheet.create({
   listContainer: { flex: 1 },
+  row: {
+    flexGrow: 0,
+    flexShrink: 0,
+  },
   list: {
     padding: spacing.md,
     paddingBottom: spacing.lg,

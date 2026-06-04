@@ -29,7 +29,11 @@ import type { UserConnection } from '@ai-assistant/types';
 const TITLE = 'Connect Apps';
 
 const PROVIDERS = [
-  { id: 'google', name: 'Google', description: 'Gmail, Calendar, Drive' },
+  {
+    id: 'google',
+    name: 'Google',
+    description: 'Grant Gmail, Calendar & Drive access',
+  },
   { id: 'whatsapp', name: 'WhatsApp', description: 'Linked device messages' },
   { id: 'files', name: 'Files', description: 'Upload & search files' },
 ] as const;
@@ -100,7 +104,11 @@ export default function IntegrationsScreen() {
     try {
       const challenge = await apiClient.connectProvider(providerId);
       if (challenge.type === 'oauth' && challenge.url) {
-        await Linking.openURL(challenge.url);
+        if (Platform.OS === 'web' && typeof window !== 'undefined') {
+          window.location.href = challenge.url;
+        } else {
+          await Linking.openURL(challenge.url);
+        }
       } else if (providerId === 'whatsapp' && challenge.connectionId) {
         router.push(
           integrationProviderRoute(providerId, {
@@ -181,9 +189,16 @@ export default function IntegrationsScreen() {
           />
         }
         ListHeaderComponent={
-          <Text variant="caption" muted style={styles.subtitle}>
-            Link apps so your assistant can help with mail, messages, and files.
-          </Text>
+          <View style={styles.header}>
+            <Text variant="caption" muted style={styles.subtitle}>
+              You are signed in to AI Assistant. Connecting an app grants API access
+              only — it does not sign you out or log you in again.
+            </Text>
+            <Text variant="caption" muted style={styles.subtitle}>
+              For Google, you will approve Gmail, Calendar, and Drive permissions in
+              Google&apos;s consent screen.
+            </Text>
+          </View>
         }
         renderItem={({ item, index }) => {
           const connected = isActive(item.id);
@@ -233,7 +248,8 @@ export default function IntegrationsScreen() {
 const styles = StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   list: { padding: spacing.md, paddingBottom: 140, flexGrow: 1 },
-  subtitle: { marginBottom: spacing.sm },
+  header: { gap: spacing.xs, marginBottom: spacing.sm },
+  subtitle: { lineHeight: 18 },
   cardWrap: { marginBottom: spacing.sm },
   card: {
     flexDirection: 'row',

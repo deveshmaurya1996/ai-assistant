@@ -87,6 +87,8 @@ def timeout_for_model(model_id: str, *, stream: bool) -> float:
     if not provider:
         if model_id.startswith("nvidia/"):
             provider = "nvidia"
+        elif model_id.startswith("groq/"):
+            provider = "groq"
         elif model_id.startswith("pollinations/"):
             provider = "pollinations"
 
@@ -145,3 +147,39 @@ def routing_for_task(task: str) -> List[str]:
     routing = cfg.get("routing") or {}
     chain = routing.get(task) or routing.get("fallback") or []
     return [str(m) for m in chain]
+
+
+def get_orchestration_config() -> Dict[str, Any]:
+    cfg = load_ai_models_config()
+    orch = cfg.get("orchestration") or {}
+    breaker = orch.get("circuitBreaker") or {}
+    racing = orch.get("racing") or {}
+    return {
+        "windowSize": int(breaker.get("windowSize", 50)),
+        "failureRateThreshold": float(breaker.get("failureRateThreshold", 0.5)),
+        "minSamplesToOpen": int(breaker.get("minSamplesToOpen", 10)),
+        "openDurationSeconds": int(breaker.get("openDurationSeconds", 600)),
+        "maxConcurrentPerTier": int(racing.get("maxConcurrentPerTier", 2)),
+    }
+
+
+def routing_tiers_for_task(task: str) -> Dict[str, List[str]]:
+    cfg = load_ai_models_config()
+    tiers_cfg = cfg.get("routingTiers") or {}
+    entry = tiers_cfg.get(task) or tiers_cfg.get("fast_chat") or {}
+    flat = routing_for_task(task)
+    result: Dict[str, List[str]] = {
+        "tier1": [str(m) for m in entry.get("tier1") or []],
+        "tier2": [str(m) for m in entry.get("tier2") or []],
+        "tier3": [str(m) for m in entry.get("tier3") or flat],
+    }
+    if not result["tier1"] and flat:
+        nvidia_models = [m for m in flat if m.startswith("nvidia/")]
+        groq_t1 = [m for m in flat if m.startswith("groq/") and "8b" not in m and "20b" not in m]
+        groq_t2 = [m for m in flat if m.startswith("groq/") and ("8b" in m or "20b" in m)]
+        result["tier1"] = (nvidia_models[:1] + groq_t1[:1])[:2]
+        result["tier2"] = groq_t2[:2]
+        result["tier3"] = [
+            m for m in flat if m not in result["tier1"] and m not in result["tier2"]
+        ]
+    return result

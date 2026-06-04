@@ -18,6 +18,7 @@ services/whatsapp-bridge/data/
 data/uploads/
 data/wa-auth/
 services/api/data/wa-auth/
+services/gateway/data/wa-auth/
 
 packages/database/prisma/dev.db
 packages/database/prisma/dev.db-journal

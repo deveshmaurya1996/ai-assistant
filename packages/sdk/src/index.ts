@@ -42,6 +42,8 @@ export type AuthCredentials = {
 
 export type AuthProvider = () => Promise<AuthCredentials | null>;
 
+const SESSION_COOKIE_NAME = 'better-auth.session_token';
+
 export class AssistantClient {
   private baseUrl: string;
   private cookie = '';
@@ -58,6 +60,11 @@ export class AssistantClient {
     this.authProvider = provider;
   }
 
+  clearAuth(): void {
+    this.cookie = '';
+    this.sessionToken = '';
+  }
+
   private async resolveAuth(): Promise<void> {
     if (!this.authProvider) return;
     const creds = await this.authProvider();
@@ -68,6 +75,12 @@ export class AssistantClient {
     if (creds.token) {
       this.sessionToken = creds.token;
     }
+  }
+
+  private buildCookieHeader(): string {
+    if (this.cookie) return this.cookie;
+    if (!this.sessionToken) return '';
+    return `${SESSION_COOKIE_NAME}=${encodeURIComponent(this.sessionToken)}`;
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -86,8 +99,9 @@ export class AssistantClient {
       Origin: this.origin,
       ...(options.headers as Record<string, string>),
     };
-    if (this.cookie) {
-      headers.cookie = this.cookie;
+    const cookieHeader = this.buildCookieHeader();
+    if (cookieHeader) {
+      headers.cookie = cookieHeader;
     }
     const hasBody = body !== undefined && body !== null && body !== '';
     if (hasBody) {
@@ -215,11 +229,13 @@ export class AssistantClient {
   async connectSocket(sessionToken?: string): Promise<AssistantSocket> {
     await this.resolveAuth();
     const token = sessionToken ?? this.sessionToken;
-    const cookieName = 'better-auth.session_token';
-    let cookieHeader = this.cookie;
-    if (token && !cookieHeader.includes(cookieName)) {
-      const tokenCookie = `${cookieName}=${token}`;
-      cookieHeader = cookieHeader ? `${cookieHeader}; ${tokenCookie}` : tokenCookie;
+    if (token && !this.cookie) {
+      this.sessionToken = token;
+    }
+    let cookieHeader = this.buildCookieHeader();
+    if (token && cookieHeader && !cookieHeader.includes(SESSION_COOKIE_NAME)) {
+      const tokenCookie = `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}`;
+      cookieHeader = `${cookieHeader}; ${tokenCookie}`;
     }
     const socket = io(this.baseUrl, {
       auth: { token },
@@ -305,8 +321,9 @@ export class AssistantClient {
     const headers: Record<string, string> = {
       Origin: this.origin,
     };
-    if (this.cookie) {
-      headers.cookie = this.cookie;
+    const cookieHeader = this.buildCookieHeader();
+    if (cookieHeader) {
+      headers.cookie = cookieHeader;
     }
 
     const res = await fetch(`${this.baseUrl}/voice/transcribe`, {
@@ -362,8 +379,9 @@ export class AssistantClient {
     const headers: Record<string, string> = {
       Origin: this.origin,
     };
-    if (this.cookie) {
-      headers.cookie = this.cookie;
+    const cookieHeader = this.buildCookieHeader();
+    if (cookieHeader) {
+      headers.cookie = cookieHeader;
     }
 
     const uploadSignal =
@@ -402,8 +420,9 @@ export class AssistantClient {
       Origin: this.origin,
       'Content-Type': 'application/json',
     };
-    if (this.cookie) {
-      headers.cookie = this.cookie;
+    const cookieHeader = this.buildCookieHeader();
+    if (cookieHeader) {
+      headers.cookie = cookieHeader;
     }
 
     const body: { text: string; voice?: string } = { text };

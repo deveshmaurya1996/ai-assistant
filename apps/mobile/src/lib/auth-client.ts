@@ -6,6 +6,7 @@ import type { SessionInfo } from '@ai-assistant/sdk';
 import { API_URL } from './config';
 import { authStorage } from '@/lib/secure-storage';
 import { readWebSessionCache, writeWebSessionCache } from '@/lib/web-session-cache';
+import { hasAuthCredentials } from '@/lib/auth-cookies';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -74,6 +75,20 @@ export function toSessionInfo(data: BetterAuthSessionPayload | null | undefined)
   };
 }
 
+function isLikelyNetworkError(err: unknown): boolean {
+  if (err instanceof TypeError) return true;
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase();
+    return (
+      msg.includes('network') ||
+      msg.includes('fetch') ||
+      msg.includes('failed to fetch') ||
+      msg.includes('timeout')
+    );
+  }
+  return false;
+}
+
 export async function fetchSession(): Promise<SessionInfo | null> {
   try {
     const { data } = await authClient.getSession();
@@ -82,13 +97,20 @@ export async function fetchSession(): Promise<SessionInfo | null> {
       if (Platform.OS === 'web') writeWebSessionCache(session);
       return session;
     }
-  } catch {
-    /* fall through to persisted session on web */
+    if (Platform.OS === 'web') writeWebSessionCache(null);
+    return null;
+  } catch (err) {
+    if (Platform.OS === 'web' && isLikelyNetworkError(err)) {
+      return readPersistedWebSession();
+    }
+    if (Platform.OS === 'web') writeWebSessionCache(null);
+    return null;
   }
+}
 
-  if (Platform.OS === 'web') {
-    return readPersistedWebSession();
-  }
-
-  return null;
+export async function fetchVerifiedSession(): Promise<SessionInfo | null> {
+  const session = await fetchSession();
+  if (!session) return null;
+  if (!hasAuthCredentials()) return null;
+  return session;
 }

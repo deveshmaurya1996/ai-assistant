@@ -7,7 +7,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -219,8 +219,11 @@ async def _hybrid_memory_block(
             return "", status_emitted
 
 
+ORCHESTRATOR_STREAM_TIMEOUT = float(os.getenv("ORCHESTRATOR_STREAM_TIMEOUT", "45"))
+
+
 @app.post("/v1/agent/turn")
-async def agent_turn(payload: AgentTurnRequest):
+async def agent_turn(payload: AgentTurnRequest, request: Request):
     from orchestration.planner import plan_tools
     from orchestration.executor import execute_planned_tools
     from orchestration.context import (
@@ -483,7 +486,7 @@ async def agent_turn(payload: AgentTurnRequest):
             cap_file_context=cap_file,
         ) or prebuilt_context
 
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=ORCHESTRATOR_STREAM_TIMEOUT) as client:
             tool_context = ""
             if tool_results:
                 tool_context = "\n\nTool results:\n" + str(tool_results)
@@ -539,6 +542,9 @@ async def agent_turn(payload: AgentTurnRequest):
 
                 first_byte = True
                 async for chunk in response.aiter_bytes():
+                    if await request.is_disconnected():
+                        await response.aclose()
+                        break
                     if first_byte:
                         timings["time_to_first_byte_ms"] = (
                             time.perf_counter() - turn_t0

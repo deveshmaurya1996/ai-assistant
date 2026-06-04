@@ -1,39 +1,41 @@
 import { memo } from 'react';
-import { StyleSheet, Text as RNText } from 'react-native';
-import { typography } from '@/theme/tokens';
+import { AppMarkdown } from '@/components/markdown/AppMarkdown';
+import { useSmoothStreamText } from '@/features/chat/useSmoothStreamText';
 
 type Props = {
   content: string;
   color: string;
+  accentColor?: string;
   showCursor?: boolean;
   cursorColor?: string;
+  revealActive?: boolean;
 };
 
 export const ChatStreamingText = memo(function ChatStreamingText({
   content,
   color,
+  accentColor,
   showCursor = false,
   cursorColor,
+  revealActive = true,
 }: Props) {
-  if (!content && !showCursor) {
+  const accent = accentColor ?? color;
+  const revealed = useSmoothStreamText(content, revealActive);
+  const showContent = Boolean(revealed.trim()) || showCursor;
+
+  if (!showContent) {
     return null;
   }
 
   return (
-    <RNText style={[typography.body, styles.text, { color }]}>
-      {content}
-      {showCursor && cursorColor ? (
-        <RNText style={[styles.cursor, { color: cursorColor }]}>|</RNText>
-      ) : null}
-    </RNText>
+    <AppMarkdown
+      content={revealed}
+      color={color}
+      accentColor={accent}
+      variant="chat"
+      streaming
+      showCursor={showCursor}
+      cursorColor={cursorColor}
+    />
   );
-});
-
-const styles = StyleSheet.create({
-  text: {
-    flexWrap: 'wrap',
-  },
-  cursor: {
-    fontWeight: '600',
-  },
 });

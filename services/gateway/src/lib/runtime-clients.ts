@@ -36,7 +36,7 @@ export async function orchestratorFetch(
 ): Promise<Response> {
   const base = config.cognitiveRuntimeUrl.replace(/\/$/, '');
   const normalized = path.startsWith('/') ? path : `/${path}`;
-  const timeoutMs = 120_000;
+  const timeoutMs = Number(process.env.ORCHESTRATOR_TIMEOUT_MS ?? 30_000);
   const signal =
     init?.signal ??
     (typeof AbortSignal.timeout === 'function'

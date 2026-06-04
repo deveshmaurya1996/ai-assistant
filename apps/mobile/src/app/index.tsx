@@ -1,47 +1,25 @@
 import { useEffect } from 'react';
-import { ActivityIndicator, View } from 'react-native';
 import { router, useRootNavigationState } from 'expo-router';
 import { useAuthStore } from '@/stores/auth';
 import { useSettingsStore } from '@/stores/settings';
-import { useTheme } from '@/theme/ThemeProvider';
-import { Text } from '@/components/ui/Text';
+import { AppSplash } from '@/components/boot/AppSplash';
 
 import { Routes } from '@/lib/routes';
 
 export default function Index() {
-  const { colors } = useTheme();
-  const { session, loading, hydrate } = useAuthStore();
+  const { session } = useAuthStore();
   const settingsReady = useSettingsStore((s) => s.hydrated);
   const navigationState = useRootNavigationState();
 
   useEffect(() => {
-    void hydrate();
-  }, [hydrate]);
-
-  useEffect(() => {
-    if (!navigationState?.key) return;
-    if (loading || !settingsReady) return;
+    if (!navigationState?.key || !settingsReady) return;
 
     if (session) {
       router.replace(Routes.chatCompose);
     } else {
       router.replace('/(auth)/welcome');
     }
-  }, [navigationState?.key, loading, settingsReady, session]);
+  }, [navigationState?.key, settingsReady, session]);
 
-  return (
-    <View
-      style={{
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: colors.background,
-        gap: 16,
-      }}>
-      <ActivityIndicator size="large" color={colors.primary} />
-      <Text variant="body" muted>
-        Loading…
-      </Text>
-    </View>
-  );
+  return <AppSplash />;
 }

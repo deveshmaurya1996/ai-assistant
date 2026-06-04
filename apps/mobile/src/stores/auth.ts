@@ -1,49 +1,73 @@
 import { create } from 'zustand';
 import type { SessionInfo } from '@ai-assistant/sdk';
-import { authClient, fetchSession } from '@/lib/auth-client';
+import {
+  authClient,
+  fetchSession,
+  fetchVerifiedSession,
+} from '@/lib/auth-client';
 import { getOAuthCallbackURL } from '@/lib/oauth-callback';
 import { hydrateAuthStorage } from '@/lib/secure-storage';
-import { readPersistedWebSession } from '@/lib/auth-client';
 import { writeWebSessionCache } from '@/lib/web-session-cache';
+import { clearAuthCookie, hasAuthCredentials } from '@/lib/auth-cookies';
+import { clearApiAuth } from '@/lib/api-client';
+import { useChatSidebarStore } from '@/features/chat/chatSidebarStore';
+import { useChatStreamStore } from '@/features/chat/chatStreamStore';
 import { Platform } from 'react-native';
 
 type AuthState = {
   session: SessionInfo | null;
   loading: boolean;
+  hydrated: boolean;
   hydrate: () => Promise<SessionInfo | null>;
+  ensureAuthenticated: () => Promise<boolean>;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
-export const useAuthStore = create<AuthState>((set) => ({
+function resetClientStores(): void {
+  useChatSidebarStore.getState().reset();
+  useChatStreamStore.setState({ sessions: {}, boundTurnSessionId: null });
+}
+
+async function applySession(session: SessionInfo | null): Promise<void> {
+  if (Platform.OS === 'web') writeWebSessionCache(session);
+  useAuthStore.setState({ session });
+}
+
+export const useAuthStore = create<AuthState>((set, get) => ({
   session: null,
   loading: true,
+  hydrated: false,
+
   hydrate: async () => {
+    if (get().hydrated) {
+      return get().session;
+    }
     set({ loading: true });
     try {
       await hydrateAuthStorage();
-
-      if (Platform.OS === 'web') {
-        const cached = readPersistedWebSession();
-        if (cached) set({ session: cached });
-      }
-
-      const session = await fetchSession();
-      set({ session, loading: false });
-      if (Platform.OS === 'web' && session) writeWebSessionCache(session);
+      const session = await fetchVerifiedSession();
+      set({ session, loading: false, hydrated: true });
       return session;
     } catch {
-      if (Platform.OS === 'web') {
-        const cached = readPersistedWebSession();
-        set({ session: cached, loading: false });
-        return cached;
-      }
-      set({ session: null, loading: false });
+      set({ session: null, loading: false, hydrated: true });
       return null;
     }
   },
+
+  ensureAuthenticated: async () => {
+    await hydrateAuthStorage();
+    const session = await fetchVerifiedSession();
+    if (!session) {
+      set({ session: null, loading: false, hydrated: true });
+      return false;
+    }
+    set({ session, loading: false, hydrated: true });
+    return true;
+  },
+
   signIn: async (email, password) => {
     await hydrateAuthStorage();
     const { error } = await authClient.signIn.email({
@@ -53,13 +77,13 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (error) {
       throw new Error(error.message ?? 'Sign in failed');
     }
-    const session = await fetchSession();
+    const session = await fetchVerifiedSession();
     if (!session) {
-      throw new Error('Sign in did not return a session');
+      throw new Error('Sign in succeeded but session could not be verified');
     }
-    if (Platform.OS === 'web') writeWebSessionCache(session);
-    set({ session });
+    await applySession(session);
   },
+
   signInWithGoogle: async () => {
     await hydrateAuthStorage();
 
@@ -72,12 +96,13 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
     if (Platform.OS === 'web') return;
 
-    const session = await fetchSession();
+    const session = await fetchVerifiedSession();
     if (!session) {
       throw new Error('Google sign-in did not return a session');
     }
-    set({ session });
+    await applySession(session);
   },
+
   signUp: async (email, password, name) => {
     await hydrateAuthStorage();
     const { error } = await authClient.signUp.email({
@@ -88,16 +113,30 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (error) {
       throw new Error(error.message ?? 'Sign up failed');
     }
-    const session = await fetchSession();
+    const session = await fetchVerifiedSession();
     if (!session) {
       throw new Error('Sign up did not return a session');
     }
-    if (Platform.OS === 'web') writeWebSessionCache(session);
-    set({ session });
+    await applySession(session);
   },
+
   signOut: async () => {
-    await authClient.signOut();
-    if (Platform.OS === 'web') writeWebSessionCache(null);
-    set({ session: null });
+    try {
+      await authClient.signOut();
+    } catch (err) {
+      if (__DEV__) {
+        console.warn(
+          '[auth] Server sign-out failed; clearing local session anyway.',
+          err instanceof Error ? err.message : err
+        );
+      }
+    }
+    writeWebSessionCache(null);
+    await clearAuthCookie();
+    clearApiAuth();
+    resetClientStores();
+    set({ session: null, loading: false, hydrated: false });
   },
 }));
+
+export { hasAuthCredentials };

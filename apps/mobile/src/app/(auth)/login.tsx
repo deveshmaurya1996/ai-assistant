@@ -13,6 +13,7 @@ import { Routes } from '@/lib/routes';
 
 export default function LoginScreen() {
   const signIn = useAuthStore((s) => s.signIn);
+  const ensureAuthenticated = useAuthStore((s) => s.ensureAuthenticated);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,6 +22,10 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await signIn(email.trim(), password);
+      const ok = await ensureAuthenticated();
+      if (!ok) {
+        throw new Error('Could not verify your session. Try again.');
+      }
       router.replace(Routes.chatCompose);
     } catch (e) {
       Alert.alert('Sign in failed', e instanceof Error ? e.message : 'Unknown error');

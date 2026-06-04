@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { apiClient } from '@/lib/api-client';
+import { handleUnauthorizedApiError } from '@/lib/auth-session-guard';
 import { useChatSidebarStore } from './chatSidebarStore';
 import { fetchChatSidebarPage } from './chatSidebarSync';
 
@@ -19,6 +20,8 @@ export function useChatSessions() {
     setRefreshing(true);
     try {
       await fetchChatSidebarPage();
+    } catch (err) {
+      await handleUnauthorizedApiError(err);
     } finally {
       setRefreshing(false);
       loadingRef.current = false;
@@ -31,6 +34,8 @@ export function useChatSessions() {
     setLoadingMore(true);
     try {
       await fetchChatSidebarPage({ cursor: nextCursor, append: true });
+    } catch (err) {
+      await handleUnauthorizedApiError(err);
     } finally {
       setLoadingMore(false);
       loadingRef.current = false;
@@ -39,17 +44,29 @@ export function useChatSessions() {
 
   const renameSession = useCallback(
     async (sessionId: string, title: string) => {
-      const updated = await apiClient.updateSession(sessionId, { title });
-      patchTitle(sessionId, updated.title ?? title);
-      return updated;
+      try {
+        const updated = await apiClient.updateSession(sessionId, { title });
+        patchTitle(sessionId, updated.title ?? title);
+        return updated;
+      } catch (err) {
+        if (await handleUnauthorizedApiError(err)) {
+          throw new Error('Session expired');
+        }
+        throw err;
+      }
     },
     [patchTitle]
   );
 
   const deleteSession = useCallback(
     async (sessionId: string) => {
-      await apiClient.deleteSession(sessionId);
-      removeSession(sessionId);
+      try {
+        await apiClient.deleteSession(sessionId);
+        removeSession(sessionId);
+      } catch (err) {
+        await handleUnauthorizedApiError(err);
+        throw err;
+      }
     },
     [removeSession]
   );

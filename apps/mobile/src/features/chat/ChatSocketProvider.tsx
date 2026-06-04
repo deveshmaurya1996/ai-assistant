@@ -58,7 +58,7 @@ type ChatSocketContextValue = {
 
 const ChatSocketContext = createContext<ChatSocketContextValue | null>(null);
 
-const TURN_TIMEOUT_MS = 130_000;
+const TURN_TIMEOUT_MS = 45_000;
 
 type ListenerEntry = {
   filterSessionId: string | null;
@@ -86,7 +86,7 @@ export function ChatSocketProvider({
   const turnTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeStreamKeyRef = useRef<string>(PENDING_CHAT_STREAM_KEY);
   const chunkBufferRef = useRef(new Map<string, string>());
-  const chunkFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chunkFlushRafRef = useRef<number | null>(null);
 
   const clearTurnTimeout = useCallback(() => {
     if (turnTimeoutRef.current) {
@@ -190,7 +190,7 @@ export function ChatSocketProvider({
   }, [clearTurnTimeout, fireTurnTimeout]);
 
   const flushChunkBuffer = useCallback(() => {
-    chunkFlushTimerRef.current = null;
+    chunkFlushRafRef.current = null;
     const buffer = chunkBufferRef.current;
     for (const [key, text] of buffer.entries()) {
       if (text) appendChunk(key, text);
@@ -204,8 +204,8 @@ export function ChatSocketProvider({
       const key = resolveChunkStreamKey(sessionId);
       const buffer = chunkBufferRef.current;
       buffer.set(key, (buffer.get(key) ?? '') + chunk);
-      if (chunkFlushTimerRef.current != null) return;
-      chunkFlushTimerRef.current = setTimeout(flushChunkBuffer, 80);
+      if (chunkFlushRafRef.current != null) return;
+      chunkFlushRafRef.current = requestAnimationFrame(flushChunkBuffer);
     },
     [flushChunkBuffer, resolveChunkStreamKey]
   );
@@ -251,9 +251,9 @@ export function ChatSocketProvider({
       });
 
       connected.on('chat:end', (data) => {
-        if (chunkFlushTimerRef.current != null) {
-          clearTimeout(chunkFlushTimerRef.current);
-          chunkFlushTimerRef.current = null;
+        if (chunkFlushRafRef.current != null) {
+          cancelAnimationFrame(chunkFlushRafRef.current);
+          chunkFlushRafRef.current = null;
         }
         flushChunkBuffer();
         clearTurnTimeout();
@@ -348,9 +348,9 @@ export function ChatSocketProvider({
     return () => {
       cancelled = true;
       clearTurnTimeout();
-      if (chunkFlushTimerRef.current != null) {
-        clearTimeout(chunkFlushTimerRef.current);
-        chunkFlushTimerRef.current = null;
+      if (chunkFlushRafRef.current != null) {
+        cancelAnimationFrame(chunkFlushRafRef.current);
+        chunkFlushRafRef.current = null;
       }
       chunkBufferRef.current.clear();
       socket?.disconnect();

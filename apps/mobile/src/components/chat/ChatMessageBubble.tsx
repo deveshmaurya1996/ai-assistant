@@ -1,5 +1,5 @@
 import { memo, useState } from 'react';
-import { View, StyleSheet, ActivityIndicator, Pressable } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Pressable, useWindowDimensions } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Bookmark, Check, Copy } from 'lucide-react-native';
 import type { ChatMessage } from '@ai-assistant/types/chat';
@@ -42,11 +42,19 @@ function ChatMessageBubbleInner({
   onSaveNote,
 }: Props) {
   const { colors } = useTheme();
+  const { width: windowWidth } = useWindowDimensions();
   const isUser = isUserMessage(message);
+  const assistantWrapWidth = windowWidth * 0.85;
   const isStreamingBubble = message.id === STREAMING_MESSAGE_ID;
-  const showSpinner =
-    isStreamingBubble && !message.content && showGeneratingSpinner;
-  const streamLive = isStreamingBubble && (streamActive || showStreamCursor);
+  const hasStreamContent = Boolean(message.content?.trim());
+  const showThinking =
+    isStreamingBubble &&
+    !hasStreamContent &&
+    (showGeneratingSpinner || streamActive);
+  const streamLive =
+    isStreamingBubble &&
+    hasStreamContent &&
+    (streamActive || showStreamCursor);
   const canActOnAssistant =
     !isUser &&
     !isStreamingBubble &&
@@ -79,21 +87,24 @@ function ChatMessageBubbleInner({
       style={[
         styles.wrap,
         { alignSelf: isUser ? 'flex-end' : 'flex-start' },
+        !isUser && { width: assistantWrapWidth, maxWidth: assistantWrapWidth },
       ]}>
       {!isUser && assistantLabel ? (
         <Text variant="caption" muted style={styles.assistantLabel}>
           {assistantLabel}
         </Text>
       ) : null}
-      {showSpinner ? (
+      {isStreamingBubble && showThinking ? (
         <ChatThinkingIndicator
           userMessage={thinkingUserMessage}
           statusOverride={streamStatusMessage}
         />
-      ) : (
+      ) : null}
+      {isUser || !isStreamingBubble || hasStreamContent ? (
         <View
           style={[
             styles.bubble,
+            !isUser && styles.assistantBubble,
             {
               backgroundColor: isUser ? colors.primary : colors.surfaceElevated,
               borderColor: colors.border,
@@ -110,12 +121,16 @@ function ChatMessageBubbleInner({
               ) : null}
             </>
           ) : isStreamingBubble ? (
-            <ChatStreamingText
-              content={message.content}
-              color={colors.text}
-              showCursor={streamLive}
-              cursorColor={colors.primary}
-            />
+            <View style={styles.streamBody}>
+              <ChatStreamingText
+                content={message.content}
+                color={colors.text}
+                accentColor={colors.primary}
+                showCursor={streamLive}
+                cursorColor={colors.primary}
+                revealActive={streamActive}
+              />
+            </View>
           ) : (
             <ChatMarkdown
               content={message.content}
@@ -124,7 +139,7 @@ function ChatMessageBubbleInner({
             />
           )}
         </View>
-      )}
+      ) : null}
       {canActOnAssistant ? (
         <View style={styles.actions}>
           <Pressable
@@ -166,6 +181,7 @@ function bubblePropsEqual(prev: Props, next: Props): boolean {
       prev.showGeneratingSpinner === next.showGeneratingSpinner &&
       prev.showStreamCursor === next.showStreamCursor &&
       prev.streamActive === next.streamActive &&
+      prev.streamStatusMessage === next.streamStatusMessage &&
       prev.thinkingUserMessage === next.thinkingUserMessage &&
       prev.assistantLabel === next.assistantLabel
     );
@@ -187,6 +203,8 @@ const styles = StyleSheet.create({
   wrap: {
     maxWidth: '85%',
     marginBottom: spacing.sm,
+    flexGrow: 0,
+    flexShrink: 1,
   },
   assistantLabel: {
     marginBottom: spacing.xs,
@@ -195,6 +213,16 @@ const styles = StyleSheet.create({
   bubble: {
     padding: spacing.md,
     borderRadius: radii.lg,
+    flexGrow: 0,
+    flexShrink: 0,
+  },
+  assistantBubble: {
+    width: '100%',
+    minWidth: 0,
+  },
+  streamBody: {
+    gap: spacing.sm,
+    width: '100%',
   },
   actions: {
     flexDirection: 'row',
