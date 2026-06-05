@@ -37,7 +37,7 @@ function parseAppConfig() {
 
 function fetchEasAndroidVersionCode() {
   try {
-    const out = execSync('pnpm exec eas build:version:get -p android --json', {
+    const out = execSync('npx eas-cli build:version:get -p android --json', {
       cwd: join(root, 'apps/mobile'),
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],

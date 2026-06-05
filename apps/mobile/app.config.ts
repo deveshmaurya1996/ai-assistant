@@ -64,6 +64,7 @@ const config: ExpoConfig = {
       },
     ],
     './modules/overlay/app.plugin.js',
+    'expo-image',
     'expo-video',
     [
       'expo-splash-screen',

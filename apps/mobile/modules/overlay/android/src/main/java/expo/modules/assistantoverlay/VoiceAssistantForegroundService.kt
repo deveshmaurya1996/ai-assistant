@@ -1,0 +1,56 @@
+package expo.modules.assistantoverlay
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Intent
+import android.os.Build
+import android.os.IBinder
+import androidx.core.app.NotificationCompat
+
+class VoiceAssistantForegroundService : Service() {
+  override fun onBind(intent: Intent?): IBinder? = null
+
+  override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    val channelId = "voice_assistant"
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      val channel = NotificationChannel(
+        channelId,
+        "Voice assistant",
+        NotificationManager.IMPORTANCE_LOW
+      )
+      val manager = getSystemService(NotificationManager::class.java)
+      manager.createNotificationChannel(channel)
+    }
+
+    val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+    val pendingIntent = PendingIntent.getActivity(
+      this,
+      0,
+      launchIntent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
+    val notification: Notification = NotificationCompat.Builder(this, channelId)
+      .setContentTitle("Voice assistant active")
+      .setContentText("Tap to return to the app")
+      .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+      .setContentIntent(pendingIntent)
+      .setOngoing(true)
+      .build()
+
+    startForeground(VOICE_NOTIFICATION_ID, notification)
+    return START_STICKY
+  }
+
+  override fun onDestroy() {
+    stopForeground(STOP_FOREGROUND_REMOVE)
+    super.onDestroy()
+  }
+
+  companion object {
+    const val VOICE_NOTIFICATION_ID = 4102
+  }
+}

@@ -39,7 +39,18 @@ services/ai/qdrant_db/
 .coverage
 
 .expo/
-android/
-ios/
+/android
+/ios
+apps/mobile/android
+apps/mobile/ios
+
+# Gradle/Android build outputs (local Expo modules, prebuild artifacts)
+**/build/
+**/.gradle/
+**/.cxx/
+
+# Local CLI debug output (not source)
+eas-build-meta.json
+app.json
 
 *.tsbuildinfo

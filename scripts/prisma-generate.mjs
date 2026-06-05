@@ -12,6 +12,11 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+if (process.env.EAS_BUILD === 'true') {
+  console.log('[prisma-generate] Skipped on EAS Build (mobile app does not need Prisma).');
+  process.exit(0);
+}
+
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const databaseDir = path.join(root, 'packages', 'database');
 const generatedDir = path.join(databaseDir, 'generated', 'prisma');
@@ -159,8 +164,7 @@ function removeStaleNativeEngineIfWasm() {
 
 async function main() {
   removeStaleNativeEngineIfWasm();
-
-  // Windows: always generate to staging first — avoids EPERM on in-place DLL rename.
+  
   if (process.platform === 'win32') {
     const staged = await generateViaStaging();
     if (staged === 0) process.exit(0);
