@@ -542,15 +542,66 @@ export class AssistantClient {
     return this.request<Reminder[]>('/reminders');
   }
 
-  async createReminder(body: { fireAt: string; payload: Record<string, unknown> }) {
+  async getReminder(id: string): Promise<Reminder & { scheduleLabel?: string | null }> {
+    return this.request<Reminder & { scheduleLabel?: string | null }>(`/reminders/${id}`);
+  }
+
+  async createReminder(body: {
+    title: string;
+    body?: string;
+    userPrompt?: string;
+    recurrence?: string;
+    cronExpression?: string;
+    timezone?: string;
+    nextFireAt?: string;
+    action?: Record<string, unknown>;
+  }) {
     return this.request<Reminder>('/reminders', {
       method: 'POST',
       body: JSON.stringify(body),
     });
   }
 
+  async updateReminder(
+    id: string,
+    body: {
+      title?: string;
+      body?: string;
+      userPrompt?: string;
+      recurrence?: string;
+      cronExpression?: string | null;
+      timezone?: string;
+      nextFireAt?: string;
+      status?: string;
+    }
+  ) {
+    return this.request<Reminder>(`/reminders/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  }
+
   async deleteReminder(id: string) {
     return this.request(`/reminders/${id}`, { method: 'DELETE' });
+  }
+
+  async registerPushToken(body: {
+    token: string;
+    platform: 'ios' | 'android';
+    deviceId?: string;
+    prefs?: { reminderOverlayEnabled?: boolean };
+  }) {
+    return this.request('/devices/push-token', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async unregisterPushToken(token: string) {
+    return this.request('/devices/push-token', {
+      method: 'DELETE',
+      body: JSON.stringify({ token }),
+    });
   }
 
   async listNotes(): Promise<UserNote[]> {

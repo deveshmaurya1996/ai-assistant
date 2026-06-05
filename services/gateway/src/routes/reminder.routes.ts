@@ -1,14 +1,41 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { prisma, Prisma } from '@ai-assistant/database';
 import { authenticateRequest } from '../utils/auth.middleware';
 import { requireUserId } from '../lib/auth';
 import { sendError } from '../lib/errors';
-import { scheduleReminder } from '../workers/reminder.worker';
+import {
+  listReminders,
+  getReminder,
+  createReminder,
+  updateReminder,
+  softDeleteReminder,
+} from '../services/reminder.service';
+import { humanizeCron } from '../scheduler';
 
-const ReminderSchema = z.object({
-  fireAt: z.string().datetime(),
-  payload: z.record(z.string(), z.unknown()),
+const CreateReminderSchema = z.object({
+  title: z.string().min(1),
+  body: z.string().optional(),
+  userPrompt: z.string().optional(),
+  recurrence: z
+    .enum(['NONE', 'HOURLY', 'DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM'])
+    .optional(),
+  cronExpression: z.string().optional(),
+  timezone: z.string().optional(),
+  nextFireAt: z.string().datetime().optional(),
+  action: z.record(z.string(), z.unknown()).optional(),
+});
+
+const UpdateReminderSchema = z.object({
+  title: z.string().min(1).optional(),
+  body: z.string().optional(),
+  userPrompt: z.string().optional(),
+  recurrence: z
+    .enum(['NONE', 'HOURLY', 'DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM'])
+    .optional(),
+  cronExpression: z.string().nullable().optional(),
+  timezone: z.string().optional(),
+  nextFireAt: z.string().datetime().optional(),
+  status: z.enum(['PENDING', 'PAUSED', 'FIRED', 'CANCELLED', 'FAILED']).optional(),
 });
 
 export async function reminderRoutes(fastify: FastifyInstance) {
@@ -17,11 +44,32 @@ export async function reminderRoutes(fastify: FastifyInstance) {
   fastify.get('/', async (request, reply) => {
     try {
       const userId = requireUserId(request);
-      const reminders = await prisma.reminder.findMany({
-        where: { userId, status: 'PENDING' },
-        orderBy: { fireAt: 'asc' },
+      const reminders = await listReminders(userId);
+      const enriched = reminders.map((r) => ({
+        ...r,
+        scheduleLabel:
+          r.cronExpression && r.recurrence !== 'NONE'
+            ? humanizeCron(r.cronExpression, r.timezone)
+            : null,
+      }));
+      return reply.send(enriched);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  fastify.get('/:id', async (request, reply) => {
+    try {
+      const userId = requireUserId(request);
+      const { id } = request.params as { id: string };
+      const reminder = await getReminder(userId, id);
+      return reply.send({
+        ...reminder,
+        scheduleLabel:
+          reminder.cronExpression && reminder.recurrence !== 'NONE'
+            ? humanizeCron(reminder.cronExpression, reminder.timezone)
+            : null,
       });
-      return reply.send(reminders);
     } catch (error) {
       return sendError(reply, error);
     }
@@ -30,16 +78,21 @@ export async function reminderRoutes(fastify: FastifyInstance) {
   fastify.post('/', async (request, reply) => {
     try {
       const userId = requireUserId(request);
-      const body = ReminderSchema.parse(request.body);
-      const reminder = await prisma.reminder.create({
-        data: {
-          userId,
-          fireAt: new Date(body.fireAt),
-          payload: body.payload as Prisma.InputJsonValue,
-        },
-      });
-      await scheduleReminder(reminder.id, reminder.fireAt);
+      const body = CreateReminderSchema.parse(request.body);
+      const reminder = await createReminder(userId, body);
       return reply.code(201).send(reminder);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  fastify.patch('/:id', async (request, reply) => {
+    try {
+      const userId = requireUserId(request);
+      const { id } = request.params as { id: string };
+      const body = UpdateReminderSchema.parse(request.body);
+      const reminder = await updateReminder(userId, id, body);
+      return reply.send(reminder);
     } catch (error) {
       return sendError(reply, error);
     }
@@ -49,10 +102,7 @@ export async function reminderRoutes(fastify: FastifyInstance) {
     try {
       const userId = requireUserId(request);
       const { id } = request.params as { id: string };
-      await prisma.reminder.updateMany({
-        where: { id, userId },
-        data: { status: 'CANCELLED' },
-      });
+      await softDeleteReminder(userId, id);
       return reply.code(204).send();
     } catch (error) {
       return sendError(reply, error);

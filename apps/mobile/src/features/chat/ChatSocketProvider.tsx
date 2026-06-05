@@ -24,6 +24,8 @@ import {
   PENDING_CHAT_STREAM_KEY,
   useChatStreamStore,
 } from './chatStreamStore';
+import { emitReminderRefresh } from '@/features/reminders/reminderEvents';
+import { getDeviceTimezone } from '@/lib/deviceTimezone';
 
 export type ChatSocketEmitOptions = {
   confirmed?: boolean;
@@ -272,6 +274,7 @@ export function ChatSocketProvider({
         });
         activeTurnSessionRef.current = null;
         setBoundTurnSessionId(null);
+        emitReminderRefresh();
       });
 
       connected.on('chat:aborted', (data) => {
@@ -422,11 +425,13 @@ export function ChatSocketProvider({
         attachments?: ChatAttachmentRef[];
         personalityId?: string;
         assistantDisplayName?: string;
+        timezone: string;
       } = {
         text: trimmed,
         source: opts?.source ?? 'chat',
         personalityId: selectedPersonalityId,
         assistantDisplayName,
+        timezone: getDeviceTimezone(),
       };
       if (sessionId) payload.chatSessionId = sessionId;
       if (opts?.confirmed) payload.confirmed = true;

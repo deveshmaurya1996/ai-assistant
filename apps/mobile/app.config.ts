@@ -1,17 +1,16 @@
 import type { ExpoConfig } from 'expo/config';
 
 const EAS_PROJECT_ID = 'e571137a-6ce6-4d5f-bba1-ee812975eb4a';
+const APP_VERSION = '1.0.0';
 
 const config: ExpoConfig = {
   name: 'AI Assistant',
   slug: 'ai-assistant',
-  version: '1.0.0',
+  version: APP_VERSION,
   scheme: 'ai-assistant',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
-  runtimeVersion: {
-    policy: 'appVersion',
-  },
+  runtimeVersion: APP_VERSION,
   updates: {
     url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
     enabled: true,
@@ -23,7 +22,7 @@ const config: ExpoConfig = {
     bundleIdentifier: 'com.aiassistant.app',
     buildNumber: '1',
     infoPlist: {
-      UIBackgroundModes: ['audio'],
+      UIBackgroundModes: ['audio', 'remote-notification'],
       NSMicrophoneUsageDescription:
         'AI Assistant needs microphone access for voice commands and transcription.',
     },
@@ -64,6 +63,15 @@ const config: ExpoConfig = {
       },
     ],
     './modules/overlay/app.plugin.js',
+    [
+      'expo-notifications',
+      {
+        icon: './assets/images/splash-icon.png',
+        color: '#4F46E5',
+        defaultChannel: 'reminders',
+        sounds: [],
+      },
+    ],
     'expo-image',
     'expo-video',
     [

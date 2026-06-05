@@ -26,6 +26,7 @@ function cleanPayload(raw: string): string | null {
 export function isExplicitRememberIntent(text: string): boolean {
   const trimmed = (text ?? '').trim();
   if (!trimmed || RETRIEVAL_ONLY.test(trimmed)) return false;
+  if (/\bremind\s+me\b/i.test(trimmed)) return false;
   return SAVE_INTENT_CUES.test(trimmed);
 }
 

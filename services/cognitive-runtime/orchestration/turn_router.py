@@ -16,6 +16,7 @@ from orchestration.context import (
 )
 from orchestration.attachment_intent import attachment_turn_needs_tools
 from orchestration.planner import is_conversational_query, is_likely_tool_query
+from orchestration.reminder_intent import is_timed_remind_intent
 
 
 class TurnIntent(str, Enum):
@@ -118,6 +119,17 @@ def classify_turn(
             include_identity=True,
             history_limit=attach_history,
             skip_episodic=bool(has_file_context and not is_memory_recall_query(route_q)),
+        )
+
+    if is_timed_remind_intent(route_q):
+        return TurnRoute(
+            intent=TurnIntent.TOOL,
+            stream_task="auto",
+            retrieve_memory=False,
+            run_planner=not skip_planning,
+            run_tools=True,
+            include_identity=True,
+            history_limit=history_limit,
         )
 
     if is_assistant_meta_query(q) or is_smalltalk_query(q):

@@ -49,6 +49,8 @@ type OverlayModule = {
   startVoiceService?: () => Promise<void>;
   stopVoiceService?: () => Promise<void>;
   setOverlayNavigationTarget?: (kind: string, sessionKey: string) => Promise<void>;
+  setReminderOverlayEnabled?: (enabled: boolean) => Promise<void>;
+  showReminderOverlay?: (title: string, body: string) => Promise<void>;
   addListener?: (
     eventName: string,
     listener: (payload: Record<string, string>) => void
@@ -299,6 +301,20 @@ export function subscribeOverlayOpened(
     onOpened({ kind, sessionKey });
   });
   return () => sub.remove();
+}
+
+export async function setReminderOverlayEnabledNative(enabled: boolean): Promise<void> {
+  if (Platform.OS !== 'android' || !NativeOverlay?.setReminderOverlayEnabled) return;
+  await NativeOverlay.setReminderOverlayEnabled(enabled);
+}
+
+export async function showReminderOverlay(title: string, body: string): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  if (NativeOverlay?.showReminderOverlay) {
+    await NativeOverlay.showReminderOverlay(title, body);
+    return;
+  }
+  await showOverlayPanel(body ? `${title}\n${body}` : title);
 }
 
 export async function toggleOverlay(enabled: boolean): Promise<void> {

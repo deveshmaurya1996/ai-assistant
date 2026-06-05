@@ -86,6 +86,14 @@ def is_likely_tool_query(query: str) -> bool:
         "jot down",
         "find note",
         "my notes",
+        "remind me",
+        "remind ",
+        "set a reminder",
+        "set a reminder to",
+        "need you to set a reminder",
+        "notify me at",
+        "notify me when",
+        "ping me at",
     ]
     return any(
         signal in q
@@ -543,9 +551,12 @@ async def plan_tools(
     preferred_model: str | None = None,
     manifest_caps: Optional[Set[str]] = None,
     manifest_connections: Optional[List[Dict[str, Any]]] = None,
+    routing_query: Optional[str] = None,
+    timezone: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Capability-first planner — heuristics first, LLM only for tool-like queries."""
-    del preferred_model  # chat model; planner uses PLANNER_MODEL
+    del preferred_model 
+
+    from orchestration.reminder_planner import plan_reminder_action
 
     tools, connections, _, available_caps, warnings = await _available_tools(
         user_id,
@@ -554,9 +565,23 @@ async def plan_tools(
     )
     connected = _connected_providers(connections)
 
-    if not available_caps and not connections and not tools:
+    route_text = (routing_query or query).strip() or query
+    full_prompt = (query or route_text).strip()
+    reminder_items = plan_reminder_action(
+        route_text,
+        user_prompt=full_prompt,
+        timezone=timezone,
+    )
+    if reminder_items:
         return _build_plan_result(
-            query, context, user_id, connections, tools, [], "empty", warnings
+            query,
+            context,
+            user_id,
+            connections,
+            tools,
+            reminder_items,
+            "heuristic-reminder",
+            warnings,
         )
 
     heuristic_items = _heuristic_capabilities(query, available_caps, connected)

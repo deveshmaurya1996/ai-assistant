@@ -12,6 +12,9 @@ const PLATFORM_TOOLS = new Set([
   'resources.search',
   'contacts.resolve',
   'whatsapp.search_messages',
+  'reminder.create',
+  'reminder.update',
+  'reminder.cancel',
 ]);
 import {
   createExecution,

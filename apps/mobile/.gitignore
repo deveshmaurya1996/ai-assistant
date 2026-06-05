@@ -5,7 +5,7 @@ node_modules/
 
 # Expo
 .expo/
-.expo-export-test*/
+.expo-export*/
 .expo-test-bundle/
 dist/
 web-build/

@@ -5,7 +5,7 @@ import { getConnectorForTool } from '@ai-assistant/integrations';
 import { authenticateRequest } from '../utils/auth.middleware';
 import { requireUserId } from '../lib/auth';
 import { sendError } from '../lib/errors';
-import { scheduleAutomation, isAutomationQueueReady } from '../workers/automation.worker';
+import { isSchedulerReady, scheduleCronJob, scheduleJob } from '../scheduler';
 import { badRequest } from '../lib/errors';
 
 const AutomationSchema = z.object({
@@ -34,8 +34,8 @@ export async function automationRoutes(fastify: FastifyInstance) {
 
   fastify.post('/', async (request, reply) => {
     try {
-      if (!isAutomationQueueReady()) {
-        throw badRequest('Automation queue unavailable. Is Redis running?');
+      if (!isSchedulerReady()) {
+        throw badRequest('Scheduler unavailable. Is Redis running?');
       }
 
       const userId = requireUserId(request);
@@ -69,7 +69,11 @@ export async function automationRoutes(fastify: FastifyInstance) {
       });
 
       if (automation.schedule && automation.isActive) {
-        await scheduleAutomation(automation.id, automation.schedule);
+        await scheduleCronJob({
+          kind: 'automation',
+          entityId: automation.id,
+          cron: automation.schedule,
+        });
       }
 
       return reply.code(201).send(automation);
@@ -80,8 +84,8 @@ export async function automationRoutes(fastify: FastifyInstance) {
 
   fastify.post('/:id/run', async (request, reply) => {
     try {
-      if (!isAutomationQueueReady()) {
-        throw badRequest('Automation queue unavailable. Is Redis running?');
+      if (!isSchedulerReady()) {
+        throw badRequest('Scheduler unavailable. Is Redis running?');
       }
 
       const userId = requireUserId(request);
@@ -93,7 +97,11 @@ export async function automationRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: 'Automation not found' });
       }
 
-      await scheduleAutomation(automation.id, undefined, true);
+      await scheduleJob({
+        kind: 'automation',
+        entityId: automation.id,
+        fireAt: new Date(),
+      });
       return reply.send({ success: true });
     } catch (error) {
       return sendError(reply, error);

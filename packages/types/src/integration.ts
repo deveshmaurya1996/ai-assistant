@@ -104,14 +104,64 @@ export interface CreateWorkflowInput {
   isActive?: boolean;
 }
 
+export type ReminderRecurrence =
+  | 'NONE'
+  | 'HOURLY'
+  | 'DAILY'
+  | 'WEEKLY'
+  | 'MONTHLY'
+  | 'CUSTOM';
+
+export type ReminderStatus =
+  | 'PENDING'
+  | 'PAUSED'
+  | 'FIRED'
+  | 'CANCELLED'
+  | 'FAILED';
+
 export interface Reminder {
   id: string;
   userId: string;
-  fireAt: string;
   payload: JsonObject;
-  status: 'PENDING' | 'FIRED' | 'CANCELLED';
+  userPrompt?: string | null;
+  recurrence: ReminderRecurrence;
+  cronExpression?: string | null;
+  timezone: string;
+  nextFireAt: string;
+  lastFiredAt?: string | null;
+  status: ReminderStatus;
+  deletedAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface CreateReminderInput {
+  title: string;
+  body?: string;
+  userPrompt?: string;
+  recurrence?: ReminderRecurrence;
+  cronExpression?: string;
+  timezone?: string;
+  nextFireAt: string;
+  action?: JsonObject;
+}
+
+export interface UpdateReminderInput {
+  title?: string;
+  body?: string;
+  userPrompt?: string;
+  recurrence?: ReminderRecurrence;
+  cronExpression?: string | null;
+  timezone?: string;
+  nextFireAt?: string;
+  status?: ReminderStatus;
+}
+
+export interface DevicePushTokenInput {
+  token: string;
+  platform: 'ios' | 'android';
+  deviceId?: string;
+  prefs?: { reminderOverlayEnabled?: boolean };
 }
 
 export interface FileAsset {

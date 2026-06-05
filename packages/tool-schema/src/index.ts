@@ -274,6 +274,93 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     openAiParameters: toOpenAiSchema(z.object({ name: z.string() })),
   },
   {
+    name: 'reminder.create',
+    version: '1',
+    connector: 'platform',
+    description:
+      'Create a timed reminder to notify the user. Use for "remind me at...", "remind me tomorrow", recurring reminders.',
+    parameters: z.object({
+      title: z.string(),
+      body: z.string().optional(),
+      userPrompt: z.string().optional(),
+      nextFireAt: z.string().optional(),
+      recurrence: z
+        .enum(['NONE', 'HOURLY', 'DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM'])
+        .optional(),
+      cronExpression: z.string().optional(),
+      timezone: z.string().optional(),
+    }),
+    supportsCancellation: false,
+    dangerous: false,
+    openAiParameters: toOpenAiSchema(
+      z.object({
+        title: z.string(),
+        body: z.string().optional(),
+        userPrompt: z.string().optional(),
+        nextFireAt: z.string().optional(),
+        recurrence: z
+          .enum(['NONE', 'HOURLY', 'DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM'])
+          .optional(),
+        cronExpression: z.string().optional(),
+        timezone: z.string().optional(),
+      })
+    ),
+  },
+  {
+    name: 'reminder.update',
+    version: '1',
+    connector: 'platform',
+    description:
+      'Update, pause, or resume an existing reminder. Use to change time, rename, or pause/resume.',
+    parameters: z.object({
+      reminderId: z.string().optional(),
+      title: z.string().optional(),
+      body: z.string().optional(),
+      userPrompt: z.string().optional(),
+      nextFireAt: z.string().optional(),
+      recurrence: z
+        .enum(['NONE', 'HOURLY', 'DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM'])
+        .optional(),
+      cronExpression: z.string().nullable().optional(),
+      timezone: z.string().optional(),
+      status: z.enum(['PENDING', 'PAUSED']).optional(),
+    }),
+    supportsCancellation: false,
+    dangerous: false,
+    openAiParameters: toOpenAiSchema(
+      z.object({
+        reminderId: z.string().optional(),
+        title: z.string().optional(),
+        body: z.string().optional(),
+        nextFireAt: z.string().optional(),
+        recurrence: z
+          .enum(['NONE', 'HOURLY', 'DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM'])
+          .optional(),
+        cronExpression: z.string().nullable().optional(),
+        timezone: z.string().optional(),
+        status: z.enum(['PENDING', 'PAUSED']).optional(),
+      })
+    ),
+  },
+  {
+    name: 'reminder.cancel',
+    version: '1',
+    connector: 'platform',
+    description: 'Cancel and delete a scheduled reminder by id or title match',
+    parameters: z.object({
+      reminderId: z.string().optional(),
+      title: z.string().optional(),
+    }),
+    supportsCancellation: false,
+    dangerous: false,
+    openAiParameters: toOpenAiSchema(
+      z.object({
+        reminderId: z.string().optional(),
+        title: z.string().optional(),
+      })
+    ),
+  },
+  {
     name: 'email.draft_reply',
     version: '1',
     connector: 'google',

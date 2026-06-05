@@ -127,6 +127,12 @@ export function setupSocketIO(fastify: FastifyInstance) {
         socket.emit('chat:error', { error: 'Maximum 4 attachments per message' });
         return;
       }
+      if (!data.timezone?.trim()) {
+        fastify.log.warn(
+          { userId, socketId: socket.id },
+          '[chat] chat:message missing device timezone — reminder scheduling may fail'
+        );
+      }
 
       try {
         const clientIp = getClientIp(socket.handshake.headers);
@@ -220,6 +226,7 @@ export function setupSocketIO(fastify: FastifyInstance) {
             confirmed: data.confirmed,
             personalityId: data.personalityId,
             assistantDisplayName: data.assistantDisplayName,
+            timezone: data.timezone,
             source: 'socket',
             signal: turnAbort.signal,
             agentSource:

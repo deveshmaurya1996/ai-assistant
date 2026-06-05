@@ -52,6 +52,7 @@ class AgentTurnRequest(BaseModel):
     system_prompt: Optional[str] = None
     file_retrieval_context: Optional[str] = None
     session_context: Optional[str] = None
+    timezone: Optional[str] = None
 
 
 class ToolCallRequest(BaseModel):
@@ -410,6 +411,8 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
                     payload.user_id,
                     manifest_caps=manifest_caps,
                     manifest_connections=manifest_connections,
+                    routing_query=payload.routing_query,
+                    timezone=payload.timezone,
                 )
                 timings["plan_tools_ms"] = (time.perf_counter() - t_plan) * 1000
                 timings["planner"] = plan.get("planner", "")
@@ -490,7 +493,9 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
         async with httpx.AsyncClient(timeout=ORCHESTRATOR_STREAM_TIMEOUT) as client:
             tool_context = ""
             if tool_results:
-                tool_context = "\n\nTool results:\n" + str(tool_results)
+                from orchestration.tool_results import format_tool_results_for_context
+
+                tool_context = format_tool_results_for_context(tool_results)
             stream_query = payload.query + tool_context
             if has_attachments and not stream_query.strip():
                 if has_images:

@@ -10,6 +10,7 @@ export interface ChatOutgoingPayload {
   attachments?: ChatAttachmentRef[];
   personalityId?: string;
   assistantDisplayName?: string;
+  timezone?: string;
 }
 
 export interface ChatChunkPayload {
@@ -124,6 +125,8 @@ export interface NotificationCreatedPayload {
   title: string;
   body?: string;
   type?: string;
+  reminderId?: string;
+  missed?: boolean;
 }
 
 export interface VoiceInterruptedPayload {

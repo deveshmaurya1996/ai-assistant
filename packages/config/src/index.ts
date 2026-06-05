@@ -43,6 +43,7 @@ export interface AppConfig {
   nodeEnv: string;
   isDev: boolean;
   apiPort: number;
+  gatewayUrl: string;
   aiServiceUrl: string;
   databaseUrl: string;
   betterAuthSecret: string;
@@ -74,6 +75,13 @@ export const config: AppConfig = {
   nodeEnv,
   isDev: nodeEnv !== 'production',
   apiPort: envInt('API_PORT', 3000),
+  gatewayUrl: envOptional(
+    'GATEWAY_URL',
+    envOptional(
+      'API_PUBLIC_URL',
+      `http://127.0.0.1:${envInt('API_PORT', 3000)}`
+    )
+  ),
   aiServiceUrl: envOptional('AI_SERVICE_URL', 'http://localhost:8000'),
   databaseUrl: envOptional(
     'DATABASE_URL',

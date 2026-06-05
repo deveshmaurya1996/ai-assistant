@@ -25,6 +25,7 @@ const KEYS = {
   autoSendVoice: 'auto_send_voice',
   overlayEnabled: 'overlay_enabled',
   voiceOverlayEnabled: 'voice_overlay_enabled',
+  reminderOverlayEnabled: 'reminder_overlay_enabled',
   lastAiModelLabel: 'last_ai_model_label',
   lastTranscript: 'last_transcript',
 } as const;
@@ -66,6 +67,7 @@ type SettingsState = {
   autoSendAfterTranscribe: boolean;
   overlayEnabled: boolean;
   voiceOverlayEnabled: boolean;
+  reminderOverlayEnabled: boolean;
   lastAiModelLabel: string | null;
   lastTranscript: string | null;
   hydrate: () => Promise<void>;
@@ -78,6 +80,7 @@ type SettingsState = {
   setAutoSend: (v: boolean) => Promise<void>;
   setOverlayEnabled: (v: boolean) => Promise<void>;
   setVoiceOverlayEnabled: (v: boolean) => Promise<void>;
+  setReminderOverlayEnabled: (v: boolean) => Promise<void>;
   setLastAiModelLabel: (label: string | null) => Promise<void>;
   setLastTranscript: (text: string | null) => Promise<void>;
   getSelectedTtsVoice: () => string;
@@ -127,6 +130,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   autoSendAfterTranscribe: false,
   overlayEnabled: false,
   voiceOverlayEnabled: false,
+  reminderOverlayEnabled: false,
   lastAiModelLabel: null,
   lastTranscript: null,
 
@@ -144,6 +148,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         autoSend,
         overlay,
         voiceOverlay,
+        reminderOverlay,
         lastModel,
         transcript,
       ] = await Promise.all([
@@ -158,6 +163,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         getItemAsync(KEYS.autoSendVoice),
         getItemAsync(KEYS.overlayEnabled),
         getItemAsync(KEYS.voiceOverlayEnabled),
+        getItemAsync(KEYS.reminderOverlayEnabled),
         getItemAsync(KEYS.lastAiModelLabel),
         getItemAsync(KEYS.lastTranscript),
       ]);
@@ -200,6 +206,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         autoSendAfterTranscribe: autoSend === 'true',
         overlayEnabled,
         voiceOverlayEnabled,
+        reminderOverlayEnabled: reminderOverlay === 'true',
         lastAiModelLabel: lastModel,
         lastTranscript: transcript,
       });
@@ -264,6 +271,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setVoiceOverlayEnabled: async (v) => {
     await setItemAsync(KEYS.voiceOverlayEnabled, String(v));
     set({ voiceOverlayEnabled: v });
+  },
+
+  setReminderOverlayEnabled: async (v) => {
+    await setItemAsync(KEYS.reminderOverlayEnabled, String(v));
+    set({ reminderOverlayEnabled: v });
   },
 
   setLastAiModelLabel: async (label) => {

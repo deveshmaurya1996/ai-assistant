@@ -7,6 +7,7 @@ import {
   type ResourceHit,
 } from '@ai-assistant/resources';
 import { decryptCredentials } from './encryption';
+import { gatewayInternalFetch } from './gateway-internal';
 
 export async function executePlatformTool(
   userId: string,
@@ -38,6 +39,72 @@ export async function executePlatformTool(
       const limit = Number(args.limit ?? 20);
       const data = await searchMessagingMessages(userId, query, limit);
       return { success: true, data };
+    }
+    case 'reminder.create': {
+      const res = await gatewayInternalFetch('/internal/reminders', {
+        method: 'POST',
+        body: JSON.stringify({
+          userId,
+          title: String(args.title ?? 'Reminder'),
+          body: args.body ? String(args.body) : undefined,
+          userPrompt: args.userPrompt ? String(args.userPrompt) : undefined,
+          nextFireAt: args.nextFireAt ? String(args.nextFireAt) : undefined,
+          recurrence: args.recurrence,
+          cronExpression: args.cronExpression ? String(args.cronExpression) : undefined,
+          timezone: args.timezone ? String(args.timezone) : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return {
+          success: false,
+          error: (data as { error?: string }).error ?? 'Failed to create reminder',
+        };
+      }
+      return { success: true, data: { type: 'reminder.created', reminder: data } };
+    }
+    case 'reminder.update': {
+      const res = await gatewayInternalFetch('/internal/reminders', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          userId,
+          reminderId: args.reminderId ? String(args.reminderId) : undefined,
+          title: args.title ? String(args.title) : undefined,
+          body: args.body ? String(args.body) : undefined,
+          userPrompt: args.userPrompt ? String(args.userPrompt) : undefined,
+          nextFireAt: args.nextFireAt ? String(args.nextFireAt) : undefined,
+          recurrence: args.recurrence,
+          cronExpression: args.cronExpression,
+          timezone: args.timezone ? String(args.timezone) : undefined,
+          status: args.status,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return {
+          success: false,
+          error: (data as { error?: string }).error ?? 'Failed to update reminder',
+        };
+      }
+      return { success: true, data: { type: 'reminder.updated', reminder: data } };
+    }
+    case 'reminder.cancel': {
+      const res = await gatewayInternalFetch('/internal/reminders', {
+        method: 'DELETE',
+        body: JSON.stringify({
+          userId,
+          reminderId: args.reminderId ? String(args.reminderId) : undefined,
+          title: args.title ? String(args.title) : undefined,
+        }),
+      });
+      if (!res.ok && res.status !== 204) {
+        const data = await res.json().catch(() => ({}));
+        return {
+          success: false,
+          error: (data as { error?: string }).error ?? 'Failed to cancel reminder',
+        };
+      }
+      return { success: true, data: { type: 'reminder.cancelled' } };
     }
     default:
       return { success: false, error: `Unknown platform tool: ${tool}` };

@@ -20,6 +20,8 @@ import { fileRoutes } from './routes/file.routes';
 import { toolRoutes } from './routes/tool.routes';
 import { workflowRoutes } from './routes/workflow.routes';
 import { reminderRoutes } from './routes/reminder.routes';
+import { deviceRoutes } from './routes/device.routes';
+import { internalReminderRoutes } from './routes/internal-reminder.routes';
 import { notesRoutes } from './routes/notes.routes';
 import { whatsappRoutes } from './routes/whatsapp.routes';
 import { internalIntegrationRoutes } from './routes/internal-integrations.routes';
@@ -94,6 +96,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(toolRoutes, { prefix: '/tools' });
   app.register(workflowRoutes, { prefix: '/workflows' });
   app.register(reminderRoutes, { prefix: '/reminders' });
+  app.register(deviceRoutes, { prefix: '/devices' });
+  app.register(internalReminderRoutes, { prefix: '/internal' });
   app.register(notesRoutes, { prefix: '/notes' });
   app.register(whatsappRoutes, { prefix: '/internal/whatsapp' });
   app.register(internalIntegrationRoutes, { prefix: '/internal' });

@@ -12,6 +12,14 @@ from orchestration.turn_router import TurnIntent, classify_turn
         ("do you remember my preference?", TurnIntent.MEMORY),
         ("check my email", TurnIntent.TOOL),
         ("send a whatsapp message", TurnIntent.TOOL),
+        ("remind me at 3pm to call mom", TurnIntent.TOOL),
+        ("set a reminder for tomorrow morning", TurnIntent.TOOL),
+        (
+            "I need you to set a reminder to not touch my nose every 1 min",
+            TurnIntent.TOOL,
+        ),
+        ("call my father at 9 pm", TurnIntent.TOOL),
+        ("at 9 pm to call my father", TurnIntent.TOOL),
     ],
 )
 def test_classify_turn_text_only(query, expected):

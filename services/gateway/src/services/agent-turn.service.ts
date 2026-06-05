@@ -25,6 +25,7 @@ export type AgentTurnInput = {
   systemPrompt?: string;
   fileRetrievalContext?: string;
   sessionContext?: string;
+  timezone?: string;
 };
 
 export type ActionConfirmPayload = {
@@ -128,6 +129,7 @@ export async function runAgentTurn(
         system_prompt: input.systemPrompt,
         file_retrieval_context: input.fileRetrievalContext ?? '',
         session_context: input.sessionContext ?? '',
+        timezone: input.timezone,
       }),
     });
   } catch (err) {

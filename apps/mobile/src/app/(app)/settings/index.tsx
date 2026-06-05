@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet, ScrollView, Platform } from 'react-native';
 import { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { getVersionDisplayLines } from '@/lib/version-display';
 import { router, useFocusEffect } from 'expo-router';
@@ -31,7 +31,14 @@ import {
   toggleOverlay,
   canDrawOverlays,
   requestOverlayPermission,
+  setReminderOverlayEnabledNative,
 } from '@/lib/overlay';
+import {
+  getNotificationPermissionStatus,
+  requestNotificationPermission,
+  type NotificationPermissionStatus,
+} from '@/features/reminders/requestNotificationPermission';
+import { registerPushTokenIfNeeded } from '@/features/reminders/registerPushToken';
 import { promptOverlayPermissionIfNeeded } from '@/lib/overlay-prompt';
 import { isOverlayPermissionGranted } from '@/lib/overlay-settings';
 import {
@@ -62,6 +69,8 @@ export default function SettingsScreen() {
     setAssistantContinuousListening,
     setAutoSend,
     setOverlayEnabled,
+    reminderOverlayEnabled,
+    setReminderOverlayEnabled,
   } = useSettingsStore();
 
   const selectedPreset = getPersonalityPreset(selectedPersonalityId, personalities);
@@ -72,6 +81,8 @@ export default function SettingsScreen() {
 
   const [micStatus, setMicStatus] = useState<PermissionStatus | null>(null);
   const [overlayStatus, setOverlayStatus] = useState<OverlayPermissionLabel>('Unknown');
+  const [notificationStatus, setNotificationStatus] =
+    useState<NotificationPermissionStatus>('undetermined');
 
   const refreshOverlayPermission = useCallback(async () => {
     const overlayGranted = await isOverlayPermissionGranted();
@@ -83,18 +94,26 @@ export default function SettingsScreen() {
     return overlayGranted;
   }, [overlayEnabled, setOverlayEnabled]);
 
+  const refreshNotificationPermission = useCallback(async () => {
+    const status = await getNotificationPermissionStatus();
+    setNotificationStatus(status);
+    return status;
+  }, []);
+
   useEffect(() => {
     void (async () => {
       const mic = await requestMicPermission();
       setMicStatus(mic);
       await refreshOverlayPermission();
+      await refreshNotificationPermission();
     })();
-  }, [refreshOverlayPermission]);
+  }, [refreshOverlayPermission, refreshNotificationPermission]);
 
   useFocusEffect(
     useCallback(() => {
       void refreshOverlayPermission();
-    }, [refreshOverlayPermission])
+      void refreshNotificationPermission();
+    }, [refreshOverlayPermission, refreshNotificationPermission])
   );
 
   const themeOptions: { value: ThemeMode; label: string }[] = [
@@ -177,6 +196,55 @@ export default function SettingsScreen() {
             </Text>
             <Button label="Open settings" variant="ghost" onPress={openAppSettings} />
           </View>
+        </SettingsSection>
+
+        <SettingsSection title="Notifications">
+          <Text variant="bodyMedium">Reminders always notify you</Text>
+          <Text variant="caption" muted style={{ marginTop: spacing.xs }}>
+            Permission: {formatNotificationStatus(notificationStatus)}
+          </Text>
+          <Button
+            label={
+              notificationStatus === 'granted'
+                ? 'Notifications enabled'
+                : 'Enable notifications'
+            }
+            variant="secondary"
+            style={{ marginTop: spacing.sm }}
+            onPress={async () => {
+              if (notificationStatus === 'denied') {
+                await openAppSettings();
+                return;
+              }
+              const status = await requestNotificationPermission();
+              setNotificationStatus(status);
+              if (status === 'granted') {
+                await registerPushTokenIfNeeded(reminderOverlayEnabled);
+              }
+            }}
+          />
+          {Platform.OS === 'android' ? (
+            <SwitchRow
+              label="Reminder overlay"
+              description="Show a floating bubble when a reminder fires (Android only)"
+              value={reminderOverlayEnabled && overlayStatus === 'Granted'}
+              onValueChange={async (v) => {
+                if (v) {
+                  let granted = await isOverlayPermissionGranted();
+                  if (!granted) {
+                    await promptOverlayPermissionIfNeeded();
+                    granted = await isOverlayPermissionGranted();
+                  }
+                  if (!granted) return;
+                }
+                await setReminderOverlayEnabled(v);
+                await setReminderOverlayEnabledNative(v);
+                if (notificationStatus === 'granted') {
+                  await registerPushTokenIfNeeded(v);
+                }
+              }}
+            />
+          ) : null}
         </SettingsSection>
 
         <SettingsSection title="Overlay">
@@ -269,6 +337,17 @@ export default function SettingsScreen() {
       <AssistantPickerSheet ref={assistantSheetRef} />
     </Screen>
   );
+}
+
+function formatNotificationStatus(status: NotificationPermissionStatus): string {
+  switch (status) {
+    case 'granted':
+      return 'Granted';
+    case 'denied':
+      return 'Denied — open system settings';
+    default:
+      return 'Not requested';
+  }
 }
 
 const styles = StyleSheet.create({

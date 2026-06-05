@@ -99,6 +99,8 @@ export const NotificationCreatedPayloadSchema = z.object({
   title: z.string(),
   body: z.string().optional(),
   type: z.string().optional(),
+  reminderId: z.string().optional(),
+  missed: z.boolean().optional(),
 });
 
 /** Generic payload for proactive OS events (Phase 2). */

@@ -401,6 +401,7 @@ export async function processChatMessage(params: {
   confirmed?: boolean;
   personalityId?: string;
   assistantDisplayName?: string;
+  timezone?: string;
   onChunk: (chunk: string, sessionId: string) => void | Promise<void>;
   onStatus?: (message: string, sessionId: string) => void | Promise<void>;
   onSessionCreated?: (sessionId: string) => void;
@@ -538,6 +539,7 @@ export async function processChatMessage(params: {
         systemPrompt: assistantContext.systemPrompt,
         fileRetrievalContext: cappedFileContext,
         sessionContext: cappedSessionContext,
+        timezone: params.timezone,
       },
       {
         onToken: (token) => onChunk(token, sessionId),

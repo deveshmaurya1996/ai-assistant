@@ -119,6 +119,26 @@ class AssistantOverlayModule : Module() {
       }
     }
 
+    AsyncFunction("setReminderOverlayEnabled") { enabled: Boolean ->
+      val context = appContext.reactContext ?: return@AsyncFunction null
+      context
+        .getSharedPreferences("reminder_overlay_prefs", android.content.Context.MODE_PRIVATE)
+        .edit()
+        .putBoolean("reminder_overlay_enabled", enabled)
+        .apply()
+    }
+
+    AsyncFunction("showReminderOverlay") { title: String, body: String ->
+      val context = appContext.reactContext ?: return@AsyncFunction null
+      if (!OverlayWindowManager.canDrawOverlays(context)) return@AsyncFunction null
+      val prefs =
+        context.getSharedPreferences("reminder_overlay_prefs", android.content.Context.MODE_PRIVATE)
+      if (!prefs.getBoolean("reminder_overlay_enabled", false)) return@AsyncFunction null
+      val text = if (body.isNotBlank()) "$title\n$body" else title
+      OverlayWindowManager.setContextLabel("Reminder")
+      OverlayWindowManager.show(context, text)
+    }
+
     AsyncFunction("stopVoiceService") {
       val context = appContext.reactContext
         ?: throw IllegalStateException("React context is not available")

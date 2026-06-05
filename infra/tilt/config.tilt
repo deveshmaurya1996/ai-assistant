@@ -219,6 +219,7 @@ def port_env():
         'NEXT_PUBLIC_API_URL': 'http://localhost:' + api,
         'EXPO_PUBLIC_API_URL': 'http://localhost:' + api,
         'API_PUBLIC_URL': 'http://localhost:' + api,
+        'GATEWAY_URL': 'http://localhost:' + api,
     }
 
 def apply_compose_env():
