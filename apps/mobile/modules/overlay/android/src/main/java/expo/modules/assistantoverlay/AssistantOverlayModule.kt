@@ -36,12 +36,22 @@ class AssistantOverlayModule : Module() {
 
     AsyncFunction("requestOverlayPermission") {
       val context = appContext.reactContext ?: return@AsyncFunction null
-      val intent = Intent(
+      val appIntent = Intent(
         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
         Uri.parse("package:${context.packageName}")
-      )
-      intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-      context.startActivity(intent)
+      ).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      }
+
+      try {
+        context.startActivity(appIntent)
+      } catch (_: Exception) {
+        // Some devices / build channels block package-scoped deep links.
+        val fallbackIntent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+          addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(fallbackIntent)
+      }
     }
 
     AsyncFunction("showOverlay") { text: String ->

@@ -53,6 +53,7 @@
     "react-native": "0.85.3",
     "react-native-enriched-markdown": "^0.6.0",
     "react-native-gesture-handler": "~2.31.1",
+    "react-native-keyboard-controller": "1.21.6",
     "react-native-reanimated": "4.3.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
@@ -80,8 +81,8 @@
     "release:sync:eas": "node ../../scripts/sync-mobile-release.mjs --from-eas",
     "eas:build:android:prod": "node scripts/sync-root-easignore.mjs && npx eas-cli build -p android --profile production && node ../../scripts/sync-mobile-release.mjs --from-eas",
     "eas:build:android:preview": "node scripts/sync-root-easignore.mjs && npx eas-cli build -p android --profile preview && node ../../scripts/sync-mobile-release.mjs --from-eas",
-    "eas:update:production": "npx eas-cli update --channel production",
-    "eas:update:preview": "npx eas-cli update --channel preview"
+    "eas:update:production": "npx eas-cli update --channel production --environment production",
+    "eas:update:preview": "npx eas-cli update --channel preview --environment preview"
   },
   "private": true,
   "expo": {

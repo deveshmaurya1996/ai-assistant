@@ -18,6 +18,7 @@ import {
 } from '../services/encryption.service';
 import { sessionManager } from '../whatsapp/session-manager';
 import { markConnectionActive } from '../whatsapp/connection-lifecycle';
+import { ensureIntegrationProvider } from '../services/ensure-integration-provider.service';
 import { randomBytes } from 'crypto';
 
 function resolveWhatsAppBridgeSessionId(metadata: unknown): string | null {
@@ -211,6 +212,8 @@ export async function integrationRoutes(fastify: FastifyInstance) {
       }
 
       const connectionId = `${provider}_${userId}`;
+
+      await ensureIntegrationProvider(provider);
 
       if (provider === 'whatsapp') {
         const state = randomBytes(16).toString('hex');

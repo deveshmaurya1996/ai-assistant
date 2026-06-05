@@ -1,5 +1,7 @@
 import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { router } from 'expo-router';
 import type { ChatMessage, ChatSessionKind } from '@ai-assistant/sdk';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
@@ -13,8 +15,10 @@ import {
   type ChatMessageListHandle,
 } from '@/components/chat/ChatMessageList';
 import { useTheme } from '@/theme/ThemeProvider';
+import { spacing } from '@/theme/tokens';
 import { Routes } from '@/lib/routes';
 import { useChatSessions } from '@/features/chat/useChatSessions';
+import { useGradualKeyboardAnimation } from '@/hooks/useGradualKeyboardAnimation';
 
 type ChatScreenShellProps = {
   title: string;
@@ -59,11 +63,23 @@ export function ChatScreenShell({
   onSend,
   onStop,
 }: ChatScreenShellProps) {
-  const { colors } = useTheme();
+  const { colors, screenStyle } = useTheme();
+  const insets = useSafeAreaInsets();
+  const { height: keyboardHeight } = useGradualKeyboardAnimation();
   const messageListRef = useRef<ChatMessageListHandle>(null);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [actionsAnchor, setActionsAnchor] = useState<MenuAnchorRect | null>(null);
   const { renameSession, deleteSession } = useChatSessions();
+
+  const keyboardSpacerStyle = useAnimatedStyle(() => ({
+    height: keyboardHeight.value,
+    backgroundColor: colors.background,
+  }));
+
+  const composerInsetStyle = useAnimatedStyle(() => ({
+    paddingBottom:
+      keyboardHeight.value > 0 ? spacing.sm : insets.bottom + spacing.sm,
+  }));
 
   const sessionForModal = useMemo(
     () =>
@@ -90,10 +106,7 @@ export function ChatScreenShell({
   );
 
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-      keyboardVerticalOffset={0}>
+    <View style={[styles.container, screenStyle]}>
       <ScreenHeader
         title={title}
         subtitle={subtitle}
@@ -111,6 +124,7 @@ export function ChatScreenShell({
 
       <ChatMessageList
         ref={messageListRef}
+        backgroundColor={colors.background}
         messages={messages}
         visibleText={visibleText}
         streamTurnKey={streamTurnKey}
@@ -124,13 +138,17 @@ export function ChatScreenShell({
         onSaveNote={onSaveNote}
       />
 
-      <ChatComposer
-        onSend={onSend}
-        sendDisabled={isGenerating}
-        isGenerating={isGenerating}
-        onStop={onStop}
-        onInputFocus={() => messageListRef.current?.scrollToEnd(true)}
-      />
+      <Animated.View style={[{ backgroundColor: colors.background }, composerInsetStyle]}>
+        <ChatComposer
+          onSend={onSend}
+          sendDisabled={isGenerating}
+          isGenerating={isGenerating}
+          onStop={onStop}
+          onInputFocus={() => messageListRef.current?.scrollToEnd(true)}
+        />
+      </Animated.View>
+
+      <Animated.View style={keyboardSpacerStyle} />
 
       <ChatSessionActionsModal
         session={actionsOpen ? sessionForModal : null}
@@ -144,7 +162,7 @@ export function ChatScreenShell({
         onRename={handleRename}
         onDelete={handleDelete}
       />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

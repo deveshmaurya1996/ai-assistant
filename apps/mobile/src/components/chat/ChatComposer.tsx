@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import type { ChatAttachmentRef } from '@ai-assistant/types';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useTheme } from '@/theme/ThemeProvider';
 import { Input } from '@/components/ui/Input';
@@ -53,7 +52,6 @@ export function ChatComposer({
   onInputFocus,
 }: ChatComposerProps) {
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
   const autoSendAfterTranscribe = useSettingsStore((s) => s.autoSendAfterTranscribe);
   const [input, setInput] = useState('');
@@ -178,10 +176,7 @@ export function ChatComposer({
     <View
       style={[
         styles.container,
-        {
-          backgroundColor: colors.background,
-          paddingBottom: insets.bottom + spacing.sm,
-        },
+        { backgroundColor: colors.background },
       ]}>
       {error ? (
         <Text variant="caption" style={[styles.caption, { color: colors.danger }]}>
@@ -217,12 +212,6 @@ export function ChatComposer({
             }),
           },
         ]}>
-        <PressableScale onPress={openPicker} disabled={isGenerating}>
-          <View style={[styles.inlineBtn, { opacity: isGenerating ? 0.45 : 1 }]}>
-            <Plus color={colors.textMuted} size={22} />
-          </View>
-        </PressableScale>
-
         <Input
           ref={inputRef}
           value={input}
@@ -246,62 +235,72 @@ export function ChatComposer({
           ]}
         />
 
-        {showSendSlot ? (
-          isGenerating ? (
-            <PressableScale onPress={onStop} disabled={!onStop}>
-              <View
-                style={[
-                  styles.actionBtn,
-                  {
-                    backgroundColor: colors.danger,
-                    opacity: onStop ? 1 : 0.45,
-                  },
-                ]}>
-                <Square color={colors.onPrimary} size={16} fill={colors.onPrimary} />
+        <View style={styles.actionsRow}>
+          <PressableScale onPress={openPicker} disabled={isGenerating}>
+            <View style={[styles.actionBtn, { opacity: isGenerating ? 0.45 : 1 }]}>
+              <Plus color={colors.textMuted} size={22} />
+            </View>
+          </PressableScale>
+
+          <View style={styles.actionsRight}>
+            {showSendSlot ? (
+              isGenerating ? (
+                <PressableScale onPress={onStop} disabled={!onStop}>
+                  <View
+                    style={[
+                      styles.actionBtn,
+                      {
+                        backgroundColor: colors.danger,
+                        opacity: onStop ? 1 : 0.45,
+                      },
+                    ]}>
+                    <Square color={colors.onPrimary} size={16} fill={colors.onPrimary} />
+                  </View>
+                </PressableScale>
+              ) : (
+                <PressableScale onPress={() => void handleSend()} disabled={!canSend}>
+                  <View
+                    style={[
+                      styles.actionBtn,
+                      {
+                        backgroundColor: colors.primary,
+                        opacity: canSend ? 1 : 0.45,
+                      },
+                    ]}>
+                    <ArrowUp color={colors.onPrimary} size={20} />
+                  </View>
+                </PressableScale>
+              )
+            ) : (
+              <View style={styles.emptyActions}>
+                <VoiceMicButton
+                  isRecording={isRecording}
+                  isProcessing={isProcessing}
+                  disabled={isProcessing || isGenerating}
+                  onPress={() => void handleMicPress()}
+                  size={36}
+                  variant="composer"
+                />
+                <PressableScale
+                  onPress={openAssistant}
+                  disabled={isGenerating}
+                  accessibilityLabel={`Open ${assistantDisplayName}`}
+                  accessibilityRole="button">
+                  <View
+                    style={[
+                      styles.actionBtn,
+                      {
+                        backgroundColor: colors.primaryMuted,
+                        opacity: isGenerating ? 0.45 : 1,
+                      },
+                    ]}>
+                    <AssistantIcon size={18} />
+                  </View>
+                </PressableScale>
               </View>
-            </PressableScale>
-          ) : (
-            <PressableScale onPress={() => void handleSend()} disabled={!canSend}>
-              <View
-                style={[
-                  styles.actionBtn,
-                  {
-                    backgroundColor: colors.primary,
-                    opacity: canSend ? 1 : 0.45,
-                  },
-                ]}>
-                <ArrowUp color={colors.onPrimary} size={20} />
-              </View>
-            </PressableScale>
-          )
-        ) : (
-          <View style={styles.emptyActions}>
-            <VoiceMicButton
-              isRecording={isRecording}
-              isProcessing={isProcessing}
-              disabled={isProcessing || isGenerating}
-              onPress={() => void handleMicPress()}
-              size={36}
-              variant="composer"
-            />
-            <PressableScale
-              onPress={openAssistant}
-              disabled={isGenerating}
-              accessibilityLabel={`Open ${assistantDisplayName}`}
-              accessibilityRole="button">
-              <View
-                style={[
-                  styles.actionBtn,
-                  {
-                    backgroundColor: colors.primaryMuted,
-                    opacity: isGenerating ? 0.45 : 1,
-                  },
-                ]}>
-                <AssistantIcon size={18} />
-              </View>
-            </PressableScale>
+            )}
           </View>
-        )}
+        </View>
       </View>
 
       <ChatAttachmentPickerSheet
@@ -333,35 +332,35 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xs,
   },
   pill: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
+    flexDirection: 'column',
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.xl,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    minHeight: 60,
-    gap: spacing.xs,
-  },
-  inlineBtn: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 2,
+    minHeight: 92,
+    gap: spacing.sm,
   },
   input: {
-    flex: 1,
+    width: '100%',
     minHeight: INPUT_MIN_HEIGHT,
     maxHeight: INPUT_MAX_HEIGHT,
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.xs,
+    paddingHorizontal: 0,
     marginVertical: 0,
+  },
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  actionsRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   emptyActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    marginBottom: 2,
   },
   actionBtn: {
     width: 36,

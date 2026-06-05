@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { getVersionDisplayLines } from '@/lib/version-display';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { ChevronRight } from 'lucide-react-native';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
@@ -33,6 +33,7 @@ import {
   requestOverlayPermission,
 } from '@/lib/overlay';
 import { promptOverlayPermissionIfNeeded } from '@/lib/overlay-prompt';
+import { isOverlayPermissionGranted } from '@/lib/overlay-settings';
 import {
   formatMicPermissionStatus,
   formatOverlayPermission,
@@ -72,14 +73,29 @@ export default function SettingsScreen() {
   const [micStatus, setMicStatus] = useState<PermissionStatus | null>(null);
   const [overlayStatus, setOverlayStatus] = useState<OverlayPermissionLabel>('Unknown');
 
+  const refreshOverlayPermission = useCallback(async () => {
+    const overlayGranted = await isOverlayPermissionGranted();
+    setOverlayStatus(formatOverlayPermission(overlayGranted));
+    if (overlayEnabled && !overlayGranted) {
+      await setOverlayEnabled(false);
+      await toggleOverlay(false);
+    }
+    return overlayGranted;
+  }, [overlayEnabled, setOverlayEnabled]);
+
   useEffect(() => {
     void (async () => {
       const mic = await requestMicPermission();
       setMicStatus(mic);
-      const overlayGranted = await canDrawOverlays();
-      setOverlayStatus(formatOverlayPermission(overlayGranted));
+      await refreshOverlayPermission();
     })();
-  }, []);
+  }, [refreshOverlayPermission]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshOverlayPermission();
+    }, [refreshOverlayPermission])
+  );
 
   const themeOptions: { value: ThemeMode; label: string }[] = [
     { value: 'system', label: 'System' },
@@ -167,17 +183,27 @@ export default function SettingsScreen() {
           <SwitchRow
             label="Floating overlay"
             description="While on: shows overlay on other screens. In background: auto-shows during chat generation and voice."
-            value={overlayEnabled}
+            value={overlayEnabled && overlayStatus === 'Granted'}
             onValueChange={async (v) => {
               if (v) {
-                const granted = await canDrawOverlays();
+                let granted = await isOverlayPermissionGranted();
                 if (!granted) {
                   await promptOverlayPermissionIfNeeded();
+                  granted = await isOverlayPermissionGranted();
                 }
+                if (!granted) {
+                  setOverlayStatus('Not granted');
+                  return;
+                }
+                await setOverlayEnabled(true);
+                await toggleOverlay(true);
+                setOverlayStatus('Granted');
+                return;
               }
-              await setOverlayEnabled(v);
-              await toggleOverlay(v);
-              const ok = await canDrawOverlays();
+
+              await setOverlayEnabled(false);
+              await toggleOverlay(false);
+              const ok = await isOverlayPermissionGranted();
               setOverlayStatus(ok ? 'Granted' : 'Not granted');
             }}
           />

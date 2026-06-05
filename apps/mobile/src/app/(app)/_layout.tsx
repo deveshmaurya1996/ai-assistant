@@ -4,6 +4,7 @@ import { Redirect } from 'expo-router';
 import { Drawer } from 'expo-router/drawer';
 import { DrawerContent } from '@/components/layout/DrawerContent';
 import { useTheme } from '@/theme/ThemeProvider';
+import { useThemedScreenOptions } from '@/theme/useThemedScreenOptions';
 import { promptOverlayPermissionIfNeeded } from '@/lib/overlay-prompt';
 import { ChatImagePreviewHost } from '@/features/chat/ChatImagePreviewHost';
 import { VoiceSessionHost } from '@/features/voice-assistant/VoiceSessionHost';
@@ -15,6 +16,7 @@ import { Routes } from '@/lib/routes';
 
 function AppDrawerLayoutContent() {
   const { colors } = useTheme();
+  const screenOptions = useThemedScreenOptions();
   const pendingAction = useChatActionConfirmBridge((s) => s.pendingAction);
   const confirmPendingAction = useChatActionConfirmBridge((s) => s.confirmPendingAction);
   const cancelPendingAction = useChatActionConfirmBridge((s) => s.cancelPendingAction);
@@ -33,11 +35,11 @@ function AppDrawerLayoutContent() {
       <Drawer
         drawerContent={(props) => <DrawerContent {...props} />}
         screenOptions={{
-          headerShown: false,
+          ...screenOptions,
           drawerType: 'front',
           drawerStyle: { backgroundColor: colors.background, width: 320 },
           overlayColor: colors.overlay,
-          drawerContentContainerStyle: { flex: 1 },
+          drawerContentContainerStyle: { flex: 1, backgroundColor: colors.background },
           swipeEnabled: true,
           swipeEdgeWidth: 56,
         }}>

@@ -16,7 +16,7 @@ import { spacing, radii } from '@/theme/tokens';
 import { useTheme } from '@/theme/ThemeProvider';
 
 export default function AssistantScreen() {
-  const { colors } = useTheme();
+  const { colors, screenStyle } = useTheme();
   const { resumeSessionId } = useLocalSearchParams<{ resumeSessionId?: string }>();
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
   const { contentBottom } = useDockInset();
@@ -45,7 +45,7 @@ export default function AssistantScreen() {
   const idleEnd = error ? isVoiceIdleEndMessage(error) : false;
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
+    <View style={[styles.root, screenStyle]}>
       <ScreenHeader
         title={assistantDisplayName}
         variant="page"

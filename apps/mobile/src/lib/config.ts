@@ -19,13 +19,24 @@ function lanDevHost(): string | null {
   return host;
 }
 
+function isLocalDevUrl(url: string): boolean {
+  return /localhost|127\.0\.0\.1/i.test(url);
+}
+
 function readApiUrl(): string {
   const explicit = process.env.EXPO_PUBLIC_API_URL?.trim();
-  if (explicit) return explicit;
-
   const fromExtra = Constants.expoConfig?.extra?.apiUrl;
-  if (typeof fromExtra === 'string' && fromExtra.length > 0) {
-    return fromExtra;
+  const extraUrl =
+    typeof fromExtra === 'string' && fromExtra.length > 0 ? fromExtra : null;
+
+  // OTA bundles can accidentally bake localhost from apps/mobile/.env during export.
+  // In release builds, prefer the URL embedded in the native binary instead.
+  if (explicit && (__DEV__ || !isLocalDevUrl(explicit))) {
+    return explicit;
+  }
+
+  if (extraUrl) {
+    return extraUrl;
   }
 
   const port = getApiPort();

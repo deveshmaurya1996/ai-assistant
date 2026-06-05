@@ -9,6 +9,7 @@ import {
   type PersonalityGender,
 } from '@ai-assistant/types';
 import { deleteItemAsync, getItemAsync, setItemAsync } from '@/lib/secure-storage';
+import { reconcileStoredOverlayEnabled } from '@/lib/overlay-settings';
 import { apiClient } from '@/lib/api-client';
 import type { ThemeMode } from '@/theme/tokens';
 import { TERMS_VERSION } from '@/content/terms';
@@ -175,6 +176,18 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         await setItemAsync(KEYS.assistantDisplayName, assistantDisplayName);
       }
 
+      const overlayEnabled = await reconcileStoredOverlayEnabled(overlay === 'true');
+      if (overlay === 'true' && !overlayEnabled) {
+        await setItemAsync(KEYS.overlayEnabled, 'false');
+      }
+
+      const voiceOverlayEnabled = await reconcileStoredOverlayEnabled(
+        voiceOverlay === 'true'
+      );
+      if (voiceOverlay === 'true' && !voiceOverlayEnabled) {
+        await setItemAsync(KEYS.voiceOverlayEnabled, 'false');
+      }
+
       set({
         hydrated: true,
         personalities,
@@ -185,8 +198,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         assistantDisplayName,
         assistantContinuousListening: backgroundVoice !== 'false',
         autoSendAfterTranscribe: autoSend === 'true',
-        overlayEnabled: overlay === 'true',
-        voiceOverlayEnabled: voiceOverlay === 'true',
+        overlayEnabled,
+        voiceOverlayEnabled,
         lastAiModelLabel: lastModel,
         lastTranscript: transcript,
       });

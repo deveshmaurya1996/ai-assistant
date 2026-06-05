@@ -12,7 +12,18 @@ type Props = {
 };
 
 export function SwitchRow({ label, description, value, onValueChange, disabled }: Props) {
-  const { colors } = useTheme();
+  const { colors, colorScheme } = useTheme();
+  const thumbColor =
+    colorScheme === 'dark'
+      ? value
+        ? '#0B0D10'
+        : '#E5E7EB'
+      : '#FFFFFF';
+  const trackColor = {
+    false: colorScheme === 'dark' ? '#3D4455' : '#CBD5E1',
+    true: colors.primary,
+  };
+
   return (
     <View style={styles.row}>
       <View style={styles.text}>
@@ -27,8 +38,9 @@ export function SwitchRow({ label, description, value, onValueChange, disabled }
         value={value}
         onValueChange={onValueChange}
         disabled={disabled}
-        trackColor={{ false: colors.border, true: colors.primary }}
-        thumbColor={colors.surface}
+        trackColor={trackColor}
+        thumbColor={thumbColor}
+        ios_backgroundColor={trackColor.false}
       />
     </View>
   );

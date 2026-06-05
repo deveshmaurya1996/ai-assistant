@@ -26,6 +26,7 @@ function lastUserMessageText(messages: ChatMessage[]): string {
 }
 
 type Props = {
+  backgroundColor?: string;
   messages: ChatMessage[];
   visibleText: string;
   isStreaming: boolean;
@@ -46,6 +47,7 @@ export type ChatMessageListHandle = {
 };
 
 export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function ChatMessageList({
+  backgroundColor,
   messages,
   visibleText,
   isStreaming,
@@ -145,7 +147,7 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function
 
   if (messages.length === 0 && emptyHint) {
     return (
-      <View style={[styles.listContainer, styles.emptyWrap]}>
+      <View style={[styles.listContainer, styles.emptyWrap, backgroundColor ? { backgroundColor } : null]}>
         <Text variant="body" muted style={styles.emptyHint}>
           {emptyHint}
         </Text>
@@ -165,7 +167,10 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function
           ? { paddingBottom: contentPaddingBottom }
           : null,
       ]}
-      style={styles.listContainer}
+      style={StyleSheet.flatten([
+        styles.listContainer,
+        backgroundColor ? { backgroundColor } : null,
+      ])}
       renderItem={renderItem}
     />
   );

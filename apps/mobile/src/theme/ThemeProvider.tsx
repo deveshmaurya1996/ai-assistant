@@ -7,7 +7,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { useColorScheme as useSystemColorScheme } from 'react-native';
+import { useColorScheme as useSystemColorScheme, View, type ViewStyle } from 'react-native';
+import * as SystemUI from 'expo-system-ui';
 import { getItemAsync, setItemAsync } from '@/lib/secure-storage';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -23,6 +24,7 @@ type ThemeContextValue = {
   mode: ThemeMode;
   colorScheme: ColorScheme;
   colors: ThemeColors;
+  screenStyle: ViewStyle;
   setMode: (mode: ThemeMode) => void;
   isDark: boolean;
 };
@@ -49,21 +51,26 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const colorScheme: ColorScheme =
     mode === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : mode;
 
-  const value = useMemo(
-    () => ({
+  const value = useMemo(() => {
+    const colors = palettes[colorScheme];
+    return {
       mode,
       colorScheme,
-      colors: palettes[colorScheme],
+      colors,
+      screenStyle: { flex: 1, backgroundColor: colors.background } satisfies ViewStyle,
       setMode,
       isDark: colorScheme === 'dark',
-    }),
-    [mode, colorScheme, setMode]
-  );
+    };
+  }, [mode, colorScheme, setMode]);
+
+  useEffect(() => {
+    void SystemUI.setBackgroundColorAsync(value.colors.background);
+  }, [value.colors.background]);
 
   return (
     <ThemeContext.Provider value={value}>
       <StatusBar style={value.isDark ? 'light' : 'dark'} />
-      {children}
+      <View style={value.screenStyle}>{children}</View>
     </ThemeContext.Provider>
   );
 }

@@ -19,14 +19,14 @@ type Props = {
 };
 
 export function Screen({ children, scroll, padded = true, safeTop = false, style }: Props) {
-  const { colors } = useTheme();
+  const { screenStyle } = useTheme();
   const { horizontalPadding, contentMaxWidth } = useResponsive();
 
   const content = (
     <View
       style={[
+        screenStyle,
         {
-          flex: 1,
           width: '100%',
           maxWidth: contentMaxWidth,
           alignSelf: 'center',
@@ -39,15 +39,14 @@ export function Screen({ children, scroll, padded = true, safeTop = false, style
   );
 
   return (
-    <SafeAreaView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      edges={safeTop ? ['top'] : []}>
+    <SafeAreaView style={screenStyle} edges={safeTop ? ['top'] : []}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
+        style={screenStyle}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}>
         {scroll ? (
           <ScrollView
+            style={screenStyle}
             contentContainerStyle={{ flexGrow: 1, paddingBottom: 32 }}
             keyboardShouldPersistTaps="handled">
             {content}
