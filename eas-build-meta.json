@@ -1,0 +1,50 @@
+﻿{
+  "id": "97acfa1e-7359-4ecc-95fa-b19812af89aa",
+  "status": "ERRORED",
+  "platform": "ANDROID",
+  "error": {
+    "errorCode": "UNKNOWN_ERROR",
+    "message": "Unknown error. See logs of the Install dependencies build phase for more information."
+  },
+  "artifacts": {},
+  "fingerprint": {
+    "id": "019e936a-7120-7447-af37-18f2ecdfc6c2",
+    "hash": "50222fc7a07ad429521d01071e37d7e2e44c9c08"
+  },
+  "initiatingActor": {
+    "id": "49381356-76f0-4c53-8267-8eac3c2096c6",
+    "displayName": "deveshmaurya"
+  },
+  "logFiles": [
+    "https://storage.googleapis.com/eas-workflows-production/logs/e571137a-6ce6-4d5f-bba1-ee812975eb4a/97acfa1e-7359-4ecc-95fa-b19812af89aa/2026-06-04T17%3A16%3A53Z-2fb1e547-fd0a-4de6-a42e-b420b0388210.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260605%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260605T053722Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=559e4ffeaaee3b8e0cedc53822aa3dd79209f9780a757c996f9dbc6b545fba918a3e9c66496061f9f0220077d951bacef31efd20049d895e42fe79835cfb5fe0242750d67f09e046de2acc412070aff0320bbf692543dc48ffa3d547178084864250c3b5ad8d8da5aee0d03eb0641bdb756b21e31b20e5414581776bd2bbd9467be32ab723ede8332981f1dfe07b516627663e0ba274d68eb852e5727101bc220caa3939b3036528a2e5da7b416527ffa6a292e36e10f48128d2b4988170995daa09450853b7f28b05c659fa6a98e25f545367382ea5631d0c14f5a3e0d6a459ad80100b8f5f9b925f8ab2ee2feba463de6f9cba8d11054048b03cd1e55bf590"
+  ],
+  "project": {
+    "id": "e571137a-6ce6-4d5f-bba1-ee812975eb4a",
+    "name": "AI Assistant",
+    "slug": "ai-assistant",
+    "ownerAccount": {
+      "id": "3246e2df-40f3-41e2-9457-ed042b8cce52",
+      "name": "deveshmaurya"
+    }
+  },
+  "channel": "preview",
+  "distribution": "INTERNAL",
+  "buildProfile": "preview",
+  "sdkVersion": "56.0.0",
+  "appVersion": "1.0.0",
+  "appBuildVersion": "1",
+  "runtimeVersion": "1.0.0",
+  "gitCommitHash": "7b98d5ef1ec9c9dec90453c3ed6e2b4dd4635904",
+  "gitCommitMessage": "fixed integrations",
+  "priority": "NORMAL_PLUS",
+  "createdAt": "2026-06-04T16:14:47.024Z",
+  "updatedAt": "2026-06-04T21:00:27.363Z",
+  "completedAt": "2026-06-04T17:17:31.899Z",
+  "expirationDate": "2026-06-18T16:14:47.062Z",
+  "isForIosSimulator": false,
+  "metrics": {
+    "buildWaitTime": 4047,
+    "buildQueueTime": 3726826,
+    "buildDuration": 34002
+  }
+}

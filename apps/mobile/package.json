@@ -75,6 +75,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
+    "eas-build-post-install": "cd ../.. && pnpm --filter @ai-assistant/types build && pnpm --filter @ai-assistant/sdk build",
     "release:sync": "node ../../scripts/sync-mobile-release.mjs",
     "release:sync:eas": "node ../../scripts/sync-mobile-release.mjs --from-eas",
     "eas:build:android:prod": "node scripts/sync-root-easignore.mjs && pnpm exec eas build -p android --profile production && node ../../scripts/sync-mobile-release.mjs --from-eas",
