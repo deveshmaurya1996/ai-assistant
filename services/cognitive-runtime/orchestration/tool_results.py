@@ -184,6 +184,9 @@ def _summarize_automation_update(entry: Dict[str, Any]) -> str:
     if not isinstance(automation, dict):
         return "Automation updated."
     name = automation.get("name") or "Automation"
+    schedule = automation.get("scheduleLabel") or automation.get("schedule")
+    if schedule:
+        return f"Automation updated: {name} ({schedule})."
     return f"Automation updated: {name}."
 
 
@@ -199,7 +202,7 @@ def _summarize_automation_create(entry: Dict[str, Any]) -> str:
     if not isinstance(automation, dict):
         return "Inbox digest automation created."
     name = automation.get("name") or "Inbox digest"
-    schedule = automation.get("schedule") or "daily"
+    schedule = automation.get("scheduleLabel") or automation.get("schedule") or "daily"
     return f"Inbox digest automation created: {name} (schedule: {schedule})."
 
 

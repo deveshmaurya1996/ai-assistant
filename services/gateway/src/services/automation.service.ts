@@ -1,5 +1,8 @@
 import { Prisma, prisma, type Automation } from '@ai-assistant/database';
+import type { AgentDigestAction, UpdateAutomationInput } from '@ai-assistant/types';
 import { badRequest, notFound } from '../lib/errors';
+import { normalizeAutomationScheduleInput } from '../lib/automation-input';
+import { humanizeAutomationQuery } from '../lib/humanize-automation-query';
 import {
   humanizeCron,
   validateCronExpression,
@@ -9,22 +12,13 @@ import {
   scheduleCronJob,
   unscheduleJob,
 } from '../scheduler';
-import { humanizeAutomationQuery } from '../lib/humanize-automation-query';
 import { normalizeClientTimezone } from './normalize-client-timezone';
-
-type AutomationAction = {
-  type?: string;
-  query?: string;
-  pushTitle?: string;
-  timezone?: string;
-  userPrompt?: string;
-};
 
 export type AutomationWithLabel = Automation & { scheduleLabel: string | null };
 
 function actionTimezone(action: unknown): string {
   if (!action || typeof action !== 'object') return 'UTC';
-  const tz = (action as AutomationAction).timezone;
+  const tz = (action as AgentDigestAction).timezone;
   return tz?.trim() ? normalizeClientTimezone(tz) : 'UTC';
 }
 
@@ -39,20 +33,14 @@ export function serializeAutomation(automation: Automation): AutomationWithLabel
 export async function updateAutomation(
   userId: string,
   automationId: string,
-  input: {
-    name?: string;
-    schedule?: string;
-    isActive?: boolean;
-    query?: string;
-    timezone?: string;
-  }
+  input: UpdateAutomationInput
 ): Promise<AutomationWithLabel> {
   const existing = await prisma.automation.findFirst({
     where: { id: automationId, userId },
   });
   if (!existing) throw notFound('Automation not found');
 
-  const action = { ...(existing.action as AutomationAction) };
+  const action = { ...(existing.action as unknown as AgentDigestAction) };
   if (input.query !== undefined) {
     action.query = humanizeAutomationQuery(input.query, action.userPrompt);
   }
@@ -60,7 +48,8 @@ export async function updateAutomation(
     action.timezone = normalizeClientTimezone(input.timezone);
   }
 
-  const schedule = input.schedule?.trim() ?? existing.schedule ?? undefined;
+  const schedule =
+    normalizeAutomationScheduleInput(input) ?? existing.schedule ?? undefined;
   const timezone = actionTimezone(action);
 
   if (schedule && !validateCronExpression(schedule, timezone)) {
@@ -72,7 +61,7 @@ export async function updateAutomation(
     where: { id: automationId },
     data: {
       ...(input.name !== undefined ? { name: input.name.trim() } : {}),
-      ...(input.schedule !== undefined ? { schedule } : {}),
+      ...(normalizeAutomationScheduleInput(input) !== undefined ? { schedule } : {}),
       ...(input.isActive !== undefined ? { isActive } : {}),
       action: action as Prisma.InputJsonValue,
     },
@@ -108,7 +97,7 @@ export async function findAutomationByName(userId: string, name: string) {
   return (
     rows.find((a) => a.name.toLowerCase().includes(lower)) ??
     rows.find((a) => {
-      const action = a.action as AutomationAction;
+      const action = a.action as unknown as AgentDigestAction;
       return action.pushTitle?.toLowerCase().includes(lower);
     }) ??
     null

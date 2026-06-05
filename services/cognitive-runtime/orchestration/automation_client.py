@@ -40,7 +40,13 @@ async def execute_automation_via_gateway(
     args: Dict[str, Any],
 ) -> Dict[str, Any]:
     if tool_name == "automation.create":
-        cron = args.get("cronExpression") or args.get("schedule") or "0 8 * * *"
+        cron = args.get("cronExpression") or args.get("schedule")
+        if not cron:
+            return {
+                "tool": tool_name,
+                "status": "failed",
+                "error": "cronExpression is required for automations",
+            }
         tz = resolve_effective_timezone(
             args.get("timezone"),
             str(args.get("userPrompt") or ""),
@@ -64,7 +70,7 @@ async def execute_automation_via_gateway(
                 {
                     "userId": user_id,
                     "name": args.get("name") or args.get("pushTitle") or "Inbox digest",
-                    "schedule": cron,
+                    "cronExpression": cron,
                     "timezone": tz,
                     "query": query,
                     "userPrompt": args.get("userPrompt"),
@@ -98,6 +104,7 @@ async def execute_automation_via_gateway(
                     "userId": user_id,
                     "automationId": args.get("automationId"),
                     "name": args.get("name") or args.get("pushTitle"),
+                    "title": args.get("title"),
                     "cronExpression": args.get("cronExpression") or args.get("schedule"),
                     "timezone": update_tz or args.get("timezone"),
                     "query": args.get("query"),

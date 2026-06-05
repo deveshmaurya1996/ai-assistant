@@ -1,20 +1,13 @@
 import { prisma, Prisma, Role } from '@ai-assistant/database';
+import {
+  type AgentDigestAction,
+  DEFAULT_AUTOMATION_QUERY,
+  humanizeAutomationQuery,
+  resolveAssistantContext,
+} from '@ai-assistant/types';
 import { DateTime } from 'luxon';
-import { resolveAssistantContext } from '@ai-assistant/types';
 import { runAgentTurn } from './agent-turn.service';
 import { sendPushToUser } from './push-notification.service';
-
-type AgentDigestAction = {
-  type: 'agent_digest';
-  query?: string;
-  pushTitle?: string;
-  timezone?: string;
-};
-
-const DEFAULT_DIGEST_QUERY =
-  'Check Gmail and WhatsApp for important unread items. ' +
-  'Summarize only urgent or actionable messages. ' +
-  'If nothing needs attention, say so briefly.';
 
 function formatAutomationSessionTitle(name: string, timezone?: string): string {
   const tz = timezone?.trim() || 'UTC';
@@ -56,7 +49,10 @@ export async function runInboxDigestAutomation(
     action.timezone
   );
   const assistantContext = resolveAssistantContext('assistant');
-  const query = action.query?.trim() || DEFAULT_DIGEST_QUERY;
+  const query = humanizeAutomationQuery(
+    action.query?.trim() || DEFAULT_AUTOMATION_QUERY,
+    action.userPrompt ?? ''
+  );
 
   const result = await runAgentTurn(
     {

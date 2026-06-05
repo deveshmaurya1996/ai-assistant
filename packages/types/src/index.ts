@@ -31,6 +31,13 @@ export type {
 export type * from './models';
 export type * from './socket';
 export type * from './automation';
+export {
+  DEFAULT_AUTOMATION_QUERY,
+  automationKindLabel,
+  getAgentDigestQuery,
+  humanizeAutomationQuery,
+  isAgentDigestAction,
+} from './humanize-automation-query';
 export type * from './agent';
 export type * from './memory';
 export type * from './voice';

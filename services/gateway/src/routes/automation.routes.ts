@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { Prisma, prisma } from '@ai-assistant/database';
 import { getConnectorForTool } from '@ai-assistant/integrations';
+import { isAgentDigestAction, type ToolExecutionAction } from '@ai-assistant/types';
 import { authenticateRequest } from '../utils/auth.middleware';
 import { requireUserId } from '../lib/auth';
 import { sendError } from '../lib/errors';
@@ -12,6 +13,7 @@ import {
   serializeAutomation,
   updateAutomation,
 } from '../services/automation.service';
+import { normalizeClientTimezone } from '../services/normalize-client-timezone';
 
 const AutomationSchema = z.object({
   name: z.string().min(1),
@@ -24,10 +26,18 @@ const AutomationSchema = z.object({
 const UpdateAutomationSchema = z.object({
   name: z.string().min(1).optional(),
   schedule: z.string().min(1).optional(),
+  cronExpression: z.string().min(1).optional(),
   isActive: z.boolean().optional(),
   query: z.string().min(1).optional(),
   timezone: z.string().min(1).optional(),
 });
+
+function automationScheduleTimezone(action: unknown): string {
+  if (isAgentDigestAction(action) && action.timezone?.trim()) {
+    return normalizeClientTimezone(action.timezone);
+  }
+  return 'UTC';
+}
 
 export async function automationRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', authenticateRequest);
@@ -53,21 +63,25 @@ export async function automationRoutes(fastify: FastifyInstance) {
 
       const userId = requireUserId(request);
       const body = AutomationSchema.parse(request.body);
+      const action = body.action;
 
-      const action = body.action as { type?: unknown; tool?: unknown };
-      if (action?.type === 'agent_digest') {
-      } else if (typeof action?.tool === 'string' && action.tool.trim()) {
-        const connector = getConnectorForTool(action.tool);
-        if (!connector) {
-          throw badRequest(`Unknown tool: ${action.tool}`);
-        }
-        const conn = await prisma.userConnection.findFirst({
-          where: { userId, providerId: connector.providerId, status: 'ACTIVE' },
-        });
-        if (!conn) {
-          throw badRequest(
-            `No active ${connector.providerId} connection. Connect it in Connect Apps first.`
-          );
+      if (isAgentDigestAction(action)) {
+        // agent_digest automations are validated at create time
+      } else {
+        const toolAction = action as unknown as ToolExecutionAction;
+        if (typeof toolAction.tool === 'string' && toolAction.tool.trim()) {
+          const connector = getConnectorForTool(toolAction.tool);
+          if (!connector) {
+            throw badRequest(`Unknown tool: ${toolAction.tool}`);
+          }
+          const conn = await prisma.userConnection.findFirst({
+            where: { userId, providerId: connector.providerId, status: 'ACTIVE' },
+          });
+          if (!conn) {
+            throw badRequest(
+              `No active ${connector.providerId} connection. Connect it in Connect Apps first.`
+            );
+          }
         }
       }
 
@@ -87,6 +101,7 @@ export async function automationRoutes(fastify: FastifyInstance) {
           kind: 'automation',
           entityId: automation.id,
           cron: automation.schedule,
+          timezone: automationScheduleTimezone(body.action),
         });
       }
 

@@ -22,27 +22,21 @@ import { spacing, radii } from '@/theme/tokens';
 import { apiClient } from '@/lib/api-client';
 import { Routes } from '@/lib/routes';
 import { AutomationEditModal } from '@/features/automations/AutomationEditModal';
-import type { Automation } from '@ai-assistant/types';
-
-type AutomationRow = Automation & { scheduleLabel?: string | null };
-
-function automationKindLabel(action: Automation['action']): string | null {
-  if (action && typeof action === 'object' && 'type' in action) {
-    const t = (action as { type?: string }).type;
-    if (t === 'agent_digest') return 'Inbox digest';
-  }
-  return null;
-}
+import {
+  automationKindLabel,
+  type AgentDigestRunResult,
+  type Automation,
+} from '@ai-assistant/types';
 
 function lastRunSummary(item: Automation): string | null {
   const run = item.runs?.[0];
   if (!run?.result || typeof run.result !== 'object') return null;
-  const summary = (run.result as { summary?: string }).summary;
+  const summary = (run.result as unknown as AgentDigestRunResult).summary;
   if (!summary || typeof summary !== 'string') return null;
   return summary.length > 100 ? `${summary.slice(0, 97)}…` : summary;
 }
 
-function formatAutomationSchedule(item: AutomationRow): string {
+function formatAutomationSchedule(item: Automation): string {
   const status = item.isActive ? 'Running' : 'Paused';
   const label = item.scheduleLabel ?? item.schedule;
   return label ? `${status}: ${label}` : status;
@@ -51,16 +45,16 @@ function formatAutomationSchedule(item: AutomationRow): string {
 export default function AutomationsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const [automations, setAutomations] = useState<AutomationRow[]>([]);
+  const [automations, setAutomations] = useState<Automation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [editing, setEditing] = useState<AutomationRow | null>(null);
+  const [editing, setEditing] = useState<Automation | null>(null);
 
   const load = useCallback(async () => {
     try {
       const list = await apiClient.listAutomations();
-      setAutomations(list as AutomationRow[]);
+      setAutomations(list);
     } catch {
       setAutomations([]);
     } finally {
@@ -76,7 +70,7 @@ export default function AutomationsScreen() {
   );
 
   const handleDelete = useCallback(
-    (item: AutomationRow) => {
+    (item: Automation) => {
       const message = `Remove "${item.name}"?`;
 
       const runDelete = async () => {

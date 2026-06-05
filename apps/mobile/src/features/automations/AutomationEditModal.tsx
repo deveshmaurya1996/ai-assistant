@@ -11,7 +11,11 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from 'lucide-react-native';
-import type { Automation } from '@ai-assistant/types';
+import {
+  getAgentDigestQuery,
+  isAgentDigestAction,
+  type Automation,
+} from '@ai-assistant/types';
 import { Text } from '@/components/ui/Text';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -20,10 +24,8 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { spacing, radii } from '@/theme/tokens';
 import { apiClient } from '@/lib/api-client';
 import { getDeviceTimezone } from '@/lib/deviceTimezone';
-import { humanizeAutomationQuery } from '@/lib/humanizeAutomationQuery';
 import { ReminderWhenField } from '@/features/reminders/ReminderWhenField';
 
-type AutomationRow = Automation & { scheduleLabel?: string | null };
 type RepeatOption = 'hourly' | 'every2h' | 'every6h' | 'daily' | 'weekly';
 
 const REPEAT_OPTIONS: { id: RepeatOption; label: string }[] = [
@@ -35,7 +37,7 @@ const REPEAT_OPTIONS: { id: RepeatOption; label: string }[] = [
 ];
 
 type Props = {
-  automation: AutomationRow | null;
+  automation: Automation | null;
   visible: boolean;
   onClose: () => void;
   onSaved: () => void;
@@ -68,7 +70,7 @@ export function AutomationEditModal({ automation, visible, onClose, onSaved }: P
   useEffect(() => {
     if (!automation) return;
     setName(automation.name);
-    setQuery(getDigestQuery(automation));
+    setQuery(getAgentDigestQuery(automation.action));
     setWhenDate(anchorFromSchedule(automation.schedule));
     setRepeat(repeatFromSchedule(automation.schedule));
     setIsActive(automation.isActive);
@@ -83,7 +85,7 @@ export function AutomationEditModal({ automation, visible, onClose, onSaved }: P
     }
 
     const trimmedQuery = query.trim();
-    if (isDigestAutomation(automation) && !trimmedQuery) {
+    if (isAgentDigestAction(automation.action) && !trimmedQuery) {
       Alert.alert('Query required', 'Describe what this automation should check.');
       return;
     }
@@ -94,7 +96,7 @@ export function AutomationEditModal({ automation, visible, onClose, onSaved }: P
         name: trimmedName,
         schedule: cronForRepeat(repeat, whenDate),
         isActive,
-        ...(isDigestAutomation(automation) ? { query: trimmedQuery } : {}),
+        ...(isAgentDigestAction(automation.action) ? { query: trimmedQuery } : {}),
         timezone: getDeviceTimezone(),
       });
       onSaved();
@@ -160,7 +162,7 @@ export function AutomationEditModal({ automation, visible, onClose, onSaved }: P
                 <Input value={name} onChangeText={setName} placeholder="Inbox digest" />
               </View>
 
-              {isDigestAutomation(automation) ? (
+              {isAgentDigestAction(automation.action) ? (
                 <View style={styles.field}>
                   <Text variant="label" muted>
                     What to check
@@ -246,21 +248,6 @@ export function AutomationEditModal({ automation, visible, onClose, onSaved }: P
         </View>
       </View>
     </Modal>
-  );
-}
-
-function isDigestAutomation(item: AutomationRow): boolean {
-  const action = item.action;
-  return Boolean(action && typeof action === 'object' && (action as { type?: string }).type === 'agent_digest');
-}
-
-function getDigestQuery(item: AutomationRow): string {
-  const action = item.action;
-  if (!action || typeof action !== 'object') return '';
-  const digest = action as { query?: string; userPrompt?: string };
-  return humanizeAutomationQuery(
-    String(digest.query ?? ''),
-    String(digest.userPrompt ?? '')
   );
 }
 

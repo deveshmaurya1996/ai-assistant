@@ -44,6 +44,18 @@ def test_humanize_automation_query_unknown_tool_uses_user_prompt():
     ) == "check my calendar for meetings today"
 
 
+_HUMANIZE_PARITY = {
+    "email.list_unread": "Check Gmail for important unread emails",
+    "messaging.list_unread": "Check WhatsApp for important unread messages",
+    "whatsapp.list_unread": "Check WhatsApp for important unread messages",
+}
+
+
+def test_humanize_automation_query_parity_with_types_package():
+    for tool_id, expected in _HUMANIZE_PARITY.items():
+        assert _humanize_automation_query(tool_id) == expected
+
+
 def test_normalize_action_humanizes_automation_query():
     out = _normalize_action(
         {

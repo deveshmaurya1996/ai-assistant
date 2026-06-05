@@ -102,6 +102,35 @@ function toOpenAiSchema(schema: z.ZodType): Record<string, unknown> {
   return { type: 'object', properties: {} };
 }
 
+export const automationCreateParams = z.object({
+  name: z.string().optional(),
+  pushTitle: z.string().optional(),
+  cronExpression: z.string(),
+  timezone: z.string(),
+  query: z.string(),
+  userPrompt: z.string().optional(),
+});
+
+export const automationUpdateParams = z.object({
+  automationId: z.string().optional(),
+  name: z.string().optional(),
+  title: z.string().optional(),
+  cronExpression: z.string().optional(),
+  timezone: z.string().optional(),
+  query: z.string().optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const automationCancelParams = z.object({
+  automationId: z.string().optional(),
+  name: z.string().optional(),
+  title: z.string().optional(),
+});
+
+export type AutomationCreateArgs = z.infer<typeof automationCreateParams>;
+export type AutomationUpdateArgs = z.infer<typeof automationUpdateParams>;
+export type AutomationCancelArgs = z.infer<typeof automationCancelParams>;
+
 export const TOOL_REGISTRY: ToolDefinition[] = [
   {
     name: 'gmail.search',
@@ -381,26 +410,10 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     connector: 'platform',
     description:
       'Create a recurring inbox digest automation. Planner MUST supply cronExpression, timezone (IANA), and query as plain English (never tool IDs like email.list_unread).',
-    parameters: z.object({
-      name: z.string().optional(),
-      pushTitle: z.string().optional(),
-      cronExpression: z.string(),
-      timezone: z.string(),
-      query: z.string(),
-      userPrompt: z.string().optional(),
-    }),
+    parameters: automationCreateParams,
     supportsCancellation: false,
     dangerous: false,
-    openAiParameters: toOpenAiSchema(
-      z.object({
-        name: z.string().optional(),
-        pushTitle: z.string().optional(),
-        cronExpression: z.string(),
-        timezone: z.string(),
-        query: z.string(),
-        userPrompt: z.string().optional(),
-      })
-    ),
+    openAiParameters: toOpenAiSchema(automationCreateParams),
   },
   {
     name: 'automation.update',
@@ -408,44 +421,20 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     connector: 'platform',
     description:
       'Update an existing automation (schedule, query, name, or pause/resume). Match by automationId or name.',
-    parameters: z.object({
-      automationId: z.string().optional(),
-      name: z.string().optional(),
-      cronExpression: z.string().optional(),
-      timezone: z.string().optional(),
-      query: z.string().optional(),
-      isActive: z.boolean().optional(),
-    }),
+    parameters: automationUpdateParams,
     supportsCancellation: false,
     dangerous: false,
-    openAiParameters: toOpenAiSchema(
-      z.object({
-        automationId: z.string().optional(),
-        name: z.string().optional(),
-        cronExpression: z.string().optional(),
-        timezone: z.string().optional(),
-        query: z.string().optional(),
-        isActive: z.boolean().optional(),
-      })
-    ),
+    openAiParameters: toOpenAiSchema(automationUpdateParams),
   },
   {
     name: 'automation.cancel',
     version: '1',
     connector: 'platform',
     description: 'Delete/cancel a recurring automation by id or name match',
-    parameters: z.object({
-      automationId: z.string().optional(),
-      name: z.string().optional(),
-    }),
+    parameters: automationCancelParams,
     supportsCancellation: false,
     dangerous: false,
-    openAiParameters: toOpenAiSchema(
-      z.object({
-        automationId: z.string().optional(),
-        name: z.string().optional(),
-      })
-    ),
+    openAiParameters: toOpenAiSchema(automationCancelParams),
   },
   {
     name: 'email.draft_reply',

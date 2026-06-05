@@ -1,5 +1,11 @@
 import { prisma, Prisma } from '@ai-assistant/database';
 import { EventNames, publishEvent } from '@ai-assistant/events';
+import {
+  type AgentDigestAction,
+  type AgentDigestRunResult,
+  type AutomationAction,
+  isAgentDigestAction,
+} from '@ai-assistant/types';
 import { toolRuntimeFetch } from '../lib/runtime-clients';
 import { fireInboxDigestAutomation } from '../services/digest-automation.service';
 
@@ -21,32 +27,29 @@ export async function fireAutomation(automationId: string): Promise<void> {
   });
 
   try {
-    const action = automation.action as {
-      type?: string;
-      tool?: string;
-      connector?: string;
-      args?: Record<string, unknown>;
-      query?: string;
-      pushTitle?: string;
-      timezone?: string;
+    const action = automation.action as unknown as AutomationAction;
+
+    let result: AgentDigestRunResult | Record<string, unknown> = {
+      executed: action,
+      at: new Date().toISOString(),
     };
 
-    let result: unknown = { executed: action, at: new Date().toISOString() };
-
-    if (action.type === 'agent_digest') {
+    if (isAgentDigestAction(action)) {
+      const digestAction: AgentDigestAction = {
+        type: 'agent_digest',
+        query: action.query,
+        pushTitle: action.pushTitle,
+        timezone: action.timezone,
+        userPrompt: action.userPrompt,
+      };
       const summary = await fireInboxDigestAutomation(
         automationId,
         automation.userId,
-        {
-          type: 'agent_digest',
-          query: action.query,
-          pushTitle: action.pushTitle,
-          timezone: action.timezone,
-        },
+        digestAction,
         automation.name
       );
       result = { type: 'agent_digest', summary, at: new Date().toISOString() };
-    } else if (action.tool) {
+    } else if ('tool' in action && action.tool) {
       const res = await toolRuntimeFetch('/v1/executions', {
         method: 'POST',
         body: JSON.stringify({
@@ -57,7 +60,7 @@ export async function fireAutomation(automationId: string): Promise<void> {
           confirmed: true,
         }),
       });
-      result = await res.json();
+      result = (await res.json()) as Record<string, unknown>;
       if (!res.ok) throw new Error(JSON.stringify(result));
     }
 

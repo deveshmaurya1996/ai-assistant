@@ -6,22 +6,29 @@ import { isSchedulerReady, scheduleCronJob } from '../scheduler';
 import { normalizeClientTimezone } from '../services/normalize-client-timezone';
 import { validateCronExpression } from '../scheduler/cron-utils';
 import { badRequest } from '../lib/errors';
+import { normalizeAutomationScheduleInput } from '../lib/automation-input';
 import { humanizeAutomationQuery } from '../lib/humanize-automation-query';
 import {
   deleteAutomation,
   findAutomationByName,
   listAutomationsForUser,
+  serializeAutomation,
   updateAutomation,
 } from '../services/automation.service';
 
-const InternalCreateDigestSchema = z.object({
-  userId: z.string(),
-  name: z.string().min(1).optional(),
-  schedule: z.string().min(1),
-  timezone: z.string().min(1),
-  query: z.string().min(1),
-  userPrompt: z.string().optional(),
-});
+const InternalCreateDigestSchema = z
+  .object({
+    userId: z.string(),
+    name: z.string().min(1).optional(),
+    schedule: z.string().min(1).optional(),
+    cronExpression: z.string().min(1).optional(),
+    timezone: z.string().min(1),
+    query: z.string().min(1),
+    userPrompt: z.string().optional(),
+  })
+  .refine((body) => Boolean(body.schedule?.trim() || body.cronExpression?.trim()), {
+    message: 'schedule or cronExpression is required',
+  });
 
 const InternalUpdateSchema = z.object({
   userId: z.string(),
@@ -60,9 +67,13 @@ export async function internalAutomationRoutes(fastify: FastifyInstance) {
       }
 
       const body = InternalCreateDigestSchema.parse(request.body);
+      const schedule = normalizeAutomationScheduleInput(body);
+      if (!schedule) {
+        throw badRequest('schedule or cronExpression is required');
+      }
       const timezone = normalizeClientTimezone(body.timezone);
-      if (!validateCronExpression(body.schedule, timezone)) {
-        throw badRequest(`Invalid cron expression: ${body.schedule}`);
+      if (!validateCronExpression(schedule, timezone)) {
+        throw badRequest(`Invalid cron expression: ${schedule}`);
       }
       const action = {
         type: 'agent_digest',
@@ -78,7 +89,7 @@ export async function internalAutomationRoutes(fastify: FastifyInstance) {
           name: body.name?.trim() || 'Inbox digest',
           trigger: { type: 'cron' } as Prisma.InputJsonValue,
           action: action as Prisma.InputJsonValue,
-          schedule: body.schedule,
+          schedule,
           isActive: true,
         },
       });
@@ -90,7 +101,7 @@ export async function internalAutomationRoutes(fastify: FastifyInstance) {
         timezone,
       });
 
-      return reply.code(201).send(automation);
+      return reply.code(201).send(serializeAutomation(automation));
     } catch (error) {
       return sendError(reply, error);
     }
@@ -111,7 +122,8 @@ export async function internalAutomationRoutes(fastify: FastifyInstance) {
 
       const automation = await updateAutomation(userId, id, {
         ...(name !== undefined ? { name } : {}),
-        schedule: schedule ?? cronExpression,
+        schedule,
+        cronExpression,
         ...rest,
       });
       return reply.send(automation);

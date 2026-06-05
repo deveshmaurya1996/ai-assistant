@@ -1,3 +1,5 @@
+import type { AgentDigestAction } from './automation';
+
 const TOOL_ID_RE = /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/i;
 
 const TOOL_QUERY_LABELS: Record<string, string> = {
@@ -6,7 +8,7 @@ const TOOL_QUERY_LABELS: Record<string, string> = {
   'whatsapp.list_unread': 'Check WhatsApp for important unread messages',
 };
 
-const DEFAULT_AUTOMATION_QUERY =
+export const DEFAULT_AUTOMATION_QUERY =
   'Check Gmail and WhatsApp for important unread items. ' +
   'Summarize only urgent or actionable messages. ' +
   'If nothing needs attention, say so briefly.';
@@ -28,4 +30,22 @@ export function humanizeAutomationQuery(query: string, userPrompt = ''): string 
     return up;
   }
   return DEFAULT_AUTOMATION_QUERY;
+}
+
+export function isAgentDigestAction(action: unknown): action is AgentDigestAction {
+  return (
+    typeof action === 'object' &&
+    action !== null &&
+    (action as AgentDigestAction).type === 'agent_digest'
+  );
+}
+
+export function getAgentDigestQuery(action: unknown): string {
+  if (!isAgentDigestAction(action)) return '';
+  return humanizeAutomationQuery(action.query ?? '', action.userPrompt ?? '');
+}
+
+export function automationKindLabel(action: unknown): string | null {
+  if (isAgentDigestAction(action)) return 'Inbox digest';
+  return null;
 }
