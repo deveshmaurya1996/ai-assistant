@@ -2,7 +2,9 @@ export type * from './personality';
 export {
   ASSISTANT_PERSONALITIES,
   ASSISTANT_NAME_MAX_LENGTH,
+  DEFAULT_ASSISTANT_PERSONALITY_ID,
   buildAssistantIdentityBlock,
+  canCustomizeAssistantDisplayName,
   formatPersonalityGender,
   getAssistantPersonality,
   normalizePersonalityId,

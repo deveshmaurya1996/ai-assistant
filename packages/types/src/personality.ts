@@ -92,11 +92,22 @@ export function formatPersonalityGender(gender: PersonalityGender): string {
   }
 }
 
+export const DEFAULT_ASSISTANT_PERSONALITY_ID = ASSISTANT_PERSONALITIES[0]!.id;
+
+export function canCustomizeAssistantDisplayName(personalityId: string): boolean {
+  return normalizePersonalityId(personalityId) === DEFAULT_ASSISTANT_PERSONALITY_ID;
+}
+
 export function reconcileDisplayName(
   personalityId: string,
   displayName?: string | null
 ): string {
   const personality = getAssistantPersonality(normalizePersonalityId(personalityId));
+
+  if (!canCustomizeAssistantDisplayName(personality.id)) {
+    return personality.name;
+  }
+
   const trimmed = displayName?.trim().slice(0, ASSISTANT_NAME_MAX_LENGTH) ?? '';
   if (!trimmed) return personality.name;
 
@@ -135,6 +146,10 @@ export function resolveAssistantContext(
     basePrompt,
     `Tone: ${personality.tagline}. Stay in character for both short and long replies.`,
     buildAssistantIdentityBlock(name, personality.id),
+    'Platform capabilities: You can set reminders and scheduled notifications for the user from natural language. ' +
+      'When Gmail or WhatsApp are connected, you can check unread messages and summarize important items. ' +
+      'When tool results confirm a reminder was scheduled or inbox data was fetched, use that data in your reply — ' +
+      'never say you cannot set reminders or access inbox unless a tool result explicitly failed.',
   ].join('\n');
   return {
     personalityId: personality.id,

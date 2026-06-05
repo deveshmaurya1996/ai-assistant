@@ -7,8 +7,7 @@ import {
   isSchedulerReady,
 } from '../scheduler';
 import { humanizeCron } from '../scheduler';
-import { parseReminderSchedule } from './reminder-time-parser.service';
-import { deriveReminderDisplayTitle } from './reminder-title.service';
+import { validateStructuredReminderSchedule } from './schedule-validator.service';
 import { normalizeClientTimezone } from './normalize-client-timezone';
 import { nextFireFromCron } from '../scheduler/cron-utils';
 
@@ -20,7 +19,6 @@ export type CreateReminderParams = {
   cronExpression?: string;
   timezone?: string;
   nextFireAt?: string;
-  action?: Record<string, unknown>;
 };
 
 export type UpdateReminderParams = {
@@ -73,16 +71,59 @@ export async function getReminder(userId: string, id: string) {
   return serializeReminder(reminder);
 }
 
-export async function listReminders(userId: string, includePaused = true) {
+export async function listReminders(userId: string) {
+  return listRemindersForUser(userId, { status: 'ALL' });
+}
+
+function formatCountdownLabel(nextFireAt: Date): string {
+  const diffMs = nextFireAt.getTime() - Date.now();
+  if (diffMs <= 0) return 'now';
+  const totalMinutes = Math.round(diffMs / 60_000);
+  if (totalMinutes < 60) return `${totalMinutes} minute${totalMinutes === 1 ? '' : 's'}`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours < 24) {
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours} hour${hours === 1 ? '' : 's'}`;
+  }
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'}`;
+}
+
+export async function listRemindersForUser(
+  userId: string,
+  options: { status?: 'PENDING' | 'PAUSED' | 'ALL'; title?: string } = {}
+) {
+  const statusFilter =
+    options.status === 'ALL' || !options.status
+      ? undefined
+      : options.status === 'PAUSED'
+        ? (['PAUSED'] as ReminderStatus[])
+        : (['PENDING'] as ReminderStatus[]);
+
   const reminders = await prisma.reminder.findMany({
     where: {
       userId,
       deletedAt: null,
-      status: includePaused ? { in: ['PENDING', 'PAUSED'] } : 'PENDING',
+      ...(statusFilter ? { status: { in: statusFilter } } : {}),
     },
     orderBy: { nextFireAt: 'asc' },
   });
-  return reminders.map(serializeReminder);
+
+  const titleNeedle = options.title?.trim().toLowerCase();
+  const filtered = titleNeedle
+    ? reminders.filter((r) => {
+        const p = r.payload as { title?: string };
+        return p.title?.toLowerCase().includes(titleNeedle);
+      })
+    : reminders;
+
+  return filtered.map((r) => {
+    const serialized = serializeReminder(r);
+    return {
+      ...serialized,
+      countdownLabel: formatCountdownLabel(r.nextFireAt),
+    };
+  });
 }
 
 function resolveReminderTimezone(params: {
@@ -102,23 +143,18 @@ function resolveReminderTimezone(params: {
 export async function createReminder(userId: string, params: CreateReminderParams) {
   const userPrompt = params.userPrompt?.trim() || undefined;
   const timezone = resolveReminderTimezone({ timezone: params.timezone, userPrompt });
-  const displayTitle = deriveReminderDisplayTitle(
-    userPrompt ?? params.title,
-    params.title
-  );
-  const parsed = parseReminderSchedule(
+  const parsed = validateStructuredReminderSchedule(
     {
       ...params,
-      title: displayTitle,
-      userPrompt: userPrompt ?? params.userPrompt,
+      title: params.title,
+      userPrompt,
       timezone,
     },
-    timezone
+    { chatCreated: Boolean(userPrompt) }
   );
   const payload: Record<string, unknown> = {
     title: parsed.title,
     body: parsed.body ?? parsed.title,
-    ...(params.action ? { action: params.action } : {}),
   };
 
   const reminder = await prisma.reminder.create({
@@ -171,7 +207,7 @@ export async function updateReminder(
   const status = params.status ?? existing.status;
 
   if (params.recurrence || params.cronExpression || params.nextFireAt || params.timezone) {
-    const parsed = parseReminderSchedule(
+    const parsed = validateStructuredReminderSchedule(
       {
         title: String(payload.title ?? 'Reminder'),
         body: payload.body as string | undefined,
@@ -181,7 +217,7 @@ export async function updateReminder(
         timezone,
         nextFireAt: nextFireAt.toISOString(),
       },
-      timezone
+      { chatCreated: false }
     );
     recurrence = parsed.recurrence;
     cronExpression = parsed.cronExpression;

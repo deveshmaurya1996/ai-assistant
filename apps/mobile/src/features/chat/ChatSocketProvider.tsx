@@ -24,7 +24,6 @@ import {
   PENDING_CHAT_STREAM_KEY,
   useChatStreamStore,
 } from './chatStreamStore';
-import { emitReminderRefresh } from '@/features/reminders/reminderEvents';
 import { getDeviceTimezone } from '@/lib/deviceTimezone';
 
 export type ChatSocketEmitOptions = {
@@ -274,7 +273,6 @@ export function ChatSocketProvider({
         });
         activeTurnSessionRef.current = null;
         setBoundTurnSessionId(null);
-        emitReminderRefresh();
       });
 
       connected.on('chat:aborted', (data) => {

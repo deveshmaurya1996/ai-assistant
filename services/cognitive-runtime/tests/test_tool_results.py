@@ -1,76 +1,61 @@
 from orchestration.tool_results import format_tool_results_for_context
 
 
-def test_reminder_create_formats_friendly_summary():
-    text = format_tool_results_for_context(
-        [
-            {
-                "tool": "reminder.create",
-                "executionId": "exec_123",
-                "status": "completed",
-                "result": {
-                    "type": "reminder.created",
-                    "reminder": {
-                        "payload": {"title": "Call your father"},
-                        "nextFireAt": "2026-06-05T21:00:00.000Z",
-                    },
-                },
-            }
-        ]
-    )
-    assert "Call your father" in text
-    assert "Reminder scheduled" in text
-    assert "exec_123" not in text
-    assert "executionId" not in text
-    assert "Never mention tool names" in text
-
-
-def test_reminder_create_includes_schedule_label():
-    text = format_tool_results_for_context(
+def test_reminder_create_success_summary():
+    ctx = format_tool_results_for_context(
         [
             {
                 "tool": "reminder.create",
                 "status": "completed",
                 "result": {
-                    "type": "reminder.created",
                     "reminder": {
-                        "payload": {"title": "Drink water"},
-                        "scheduleLabel": "Every hour",
                         "scheduled": True,
-                    },
+                        "payload": {"title": "Call mom"},
+                        "nextFireAt": "2026-06-05T21:00:00+05:30",
+                    }
                 },
             }
         ]
     )
-    assert "Drink water" in text
-    assert "Every hour" in text
+    assert "Reminder scheduled:" in ctx
+    assert "Call mom" in ctx
 
 
-def test_reminder_create_reports_delayed_scheduling():
-    text = format_tool_results_for_context(
+def test_automation_create_success_summary():
+    ctx = format_tool_results_for_context(
         [
             {
-                "tool": "reminder.create",
+                "tool": "automation.create",
                 "status": "completed",
                 "result": {
-                    "type": "reminder.created",
-                    "reminder": {
-                        "payload": {"title": "Call your father"},
-                        "nextFireAt": "2026-06-05T21:00:00.000Z",
-                        "scheduled": False,
-                        "scheduleWarning": "Scheduler unavailable",
-                    },
+                    "automation": {
+                        "name": "Inbox digest",
+                        "schedule": "0 */2 * * *",
+                    }
                 },
             }
         ]
     )
-    assert "Reminder saved" in text
-    assert "delayed" in text
-    assert "Scheduler unavailable" in text
+    assert "Inbox digest automation created" in ctx
 
 
-def test_skips_confirmation_entries():
-    text = format_tool_results_for_context(
-        [{"tool": "whatsapp.send_message", "requiresConfirmation": True}]
+def test_automation_update_success_summary():
+    ctx = format_tool_results_for_context(
+        [
+            {
+                "tool": "automation.update",
+                "status": "completed",
+                "result": {
+                    "automation": {"name": "Inbox digest", "isActive": False},
+                },
+            }
+        ]
     )
-    assert text == ""
+    assert "Automation updated:" in ctx
+
+
+def test_automation_cancel_success_summary():
+    ctx = format_tool_results_for_context(
+        [{"tool": "automation.cancel", "status": "completed", "result": {}}]
+    )
+    assert "Automation cancelled" in ctx

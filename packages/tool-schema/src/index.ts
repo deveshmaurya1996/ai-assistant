@@ -278,17 +278,15 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     version: '1',
     connector: 'platform',
     description:
-      'Create a timed reminder to notify the user. Use for "remind me at...", "remind me tomorrow", recurring reminders.',
+      'Create a push-notification reminder. Planner MUST supply structured schedule fields: nextFireAt (ISO 8601 with offset), timezone (IANA), recurrence, and cronExpression when recurring. userPrompt preserves the original user text.',
     parameters: z.object({
       title: z.string(),
       body: z.string().optional(),
       userPrompt: z.string().optional(),
-      nextFireAt: z.string().optional(),
-      recurrence: z
-        .enum(['NONE', 'HOURLY', 'DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM'])
-        .optional(),
+      nextFireAt: z.string(),
+      recurrence: z.enum(['NONE', 'HOURLY', 'DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM']),
       cronExpression: z.string().optional(),
-      timezone: z.string().optional(),
+      timezone: z.string(),
     }),
     supportsCancellation: false,
     dangerous: false,
@@ -297,12 +295,10 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
         title: z.string(),
         body: z.string().optional(),
         userPrompt: z.string().optional(),
-        nextFireAt: z.string().optional(),
-        recurrence: z
-          .enum(['NONE', 'HOURLY', 'DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM'])
-          .optional(),
+        nextFireAt: z.string(),
+        recurrence: z.enum(['NONE', 'HOURLY', 'DAILY', 'WEEKLY', 'MONTHLY', 'CUSTOM']),
         cronExpression: z.string().optional(),
-        timezone: z.string().optional(),
+        timezone: z.string(),
       })
     ),
   },
@@ -357,6 +353,97 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       z.object({
         reminderId: z.string().optional(),
         title: z.string().optional(),
+      })
+    ),
+  },
+  {
+    name: 'reminder.list',
+    version: '1',
+    connector: 'platform',
+    description:
+      'List pending reminders for status or countdown queries ("how long until my next reminder?").',
+    parameters: z.object({
+      status: z.enum(['PENDING', 'PAUSED', 'ALL']).optional(),
+      title: z.string().optional(),
+    }),
+    supportsCancellation: true,
+    dangerous: false,
+    openAiParameters: toOpenAiSchema(
+      z.object({
+        status: z.enum(['PENDING', 'PAUSED', 'ALL']).optional(),
+        title: z.string().optional(),
+      })
+    ),
+  },
+  {
+    name: 'automation.create',
+    version: '1',
+    connector: 'platform',
+    description:
+      'Create a recurring inbox digest automation. Planner MUST supply cronExpression, timezone (IANA), and query as plain English (never tool IDs like email.list_unread).',
+    parameters: z.object({
+      name: z.string().optional(),
+      pushTitle: z.string().optional(),
+      cronExpression: z.string(),
+      timezone: z.string(),
+      query: z.string(),
+      userPrompt: z.string().optional(),
+    }),
+    supportsCancellation: false,
+    dangerous: false,
+    openAiParameters: toOpenAiSchema(
+      z.object({
+        name: z.string().optional(),
+        pushTitle: z.string().optional(),
+        cronExpression: z.string(),
+        timezone: z.string(),
+        query: z.string(),
+        userPrompt: z.string().optional(),
+      })
+    ),
+  },
+  {
+    name: 'automation.update',
+    version: '1',
+    connector: 'platform',
+    description:
+      'Update an existing automation (schedule, query, name, or pause/resume). Match by automationId or name.',
+    parameters: z.object({
+      automationId: z.string().optional(),
+      name: z.string().optional(),
+      cronExpression: z.string().optional(),
+      timezone: z.string().optional(),
+      query: z.string().optional(),
+      isActive: z.boolean().optional(),
+    }),
+    supportsCancellation: false,
+    dangerous: false,
+    openAiParameters: toOpenAiSchema(
+      z.object({
+        automationId: z.string().optional(),
+        name: z.string().optional(),
+        cronExpression: z.string().optional(),
+        timezone: z.string().optional(),
+        query: z.string().optional(),
+        isActive: z.boolean().optional(),
+      })
+    ),
+  },
+  {
+    name: 'automation.cancel',
+    version: '1',
+    connector: 'platform',
+    description: 'Delete/cancel a recurring automation by id or name match',
+    parameters: z.object({
+      automationId: z.string().optional(),
+      name: z.string().optional(),
+    }),
+    supportsCancellation: false,
+    dangerous: false,
+    openAiParameters: toOpenAiSchema(
+      z.object({
+        automationId: z.string().optional(),
+        name: z.string().optional(),
       })
     ),
   },

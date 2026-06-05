@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import {
   ASSISTANT_PERSONALITIES,
   ASSISTANT_NAME_MAX_LENGTH,
+  DEFAULT_ASSISTANT_PERSONALITY_ID,
+  canCustomizeAssistantDisplayName,
   formatPersonalityGender,
   getAssistantPersonality,
   reconcileDisplayName,
@@ -234,6 +236,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   setAssistantDisplayName: async (name) => {
     const { selectedPersonalityId } = get();
+    if (!canCustomizeAssistantDisplayName(selectedPersonalityId)) {
+      return;
+    }
     const value = reconcileDisplayName(
       selectedPersonalityId,
       name.trim().slice(0, ASSISTANT_NAME_MAX_LENGTH) || null
@@ -246,7 +251,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const { personalities } = get();
     const preset = getPersonalityPreset(id, personalities);
     await setItemAsync(KEYS.selectedPersonality, id);
-    await setItemAsync(KEYS.assistantDisplayName, preset.name);
+
+    if (id === DEFAULT_ASSISTANT_PERSONALITY_ID) {
+      const stored = await getItemAsync(KEYS.assistantDisplayName);
+      const assistantDisplayName = normalizeDisplayName(stored, id, personalities);
+      set({
+        selectedPersonalityId: id,
+        assistantDisplayName,
+      });
+      return;
+    }
+
     set({
       selectedPersonalityId: id,
       assistantDisplayName: preset.name,

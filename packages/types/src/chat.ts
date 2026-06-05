@@ -18,6 +18,7 @@ export interface ChatSession {
   title: string | null;
   kind: ChatSessionKind;
   messageCount?: number;
+  hasUnread?: boolean;
 }
 
 export interface CreateChatSessionResponse {

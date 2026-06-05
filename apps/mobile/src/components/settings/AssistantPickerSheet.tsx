@@ -16,6 +16,7 @@ import {
   formatGenderLabel,
   ASSISTANT_NAME_MAX_LENGTH,
 } from '@/stores/settings';
+import { canCustomizeAssistantDisplayName } from '@ai-assistant/types';
 
 export const AssistantPickerSheet = forwardRef<BottomSheetModalType>(
   function AssistantPickerSheet(_, ref) {
@@ -33,7 +34,10 @@ export const AssistantPickerSheet = forwardRef<BottomSheetModalType>(
       setNameDraft(assistantDisplayName);
     }, [assistantDisplayName]);
 
+    const canRenameAssistant = canCustomizeAssistantDisplayName(selectedPersonalityId);
+
     const commitName = () => {
+      if (!canRenameAssistant) return;
       void setAssistantDisplayName(nameDraft);
     };
 
@@ -56,21 +60,25 @@ export const AssistantPickerSheet = forwardRef<BottomSheetModalType>(
             Your assistant
           </Text>
 
-          <Text variant="caption" muted>
-            What should I call your assistant?
-          </Text>
-          <Text variant="caption" muted style={{ marginTop: spacing.xs }}>
-            Display name is how the assistant introduces itself in chat.
-          </Text>
-          <Input
-            value={nameDraft}
-            onChangeText={(t) => setNameDraft(t.slice(0, ASSISTANT_NAME_MAX_LENGTH))}
-            onBlur={commitName}
-            onSubmitEditing={commitName}
-            placeholder="Assistant name"
-            maxLength={ASSISTANT_NAME_MAX_LENGTH}
-            style={{ marginTop: spacing.xs, marginBottom: spacing.lg }}
-          />
+          {canRenameAssistant ? (
+            <>
+              <Text variant="caption" muted>
+                What should I call your assistant?
+              </Text>
+              <Text variant="caption" muted style={{ marginTop: spacing.xs }}>
+                Display name is how the assistant introduces itself in chat.
+              </Text>
+              <Input
+                value={nameDraft}
+                onChangeText={(t) => setNameDraft(t.slice(0, ASSISTANT_NAME_MAX_LENGTH))}
+                onBlur={commitName}
+                onSubmitEditing={commitName}
+                placeholder="Assistant name"
+                maxLength={ASSISTANT_NAME_MAX_LENGTH}
+                style={{ marginTop: spacing.xs, marginBottom: spacing.lg }}
+              />
+            </>
+          ) : null}
 
           <Text variant="caption" muted style={{ marginBottom: spacing.sm }}>
             Personality

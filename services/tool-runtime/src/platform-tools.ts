@@ -106,6 +106,87 @@ export async function executePlatformTool(
       }
       return { success: true, data: { type: 'reminder.cancelled' } };
     }
+    case 'reminder.list': {
+      const params = new URLSearchParams({ userId });
+      if (args.status) params.set('status', String(args.status));
+      if (args.title) params.set('title', String(args.title));
+      const res = await gatewayInternalFetch(`/internal/reminders?${params.toString()}`);
+      const data = await res.json();
+      if (!res.ok) {
+        return {
+          success: false,
+          error: (data as { error?: string }).error ?? 'Failed to list reminders',
+        };
+      }
+      return {
+        success: true,
+        data: {
+          type: 'reminder.list_result',
+          reminders: Array.isArray(data) ? data : [],
+        },
+      };
+    }
+    case 'automation.create': {
+      const res = await gatewayInternalFetch('/internal/automations', {
+        method: 'POST',
+        body: JSON.stringify({
+          userId,
+          name: args.name ? String(args.name) : args.pushTitle ? String(args.pushTitle) : undefined,
+          schedule: String(args.cronExpression ?? '0 8 * * *'),
+          timezone: String(args.timezone),
+          query: String(args.query),
+          userPrompt: args.userPrompt ? String(args.userPrompt) : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return {
+          success: false,
+          error: (data as { error?: string }).error ?? 'Failed to create automation',
+        };
+      }
+      return { success: true, data: { type: 'automation.created', automation: data } };
+    }
+    case 'automation.update': {
+      const res = await gatewayInternalFetch('/internal/automations', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          userId,
+          automationId: args.automationId ? String(args.automationId) : undefined,
+          name: args.name ? String(args.name) : undefined,
+          cronExpression: args.cronExpression ? String(args.cronExpression) : undefined,
+          timezone: args.timezone ? String(args.timezone) : undefined,
+          query: args.query ? String(args.query) : undefined,
+          isActive: typeof args.isActive === 'boolean' ? args.isActive : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        return {
+          success: false,
+          error: (data as { error?: string }).error ?? 'Failed to update automation',
+        };
+      }
+      return { success: true, data: { type: 'automation.updated', automation: data } };
+    }
+    case 'automation.cancel': {
+      const res = await gatewayInternalFetch('/internal/automations', {
+        method: 'DELETE',
+        body: JSON.stringify({
+          userId,
+          automationId: args.automationId ? String(args.automationId) : undefined,
+          name: args.name ? String(args.name) : undefined,
+        }),
+      });
+      if (!res.ok && res.status !== 204) {
+        const data = await res.json().catch(() => ({}));
+        return {
+          success: false,
+          error: (data as { error?: string }).error ?? 'Failed to cancel automation',
+        };
+      }
+      return { success: true, data: { type: 'automation.cancelled' } };
+    }
     default:
       return { success: false, error: `Unknown platform tool: ${tool}` };
   }

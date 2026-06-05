@@ -21,6 +21,7 @@ export interface Automation {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  scheduleLabel?: string | null;
   runs?: AutomationRun[];
 }
 
@@ -30,6 +31,14 @@ export interface CreateAutomationInput {
   action: JsonObject;
   schedule?: string;
   isActive?: boolean;
+}
+
+export interface UpdateAutomationInput {
+  name?: string;
+  schedule?: string;
+  isActive?: boolean;
+  query?: string;
+  timezone?: string;
 }
 
 export interface RunAutomationResponse {

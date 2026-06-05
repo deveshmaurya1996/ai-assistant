@@ -261,6 +261,7 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
     route = classify_turn(
         query=payload.query,
         routing_query=payload.routing_query,
+        chat_history=payload.chat_history,
         confirmed=payload.confirmed,
         skip_planning=payload.skip_planning,
         rag_enabled=payload.rag_enabled,
@@ -413,6 +414,7 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
                     manifest_connections=manifest_connections,
                     routing_query=payload.routing_query,
                     timezone=payload.timezone,
+                    chat_history=chat_history,
                 )
                 timings["plan_tools_ms"] = (time.perf_counter() - t_plan) * 1000
                 timings["planner"] = plan.get("planner", "")
@@ -496,6 +498,18 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
                 from orchestration.tool_results import format_tool_results_for_context
 
                 tool_context = format_tool_results_for_context(tool_results)
+            elif plan.get("planner") == "llm-scheduling-clarification":
+                from orchestration.tool_results import format_scheduling_clarification
+
+                tool_context = format_scheduling_clarification(
+                    plan.get("warnings") or []
+                )
+            elif plan.get("planner") == "llm-scheduling-empty":
+                from orchestration.tool_results import format_scheduling_plan_failure
+
+                tool_context = format_scheduling_plan_failure(
+                    plan.get("warnings") or []
+                )
             stream_query = payload.query + tool_context
             if has_attachments and not stream_query.strip():
                 if has_images:
@@ -578,4 +592,11 @@ async def agent_plan(payload: AgentTurnRequest):
     context_str = await build_context(
         payload.query, payload.user_id, payload.chat_history, effective_rag
     )
-    return await plan_tools(payload.query, context_str, payload.user_id)
+    return await plan_tools(
+        payload.query,
+        context_str,
+        payload.user_id,
+        routing_query=payload.routing_query,
+        timezone=payload.timezone,
+        chat_history=payload.chat_history,
+    )

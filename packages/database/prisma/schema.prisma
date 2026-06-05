@@ -82,13 +82,14 @@ enum ChatSessionKind {
 }
 
 model ChatSession {
-  id        String          @id @default(uuid())
-  userId    String
-  title     String?
-  kind      ChatSessionKind @default(TEXT)
-  context   Json?
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  id         String          @id @default(uuid())
+  userId     String
+  title      String?
+  kind       ChatSessionKind @default(TEXT)
+  context    Json?
+  lastReadAt DateTime?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
 
   user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages  Message[]

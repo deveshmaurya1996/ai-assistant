@@ -22,7 +22,6 @@ const CreateReminderSchema = z.object({
   cronExpression: z.string().optional(),
   timezone: z.string().optional(),
   nextFireAt: z.string().datetime().optional(),
-  action: z.record(z.string(), z.unknown()).optional(),
 });
 
 const UpdateReminderSchema = z.object({

@@ -2,7 +2,6 @@ import '@ai-assistant/telemetry/register';
 import { config } from '@ai-assistant/config';
 import { buildApp } from './app';
 import { cleanupLegacyConversationMemoryRows } from './services/memory.service';
-import { stopAutomationWorker } from './workers/automation.worker';
 
 function isLegacyConversationCleanupEnabled(): boolean {
   const raw = (process.env.MEMORY_CLEANUP_CONVERSATION_ROWS ?? 'false').trim().toLowerCase();
@@ -23,7 +22,6 @@ async function main() {
 
   const shutdown = async (signal: string) => {
     app.log.info({ signal }, 'Shutting down');
-    await stopAutomationWorker();
     await app.close();
     process.exit(0);
   };

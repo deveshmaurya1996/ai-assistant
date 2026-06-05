@@ -20,6 +20,7 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { spacing, radii } from '@/theme/tokens';
 import { apiClient } from '@/lib/api-client';
 import { getDeviceTimezone } from '@/lib/deviceTimezone';
+import { ReminderWhenField } from '@/features/reminders/ReminderWhenField';
 
 type ReminderRow = Reminder & { scheduleLabel?: string | null };
 type RepeatOption = 'none' | 'minute' | 'hourly' | 'daily' | 'weekly';
@@ -58,7 +59,7 @@ export function ReminderEditModal({ reminder, visible, onClose, onSaved }: Props
   const insets = useSafeAreaInsets();
   const [title, setTitle] = useState('');
   const [userPrompt, setUserPrompt] = useState('');
-  const [whenValue, setWhenValue] = useState('');
+  const [whenDate, setWhenDate] = useState(() => new Date());
   const [repeat, setRepeat] = useState<RepeatOption>('none');
   const [saving, setSaving] = useState(false);
 
@@ -66,7 +67,7 @@ export function ReminderEditModal({ reminder, visible, onClose, onSaved }: Props
     if (!reminder) return;
     setTitle(getTitle(reminder));
     setUserPrompt(reminder.userPrompt ?? '');
-    setWhenValue(toLocalInputValue(reminder.nextFireAt));
+    setWhenDate(new Date(reminder.nextFireAt));
     setRepeat(repeatFromReminder(reminder));
   }, [reminder]);
 
@@ -78,19 +79,13 @@ export function ReminderEditModal({ reminder, visible, onClose, onSaved }: Props
       return;
     }
 
-    const nextFireAt = parseLocalInputValue(whenValue);
-    if (!nextFireAt) {
-      Alert.alert('Invalid time', 'Use format YYYY-MM-DDTHH:mm (local time).');
-      return;
-    }
-
-    const schedule = cronForRepeat(repeat, nextFireAt);
+    const schedule = cronForRepeat(repeat, whenDate);
     setSaving(true);
     try {
       await apiClient.updateReminder(reminder.id, {
         title: trimmedTitle,
         userPrompt: userPrompt.trim() || undefined,
-        nextFireAt: nextFireAt.toISOString(),
+        nextFireAt: whenDate.toISOString(),
         recurrence: schedule.recurrence,
         cronExpression: schedule.cron,
         timezone: getDeviceTimezone(),
@@ -102,7 +97,7 @@ export function ReminderEditModal({ reminder, visible, onClose, onSaved }: Props
     } finally {
       setSaving(false);
     }
-  }, [reminder, title, userPrompt, whenValue, repeat, onClose, onSaved]);
+  }, [reminder, title, userPrompt, whenDate, repeat, onClose, onSaved]);
 
   if (!reminder) return null;
 
@@ -189,13 +184,7 @@ export function ReminderEditModal({ reminder, visible, onClose, onSaved }: Props
                 <Text variant="label" muted>
                   Next time
                 </Text>
-                <Input
-                  value={whenValue}
-                  onChangeText={setWhenValue}
-                  placeholder="2026-06-05T16:30"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
+                <ReminderWhenField value={whenDate} onChange={setWhenDate} />
               </View>
 
               <View style={styles.field}>
@@ -238,19 +227,6 @@ export function ReminderEditModal({ reminder, visible, onClose, onSaved }: Props
 
 function getTitle(item: ReminderRow): string {
   return (item.payload as { title?: string }).title ?? 'Reminder';
-}
-
-function toLocalInputValue(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function parseLocalInputValue(value: string): Date | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const d = new Date(trimmed);
-  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 function repeatFromReminder(item: ReminderRow): RepeatOption {

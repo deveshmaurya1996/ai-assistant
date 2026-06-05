@@ -19,6 +19,7 @@ type ChatSidebarState = {
   nextCursor: string | null;
   setPage: (sessions: ChatSession[], nextCursor: string | null, append: boolean) => void;
   patchTitle: (sessionId: string, title: string, kind?: ChatSession['kind']) => void;
+  patchUnread: (sessionId: string, hasUnread: boolean) => void;
   removeSession: (sessionId: string) => void;
   upsertSession: (session: ChatSession) => void;
   reset: () => void;
@@ -49,6 +50,12 @@ export const useChatSidebarStore = create<ChatSidebarState>((set) => ({
         ),
       };
     }),
+  patchUnread: (sessionId, hasUnread) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, hasUnread } : s
+      ),
+    })),
   removeSession: (sessionId) =>
     set((state) => ({
       sessions: state.sessions.filter((s) => s.id !== sessionId),

@@ -92,4 +92,14 @@ export class ChatController {
       return sendError(reply, error);
     }
   }
+
+  static async markSessionRead(request: FastifyRequest, reply: FastifyReply) {
+    try {
+      const userId = requireUserId(request);
+      const { id } = SessionParamSchema.parse(request.params);
+      return reply.send(await chatService.markSessionRead(userId, id));
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  }
 }

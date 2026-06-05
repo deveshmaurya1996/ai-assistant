@@ -5,9 +5,11 @@ import {
   FlatList,
   RefreshControl,
   ActivityIndicator,
+  Alert,
+  Platform,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Bell, ChevronRight, Pause, Zap } from 'lucide-react-native';
+import { Bell, ChevronRight, Pencil, Trash2, Zap } from 'lucide-react-native';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { Card } from '@/components/ui/Card';
@@ -19,19 +21,46 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { spacing, radii } from '@/theme/tokens';
 import { apiClient } from '@/lib/api-client';
 import { Routes } from '@/lib/routes';
+import { AutomationEditModal } from '@/features/automations/AutomationEditModal';
 import type { Automation } from '@ai-assistant/types';
+
+type AutomationRow = Automation & { scheduleLabel?: string | null };
+
+function automationKindLabel(action: Automation['action']): string | null {
+  if (action && typeof action === 'object' && 'type' in action) {
+    const t = (action as { type?: string }).type;
+    if (t === 'agent_digest') return 'Inbox digest';
+  }
+  return null;
+}
+
+function lastRunSummary(item: Automation): string | null {
+  const run = item.runs?.[0];
+  if (!run?.result || typeof run.result !== 'object') return null;
+  const summary = (run.result as { summary?: string }).summary;
+  if (!summary || typeof summary !== 'string') return null;
+  return summary.length > 100 ? `${summary.slice(0, 97)}…` : summary;
+}
+
+function formatAutomationSchedule(item: AutomationRow): string {
+  const status = item.isActive ? 'Running' : 'Paused';
+  const label = item.scheduleLabel ?? item.schedule;
+  return label ? `${status}: ${label}` : status;
+}
 
 export default function AutomationsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
-  const [automations, setAutomations] = useState<Automation[]>([]);
+  const [automations, setAutomations] = useState<AutomationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<AutomationRow | null>(null);
 
   const load = useCallback(async () => {
     try {
       const list = await apiClient.listAutomations();
-      setAutomations(list);
+      setAutomations(list as AutomationRow[]);
     } catch {
       setAutomations([]);
     } finally {
@@ -44,6 +73,40 @@ export default function AutomationsScreen() {
     useCallback(() => {
       void load();
     }, [load])
+  );
+
+  const handleDelete = useCallback(
+    (item: AutomationRow) => {
+      const message = `Remove "${item.name}"?`;
+
+      const runDelete = async () => {
+        setDeletingId(item.id);
+        try {
+          await apiClient.deleteAutomation(item.id);
+          await load();
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Could not delete automation';
+          if (Platform.OS === 'web') {
+            window.alert(msg);
+          } else {
+            Alert.alert('Delete failed', msg);
+          }
+        } finally {
+          setDeletingId(null);
+        }
+      };
+
+      if (Platform.OS === 'web') {
+        if (window.confirm(message)) void runDelete();
+        return;
+      }
+
+      Alert.alert('Delete automation', message, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: () => void runDelete() },
+      ]);
+    },
+    [load]
   );
 
   if (loading) {
@@ -76,7 +139,7 @@ export default function AutomationsScreen() {
         ListHeaderComponent={
           <>
             <Text variant="body" muted style={styles.subtitle}>
-              Scheduled tasks and reminders your assistant runs for you.
+              Scheduled tasks your assistant runs for you. Tap to edit or use the trash icon to remove.
             </Text>
             <FadeIn>
               <PressableScale onPress={() => router.push(Routes.automationsReminders)}>
@@ -106,51 +169,75 @@ export default function AutomationsScreen() {
             description="Ask your assistant to set up recurring tasks, or create them from the web dashboard."
           />
         }
-        renderItem={({ item, index }) => (
-          <FadeIn delay={index * 40} style={styles.rowWrap}>
-            <Card style={styles.automationCard}>
-              <View
-                style={[
-                  styles.statusIcon,
-                  {
-                    backgroundColor: item.isActive
-                      ? `${colors.success}22`
-                      : colors.surfaceElevated,
-                  },
-                ]}>
-                {item.isActive ? (
-                  <Zap color={colors.success} size={20} />
-                ) : (
-                  <Pause color={colors.textMuted} size={20} />
-                )}
-              </View>
-              <View style={styles.automationBody}>
-                <Text variant="bodyMedium" numberOfLines={1}>
-                  {item.name}
-                </Text>
-                <Text variant="caption" muted>
-                  {item.isActive ? 'Running' : 'Paused'}
-                  {item.schedule ? ` · ${item.schedule}` : ''}
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.pill,
-                  {
-                    backgroundColor: item.isActive
-                      ? `${colors.success}22`
-                      : colors.surfaceElevated,
-                  },
-                ]}>
-                <Text
-                  variant="label"
-                  style={{ color: item.isActive ? colors.success : colors.textMuted }}>
-                  {item.isActive ? 'Active' : 'Paused'}
-                </Text>
-              </View>
-            </Card>
-          </FadeIn>
-        )}
+        renderItem={({ item, index }) => {
+          const kind = automationKindLabel(item.action);
+          const summary = lastRunSummary(item);
+
+          return (
+            <FadeIn delay={index * 40} style={styles.rowWrap}>
+              <Card style={styles.card}>
+                <PressableScale
+                  onPress={() => setEditing(item)}
+                  style={styles.cardMain}
+                  disabled={deletingId === item.id}>
+                  <View
+                    style={[
+                      styles.statusIcon,
+                      {
+                        backgroundColor: item.isActive
+                          ? `${colors.success}22`
+                          : colors.surfaceElevated,
+                      },
+                    ]}>
+                    <Zap
+                      color={item.isActive ? colors.success : colors.textMuted}
+                      size={20}
+                    />
+                  </View>
+                  <View style={styles.automationBody}>
+                    <Text variant="bodyMedium" numberOfLines={1}>
+                      {kind ? `${kind}: ${item.name}` : item.name}
+                    </Text>
+                    <Text variant="caption" muted>
+                      {formatAutomationSchedule(item)}
+                    </Text>
+                    {summary ? (
+                      <Text variant="caption" muted numberOfLines={2} style={styles.summary}>
+                        {summary}
+                      </Text>
+                    ) : null}
+                  </View>
+                </PressableScale>
+                <View style={styles.actions}>
+                  <PressableScale onPress={() => setEditing(item)} hitSlop={8}>
+                    <View style={[styles.actionBtn, { backgroundColor: colors.surfaceElevated }]}>
+                      <Pencil color={colors.textMuted} size={18} />
+                    </View>
+                  </PressableScale>
+                  <PressableScale
+                    onPress={() => handleDelete(item)}
+                    disabled={deletingId === item.id}
+                    hitSlop={8}>
+                    <View style={[styles.actionBtn, { backgroundColor: colors.surfaceElevated }]}>
+                      {deletingId === item.id ? (
+                        <ActivityIndicator size="small" color={colors.danger} />
+                      ) : (
+                        <Trash2 color={colors.danger} size={18} />
+                      )}
+                    </View>
+                  </PressableScale>
+                </View>
+              </Card>
+            </FadeIn>
+          );
+        }}
+      />
+
+      <AutomationEditModal
+        automation={editing}
+        visible={editing !== null}
+        onClose={() => setEditing(null)}
+        onSaved={() => void load()}
       />
     </Screen>
   );
@@ -176,9 +263,11 @@ const styles = StyleSheet.create({
   quickText: { flex: 1, gap: 2 },
   sectionLabel: { marginBottom: spacing.sm, marginLeft: spacing.xs },
   rowWrap: { marginBottom: spacing.sm },
-  automationCard: {
+  card: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  cardMain: {
+    flex: 1,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: spacing.md,
   },
   statusIcon: {
@@ -188,10 +277,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  automationBody: { flex: 1, gap: 2 },
-  pill: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radii.pill,
+  automationBody: { flex: 1, gap: 4 },
+  summary: { marginTop: 2 },
+  actions: { gap: spacing.xs },
+  actionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

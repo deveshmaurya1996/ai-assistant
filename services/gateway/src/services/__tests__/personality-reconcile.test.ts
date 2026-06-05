@@ -8,8 +8,14 @@ describe('reconcileDisplayName', () => {
     assert.equal(reconcileDisplayName('jarvis', 'Friday'), 'Jarvis');
   });
 
-  it('keeps custom names that are not preset defaults', () => {
-    assert.equal(reconcileDisplayName('friday', 'Alex'), 'Alex');
+  it('ignores custom names for named personality presets', () => {
+    assert.equal(reconcileDisplayName('friday', 'Alex'), 'Friday');
+    assert.equal(reconcileDisplayName('jarvis', 'Bob'), 'Jarvis');
+  });
+
+  it('allows custom names for the default assistant preset only', () => {
+    assert.equal(reconcileDisplayName('assistant', 'Alex'), 'Alex');
+    assert.equal(reconcileDisplayName('assistant', 'Friday'), 'Assistant');
   });
 });
 

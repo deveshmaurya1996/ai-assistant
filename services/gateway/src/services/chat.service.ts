@@ -92,17 +92,30 @@ function toPrismaSessionKind(kind?: ChatSessionKind): PrismaChatSessionKind {
   return kind === 'voice' ? 'VOICE' : 'TEXT';
 }
 
+function computeHasUnread(
+  lastReadAt: Date | null | undefined,
+  latestMessageAt: Date | null | undefined
+): boolean {
+  if (!latestMessageAt) return false;
+  if (!lastReadAt) return true;
+  return latestMessageAt.getTime() > lastReadAt.getTime();
+}
+
 function serializeSession(session: {
   id: string;
   title: string | null;
   kind: PrismaChatSessionKind;
+  lastReadAt?: Date | null;
   _count?: { messages: number };
+  messages?: Array<{ createdAt: Date }>;
 }) {
+  const latestMessageAt = session.messages?.[0]?.createdAt ?? null;
   return {
     id: session.id,
     title: session.title,
     kind: toApiSessionKind(session.kind),
     messageCount: session._count?.messages ?? 0,
+    hasUnread: computeHasUnread(session.lastReadAt, latestMessageAt),
   };
 }
 
@@ -160,7 +173,10 @@ export async function listSessions(
     where,
     orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
     take: limit + 1,
-    include: { _count: { select: { messages: true } } },
+    include: {
+      _count: { select: { messages: true } },
+      messages: { orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } },
+    },
   });
 
   const hasMore = rows.length > limit;
@@ -191,7 +207,28 @@ export async function updateSession(
 
 export async function getSession(userId: string, sessionId: string) {
   const session = await assertSessionAccess(userId, sessionId);
-  return serializeSession(session);
+  const latest = await prisma.message.findFirst({
+    where: { chatSessionId: sessionId },
+    orderBy: { createdAt: 'desc' },
+    select: { createdAt: true },
+  });
+  return serializeSession({
+    ...session,
+    messages: latest ? [latest] : [],
+  });
+}
+
+export async function markSessionRead(userId: string, sessionId: string) {
+  await assertSessionAccess(userId, sessionId);
+  const updated = await prisma.chatSession.update({
+    where: { id: sessionId },
+    data: { lastReadAt: new Date() },
+    include: {
+      _count: { select: { messages: true } },
+      messages: { orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } },
+    },
+  });
+  return serializeSession(updated);
 }
 
 const DEFAULT_PERSONALITY_ID = 'assistant';
@@ -422,6 +459,15 @@ export async function processChatMessage(params: {
   const ragEnabled = resolveRagEnabled(params.ragEnabled);
   const isNew = !params.chatSessionId;
   const sessionId = await resolveOrCreateSession(userId, text, params.chatSessionId);
+  const deviceTimezone = params.timezone?.trim() || undefined;
+  if (text.match(/\b(remind|reminder|notify me|schedule)\b/i)) {
+    console.info('[chat] reminder-related message', {
+      sessionId,
+      userId,
+      timezone: deviceTimezone ?? '(missing)',
+      textPreview: text.slice(0, 100),
+    });
+  }
 
   if (isNew) {
     onSessionCreated?.(sessionId);
@@ -539,7 +585,7 @@ export async function processChatMessage(params: {
         systemPrompt: assistantContext.systemPrompt,
         fileRetrievalContext: cappedFileContext,
         sessionContext: cappedSessionContext,
-        timezone: params.timezone,
+        timezone: deviceTimezone,
       },
       {
         onToken: (token) => onChunk(token, sessionId),

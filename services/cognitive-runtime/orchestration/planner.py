@@ -86,14 +86,6 @@ def is_likely_tool_query(query: str) -> bool:
         "jot down",
         "find note",
         "my notes",
-        "remind me",
-        "remind ",
-        "set a reminder",
-        "set a reminder to",
-        "need you to set a reminder",
-        "notify me at",
-        "notify me when",
-        "ping me at",
     ]
     return any(
         signal in q
@@ -311,6 +303,55 @@ def _heuristic_whatsapp_read(query: str, available_caps: Set[str]) -> List[Dict[
     ]
 
 
+def _heuristic_inbox_check(
+    query: str, available_caps: Set[str], connected: Set[str]
+) -> List[Dict[str, Any]]:
+    """Plan unread fetches for generic inbox / important / catch-up requests."""
+    q = query.lower()
+    generic = any(
+        w in q
+        for w in [
+            "inbox",
+            "catch up",
+            "important",
+            "unread",
+            "messages",
+            "check my",
+            "check the",
+            "summarize",
+            "summary",
+        ]
+    )
+    if not generic:
+        return []
+
+    out: List[Dict[str, Any]] = []
+    wants_email = any(w in q for w in ["email", "gmail", "inbox", "mail"]) or (
+        generic and "google" in connected
+    )
+    wants_whatsapp = any(w in q for w in ["whatsapp", "wa ", "texts", "chats"]) or (
+        generic and "whatsapp" in connected
+    )
+
+    if wants_email and "email.list_unread" in available_caps:
+        out.append(
+            {
+                "capability": "email.list_unread",
+                "provider": "google",
+                "args": {"maxResults": 15},
+            }
+        )
+    if wants_whatsapp and "messaging.list_unread" in available_caps:
+        out.append(
+            {
+                "capability": "messaging.list_unread",
+                "provider": "whatsapp",
+                "args": {"limit": 20},
+            }
+        )
+    return out
+
+
 def _heuristic_email(query: str, available_caps: Set[str]) -> List[Dict[str, Any]]:
     q = query.lower()
     out: List[Dict[str, Any]] = []
@@ -333,6 +374,13 @@ def _heuristic_email(query: str, available_caps: Set[str]) -> List[Dict[str, Any
 
 def _heuristic_calendar(query: str, available_caps: Set[str]) -> List[Dict[str, Any]]:
     q = query.lower()
+    if re.search(r"\b(remind|reminder|notify me)\b", q):
+        return []
+    if any(
+        w in q
+        for w in ["inbox", "remind", "reminder", "summarize", "summary", "catch up", "important"]
+    ):
+        return []
     if "calendar.list_upcoming" not in available_caps:
         return []
     if any(
@@ -349,6 +397,19 @@ def _heuristic_calendar(query: str, available_caps: Set[str]) -> List[Dict[str, 
     return []
 
 
+def _dedupe_cap_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen: Set[str] = set()
+    out: List[Dict[str, Any]] = []
+    for item in items:
+        key = str(item.get("capability") or item.get("tool") or "")
+        if key:
+            if key in seen:
+                continue
+            seen.add(key)
+        out.append(item)
+    return out
+
+
 def _heuristic_capabilities(
     query: str, available_caps: Set[str], connected: Set[str]
 ) -> List[Dict[str, Any]]:
@@ -356,9 +417,11 @@ def _heuristic_capabilities(
     q = query.lower()
     has_whatsapp = "whatsapp" in connected
 
+    out.extend(_heuristic_inbox_check(query, available_caps, connected))
     out.extend(_heuristic_whatsapp_read(query, available_caps))
     out.extend(_heuristic_email(query, available_caps))
     out.extend(_heuristic_calendar(query, available_caps))
+    out = _dedupe_cap_items(out)
 
     send_intent = bool(
         re.search(r"\b(send|text)\b", q) or re.search(r"\bmessage\s+to\b", q)
@@ -391,7 +454,7 @@ def _heuristic_capabilities(
                 "args": _parse_whatsapp_send_args(query),
             }
         )
-    return out
+    return _dedupe_cap_items(out)
 
 
 def _heuristic_note_capabilities(query: str, available_caps: Set[str]) -> List[Dict[str, Any]]:
@@ -419,7 +482,7 @@ def _heuristic_note_capabilities(query: str, available_caps: Set[str]) -> List[D
 
 
 def _capabilities_to_tools(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """If the planner chose a capability, always resolve to a tool for execution."""
+
     out: List[Dict[str, Any]] = []
     for raw in items:
         item = normalize_planned_item(dict(raw))
@@ -473,6 +536,7 @@ async def _llm_plan_capabilities(
         '{"capabilities":[{"capability":"messaging.list_unread","args":{},"provider":"whatsapp"}]}.\n'
         "Use only capability IDs listed in Context (connected apps section). "
         'If none needed, return {"capabilities":[]}.\n'
+        "Scheduling/reminders/automations are handled by a dedicated planner — do not plan them here.\n"
         "Domain capabilities: messaging.*, email.*, calendar.*, files.* — never legacy tool names.\n"
         "Prefer minimal steps. For WhatsApp unread use messaging.list_unread; for send use messaging.send_message.\n"
         "Before sending a message to a person by name, plan communication.chat.search first.\n"
@@ -553,10 +617,11 @@ async def plan_tools(
     manifest_connections: Optional[List[Dict[str, Any]]] = None,
     routing_query: Optional[str] = None,
     timezone: Optional[str] = None,
+    chat_history: Optional[List[Dict[str, str]]] = None,
 ) -> Dict[str, Any]:
     del preferred_model 
 
-    from orchestration.reminder_planner import plan_reminder_action
+    from orchestration.scheduling_planner import plan_scheduling_actions
 
     tools, connections, _, available_caps, warnings = await _available_tools(
         user_id,
@@ -566,21 +631,56 @@ async def plan_tools(
     connected = _connected_providers(connections)
 
     route_text = (routing_query or query).strip() or query
-    full_prompt = (query or route_text).strip()
-    reminder_items = plan_reminder_action(
-        route_text,
-        user_prompt=full_prompt,
-        timezone=timezone,
+    history = chat_history or []
+
+    schedule_items, clarification, scheduling_intent, schedule_warnings = (
+        await plan_scheduling_actions(
+            route_text,
+            user_id=user_id,
+            chat_history=history,
+            timezone=timezone,
+        )
     )
-    if reminder_items:
+    warnings.extend(schedule_warnings)
+
+    if clarification:
+        warnings.append(clarification)
         return _build_plan_result(
             query,
             context,
             user_id,
             connections,
             tools,
-            reminder_items,
-            "heuristic-reminder",
+            [],
+            "llm-scheduling-clarification",
+            warnings,
+        )
+
+    if schedule_items:
+        return _build_plan_result(
+            query,
+            context,
+            user_id,
+            connections,
+            tools,
+            schedule_items,
+            "llm-scheduling",
+            warnings,
+        )
+
+    if scheduling_intent:
+        warnings.append(
+            "Scheduling planner did not produce a schedule — "
+            "the assistant should ask the user to rephrase or try again."
+        )
+        return _build_plan_result(
+            query,
+            context,
+            user_id,
+            connections,
+            tools,
+            [],
+            "llm-scheduling-empty",
             warnings,
         )
 
@@ -600,7 +700,11 @@ async def plan_tools(
             warnings,
         )
 
-    if not is_likely_tool_query(query):
+    from orchestration.scheduling_planner import _looks_like_scheduling_query
+
+    if not is_likely_tool_query(query) and not _looks_like_scheduling_query(
+        route_text, history
+    ):
         return _build_plan_result(
             query,
             context,
@@ -609,6 +713,23 @@ async def plan_tools(
             tools,
             [],
             "conversational-skip",
+            warnings,
+        )
+
+    if _looks_like_scheduling_query(route_text, history) and not is_likely_tool_query(
+        query
+    ):
+        warnings.append(
+            "Scheduling follow-up did not produce a schedule — ask the user to rephrase."
+        )
+        return _build_plan_result(
+            query,
+            context,
+            user_id,
+            connections,
+            tools,
+            [],
+            "llm-scheduling-empty",
             warnings,
         )
 

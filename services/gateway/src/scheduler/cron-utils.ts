@@ -46,8 +46,36 @@ export function nextFireFromCron(cron: string, timezone: string, after: Date = n
   return interval.next().toDate();
 }
 
-export function humanizeCron(cron: string, timezone: string): string {
+export function normalizeCronForHumanize(cron: string): string {
   const parts = cron.trim().split(/\s+/);
+  if (parts.length !== 6) return cron;
+
+  const [sec, min, hr, dom, mon, dow] = parts;
+  const allWildcards = (fields: string[]) => fields.every((f) => f === '*');
+
+  if (sec === '0' && min === '0' && hr.startsWith('*/') && allWildcards([dom, mon, dow])) {
+    return `0 ${hr} * * *`;
+  }
+  if (sec === '0' && min.startsWith('*/') && hr === '*' && allWildcards([dom, mon, dow])) {
+    return `${min} * * * *`;
+  }
+
+  const secStep = sec.match(/^(?:0|\*)\/(\d+)$/);
+  if (secStep && allWildcards([min, hr, dom, mon, dow])) {
+    const n = secStep[1];
+    return n === '1' ? '0 * * * *' : `0 */${n} * * *`;
+  }
+
+  if (sec === '0') {
+    return parts.slice(1).join(' ');
+  }
+
+  return cron;
+}
+
+export function humanizeCron(cron: string, timezone: string): string {
+  const normalized = normalizeCronForHumanize(cron);
+  const parts = normalized.trim().split(/\s+/);
   if (parts.length < 5) return cron;
   const [minute, hour, , , dow] = parts;
   if (minute === '*' && hour === '*') return 'Every minute';

@@ -5,11 +5,55 @@ from typing import Any, Dict, List
 
 _TOOL_REPLY_INSTRUCTION = (
     "Reply in one short, friendly sentence. "
+    "For reminders: ONLY say it was scheduled if the tool result line starts with "
+    "'Reminder scheduled:' — never claim success when the result says 'Could not schedule'. "
     "If scheduling succeeded, confirm the reminder title and time. "
+    "If inbox data was fetched, summarize only important/urgent/actionable items; "
+    "say clearly if nothing needs attention. "
     "If it failed, state that briefly and ask the user to try again — do not claim "
     "the system is broken or suggest phone alarms unless scheduling actually failed. "
     "Never mention tool names, execution IDs, JSON, Python dicts, or raw metadata."
 )
+
+_INBOX_TOOLS = frozenset(
+    {
+        "email.list_unread",
+        "email.read_email",
+        "whatsapp.list_unread",
+        "messaging.list_unread",
+        "whatsapp.read_chat",
+        "messaging.read_chat",
+    }
+)
+
+
+def format_scheduling_clarification(warnings: List[str]) -> str:
+    question = next(
+        (
+            w
+            for w in reversed(warnings)
+            if w and "unavailable" not in w.lower() and "rephrase" not in w.lower()
+        ),
+        "What time should I schedule that for?",
+    )
+    return (
+        "\n\n[System: scheduling needs clarification]\n"
+        f"- Ask the user this question only (do not claim the reminder was scheduled): {question}\n\n"
+        f"{_TOOL_REPLY_INSTRUCTION}"
+    )
+
+
+def format_scheduling_plan_failure(warnings: List[str]) -> str:
+    detail = (
+        warnings[0]
+        if warnings
+        else "Could not schedule — please try again in one sentence."
+    )
+    return (
+        "\n\n[System: tool actions completed]\n"
+        f"- Could not schedule: {detail}\n\n"
+        f"{_TOOL_REPLY_INSTRUCTION}"
+    )
 
 
 def format_tool_results_for_context(tool_results: List[Dict[str, Any]]) -> str:
@@ -43,6 +87,16 @@ def _summarize_tool_entry(entry: Dict[str, Any]) -> str:
         return _summarize_reminder_update(entry)
     if tool == "reminder.cancel":
         return "Reminder cancelled."
+    if tool == "reminder.list":
+        return _summarize_reminder_list(entry)
+    if tool == "automation.create":
+        return _summarize_automation_create(entry)
+    if tool == "automation.update":
+        return _summarize_automation_update(entry)
+    if tool == "automation.cancel":
+        return "Automation cancelled."
+    if tool in _INBOX_TOOLS:
+        return _summarize_inbox_tool(entry)
 
     if status in ("completed", "success"):
         return "The requested action completed successfully."
@@ -85,6 +139,133 @@ def _summarize_reminder_update(entry: Dict[str, Any]) -> str:
     reminder = _extract_reminder(entry.get("result"))
     title = _reminder_title(reminder)
     return f"Reminder updated: {title}."
+
+
+def _summarize_reminder_list(entry: Dict[str, Any]) -> str:
+    status = str(entry.get("status") or "").lower()
+    if status in ("failed", "cancelled") or entry.get("error"):
+        return f"Could not list reminders: {entry.get('error') or status}"
+
+    result = entry.get("result")
+    if not isinstance(result, dict):
+        return "No pending reminders found."
+
+    reminders = result.get("reminders")
+    if not isinstance(reminders, list) or not reminders:
+        return "No pending reminders found."
+
+    lines: List[str] = []
+    for r in reminders[:5]:
+        if not isinstance(r, dict):
+            continue
+        payload = r.get("payload") if isinstance(r.get("payload"), dict) else {}
+        title = payload.get("title") or "Reminder"
+        next_fire = r.get("nextFireAt") or ""
+        countdown = r.get("countdownLabel") or ""
+        if countdown:
+            lines.append(f"Next reminder: {title} in {countdown}")
+        elif next_fire:
+            lines.append(f"Next reminder: {title} at {next_fire}")
+        else:
+            lines.append(f"Reminder: {title}")
+
+    return lines[0] if len(lines) == 1 else "; ".join(lines)
+
+
+def _summarize_automation_update(entry: Dict[str, Any]) -> str:
+    status = str(entry.get("status") or "").lower()
+    if status in ("failed", "cancelled") or entry.get("error"):
+        return f"Could not update the automation: {entry.get('error') or status}"
+
+    result = entry.get("result")
+    if not isinstance(result, dict):
+        return "Automation updated."
+    automation = result.get("automation")
+    if not isinstance(automation, dict):
+        return "Automation updated."
+    name = automation.get("name") or "Automation"
+    return f"Automation updated: {name}."
+
+
+def _summarize_automation_create(entry: Dict[str, Any]) -> str:
+    status = str(entry.get("status") or "").lower()
+    if status in ("failed", "cancelled") or entry.get("error"):
+        return f"Could not create the automation: {entry.get('error') or status}"
+
+    result = entry.get("result")
+    if not isinstance(result, dict):
+        return "Inbox digest automation created."
+    automation = result.get("automation")
+    if not isinstance(automation, dict):
+        return "Inbox digest automation created."
+    name = automation.get("name") or "Inbox digest"
+    schedule = automation.get("schedule") or "daily"
+    return f"Inbox digest automation created: {name} (schedule: {schedule})."
+
+
+def _summarize_inbox_tool(entry: Dict[str, Any]) -> str:
+    status = str(entry.get("status") or "").lower()
+    if status in ("failed", "cancelled") or entry.get("error"):
+        return f"Could not fetch inbox: {entry.get('error') or status}"
+
+    payload = _unwrap_result(entry.get("result"))
+    tool = str(entry.get("tool") or "")
+
+    if "email" in tool:
+        return _format_email_unread(payload)
+    return _format_whatsapp_unread(payload)
+
+
+def _unwrap_result(result: Any) -> Dict[str, Any]:
+    if not isinstance(result, dict):
+        return {}
+    if isinstance(result.get("data"), dict):
+        return result["data"]
+    return result
+
+
+def _format_email_unread(payload: Dict[str, Any]) -> str:
+    items = payload.get("items")
+    if not isinstance(items, list) or not items:
+        total = payload.get("totalUnread", 0)
+        if total == 0:
+            return "Gmail: no unread emails in inbox."
+        return "Gmail: no unread email details returned."
+
+    lines = [f"Gmail unread ({len(items)} shown):"]
+    for item in items[:10]:
+        if not isinstance(item, dict):
+            continue
+        sender = item.get("from") or item.get("sender") or "Unknown"
+        subject = item.get("subject") or "(no subject)"
+        preview = (item.get("preview") or item.get("snippet") or "")[:120]
+        ts = item.get("timestamp") or item.get("date") or ""
+        lines.append(f"  • {sender} — {subject}" + (f" ({ts})" if ts else ""))
+        if preview:
+            lines.append(f"    {preview}")
+    return "\n".join(lines)
+
+
+def _format_whatsapp_unread(payload: Dict[str, Any]) -> str:
+    items = payload.get("items")
+    if not isinstance(items, list) or not items:
+        total = payload.get("totalUnread", 0)
+        if total == 0:
+            return "WhatsApp: no unread chats."
+        return "WhatsApp: no unread chat details returned."
+
+    lines = [f"WhatsApp unread ({len(items)} chats):"]
+    for item in items[:10]:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("sender") or item.get("chatName") or item.get("chatId") or "Chat"
+        preview = (item.get("preview") or item.get("lastMessage") or "")[:120]
+        count = item.get("unreadCount")
+        suffix = f" ({count} unread)" if count else ""
+        lines.append(f"  • {name}{suffix}")
+        if preview:
+            lines.append(f"    {preview}")
+    return "\n".join(lines)
 
 
 def _extract_reminder(result: Any) -> Dict[str, Any]:

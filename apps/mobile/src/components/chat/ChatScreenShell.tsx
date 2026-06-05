@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
@@ -18,6 +18,8 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/tokens';
 import { Routes } from '@/lib/routes';
 import { useChatSessions } from '@/features/chat/useChatSessions';
+import { useChatSidebarStore } from '@/features/chat/chatSidebarStore';
+import { apiClient } from '@/lib/api-client';
 import { useGradualKeyboardAnimation } from '@/hooks/useGradualKeyboardAnimation';
 
 type ChatScreenShellProps = {
@@ -70,6 +72,14 @@ export function ChatScreenShell({
   const [actionsOpen, setActionsOpen] = useState(false);
   const [actionsAnchor, setActionsAnchor] = useState<MenuAnchorRect | null>(null);
   const { renameSession, deleteSession } = useChatSessions();
+  const patchUnread = useChatSidebarStore((s) => s.patchUnread);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    void apiClient.markSessionRead(sessionId).then(() => {
+      patchUnread(sessionId, false);
+    }).catch(() => {});
+  }, [sessionId, patchUnread]);
 
   const keyboardSpacerStyle = useAnimatedStyle(() => ({
     height: keyboardHeight.value,

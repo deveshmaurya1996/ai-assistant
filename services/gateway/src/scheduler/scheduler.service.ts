@@ -117,10 +117,16 @@ export async function rehydrateAll(): Promise<void> {
   for (const automation of automations) {
     if (!automation.schedule) continue;
     await unscheduleJob('automation', automation.id);
+    const action = automation.action as { timezone?: string } | null;
+    const timezone =
+      typeof action?.timezone === 'string' && action.timezone.trim()
+        ? action.timezone.trim()
+        : undefined;
     await scheduleCronJob({
       kind: 'automation',
       entityId: automation.id,
       cron: automation.schedule,
+      timezone,
     });
   }
 

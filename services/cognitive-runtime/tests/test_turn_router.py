@@ -18,8 +18,9 @@ from orchestration.turn_router import TurnIntent, classify_turn
             "I need you to set a reminder to not touch my nose every 1 min",
             TurnIntent.TOOL,
         ),
-        ("call my father at 9 pm", TurnIntent.TOOL),
-        ("at 9 pm to call my father", TurnIntent.TOOL),
+        ("check my inbox every morning at 8", TurnIntent.TOOL),
+        ("call my father at 9 pm", TurnIntent.CASUAL),
+        ("at 9 pm to call my father", TurnIntent.CASUAL),
     ],
 )
 def test_classify_turn_text_only(query, expected):

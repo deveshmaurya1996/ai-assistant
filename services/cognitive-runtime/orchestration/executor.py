@@ -163,6 +163,15 @@ async def execute_planned_tools(
                 results.append(entry)
                 continue
 
+            if tool_name.startswith("automation."):
+                from orchestration.automation_client import execute_automation_via_gateway
+
+                entry = await execute_automation_via_gateway(
+                    client, user_id, tool_name, args
+                )
+                results.append(entry)
+                continue
+
             if tool_name.startswith("whatsapp."):
                 entry = await _execute_whatsapp_via_gateway(
                     client,

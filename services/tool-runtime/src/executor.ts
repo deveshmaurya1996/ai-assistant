@@ -15,6 +15,10 @@ const PLATFORM_TOOLS = new Set([
   'reminder.create',
   'reminder.update',
   'reminder.cancel',
+  'reminder.list',
+  'automation.create',
+  'automation.update',
+  'automation.cancel',
 ]);
 import {
   createExecution,

@@ -107,6 +107,10 @@ function DrawerSessionRow({
             <View style={styles.generatingRow}>
               <PulseDot color={colors.primary} />
             </View>
+          ) : item.hasUnread ? (
+            <View style={styles.generatingRow}>
+              <PulseDot color={colors.danger} />
+            </View>
           ) : isVoice ? (
             <Text variant="caption" muted>
               Voice

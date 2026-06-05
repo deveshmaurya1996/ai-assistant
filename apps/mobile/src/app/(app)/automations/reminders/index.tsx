@@ -6,6 +6,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Alert,
+  Platform,
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Bell, Pencil, Trash2 } from 'lucide-react-native';
@@ -22,6 +23,7 @@ import { apiClient } from '@/lib/api-client';
 import { ReminderEditModal } from '@/features/reminders/ReminderEditModal';
 import { subscribeReminderRefresh } from '@/features/reminders/reminderEvents';
 import type { Reminder } from '@ai-assistant/types';
+import { formatReminderTime } from '@/lib/formatReminderTime';
 
 type ReminderRow = Reminder & { scheduleLabel?: string | null };
 
@@ -30,6 +32,7 @@ export default function RemindersScreen() {
   const [reminders, setReminders] = useState<ReminderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editing, setEditing] = useState<ReminderRow | null>(null);
 
@@ -37,8 +40,12 @@ export default function RemindersScreen() {
     try {
       const list = await apiClient.listReminders();
       setReminders(list as ReminderRow[]);
-    } catch {
+      setLoadError(null);
+    } catch (err) {
       setReminders([]);
+      setLoadError(
+        err instanceof Error ? err.message : 'Could not load reminders. Pull to retry.'
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -55,19 +62,34 @@ export default function RemindersScreen() {
 
   const handleDelete = useCallback(
     (item: ReminderRow) => {
-      Alert.alert('Delete reminder', `Remove "${getTitle(item)}"?`, [
+      const title = getTitle(item);
+      const message = `Remove "${title}"?`;
+
+      const runDelete = async () => {
+        setDeletingId(item.id);
+        try {
+          await apiClient.deleteReminder(item.id);
+          await load();
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Could not delete reminder';
+          if (Platform.OS === 'web') {
+            window.alert(msg);
+          } else {
+            Alert.alert('Delete failed', msg);
+          }
+        } finally {
+          setDeletingId(null);
+        }
+      };
+
+      if (Platform.OS === 'web') {
+        if (window.confirm(message)) void runDelete();
+        return;
+      }
+
+      Alert.alert('Delete reminder', message, [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            setDeletingId(item.id);
-            void apiClient
-              .deleteReminder(item.id)
-              .then(() => load())
-              .finally(() => setDeletingId(null));
-          },
-        },
+        { text: 'Delete', style: 'destructive', onPress: () => void runDelete() },
       ]);
     },
     [load]
@@ -101,29 +123,41 @@ export default function RemindersScreen() {
           />
         }
         ListHeaderComponent={
-          <Text variant="body" muted style={styles.subtitle}>
-            Tap a reminder to view and edit it.
-          </Text>
+          <>
+            <Text variant="body" muted style={styles.subtitle}>
+              All your reminders, tap to edit or use the trash icon to remove.
+            </Text>
+            {loadError ? (
+              <Text variant="caption" style={{ color: colors.danger, marginBottom: spacing.sm }}>
+                {loadError}
+              </Text>
+            ) : null}
+          </>
         }
         ListEmptyComponent={
-          <EmptyState
-            icon={<Bell color={colors.textMuted} size={40} />}
-            title="No reminders scheduled"
-            description="Ask your assistant to remind you about something, and it will show up here."
-          />
+          loadError ? null : (
+            <EmptyState
+              icon={<Bell color={colors.textMuted} size={40} />}
+              title="No reminders scheduled"
+              description="Ask your assistant to remind you about something, and it will show up here."
+            />
+          )
         }
         renderItem={({ item, index }) => {
           const title = getTitle(item);
           const fireAt = new Date(item.nextFireAt);
-          const isPaused = item.status === 'PAUSED';
+          const statusLabel = formatReminderStatus(item.status);
 
           const showUserPrompt =
             item.userPrompt && item.userPrompt.trim().toLowerCase() !== title.trim().toLowerCase();
 
           return (
             <FadeIn delay={index * 40} style={styles.rowWrap}>
-              <PressableScale onPress={() => setEditing(item)}>
-                <Card style={styles.card}>
+              <Card style={styles.card}>
+                <PressableScale
+                  onPress={() => setEditing(item)}
+                  style={styles.cardMain}
+                  disabled={deletingId === item.id}>
                   <View style={[styles.icon, { backgroundColor: colors.primaryMuted }]}>
                     <Bell color={colors.primary} size={20} />
                   </View>
@@ -140,26 +174,30 @@ export default function RemindersScreen() {
                       </Text>
                     ) : null}
                     <Text variant="label" muted style={styles.status}>
-                      {isPaused ? 'Paused' : item.status.toLowerCase()}
+                      {statusLabel}
                     </Text>
                   </View>
-                  <View style={styles.actions}>
-                    <PressableScale onPress={() => setEditing(item)} hitSlop={8}>
-                      <View style={[styles.actionBtn, { backgroundColor: colors.surfaceElevated }]}>
-                        <Pencil color={colors.textMuted} size={18} />
-                      </View>
-                    </PressableScale>
-                    <PressableScale
-                      onPress={() => handleDelete(item)}
-                      disabled={deletingId === item.id}
-                      hitSlop={8}>
-                      <View style={[styles.actionBtn, { backgroundColor: colors.surfaceElevated }]}>
+                </PressableScale>
+                <View style={styles.actions}>
+                  <PressableScale onPress={() => setEditing(item)} hitSlop={8}>
+                    <View style={[styles.actionBtn, { backgroundColor: colors.surfaceElevated }]}>
+                      <Pencil color={colors.textMuted} size={18} />
+                    </View>
+                  </PressableScale>
+                  <PressableScale
+                    onPress={() => handleDelete(item)}
+                    disabled={deletingId === item.id}
+                    hitSlop={8}>
+                    <View style={[styles.actionBtn, { backgroundColor: colors.surfaceElevated }]}>
+                      {deletingId === item.id ? (
+                        <ActivityIndicator size="small" color={colors.danger} />
+                      ) : (
                         <Trash2 color={colors.danger} size={18} />
-                      </View>
-                    </PressableScale>
-                  </View>
-                </Card>
-              </PressableScale>
+                      )}
+                    </View>
+                  </PressableScale>
+                </View>
+              </Card>
             </FadeIn>
           );
         }}
@@ -179,26 +217,21 @@ function getTitle(item: ReminderRow): string {
   return (item.payload as { title?: string }).title ?? 'Reminder';
 }
 
-function formatReminderTime(date: Date): string {
-  const now = new Date();
-  const isToday =
-    date.getDate() === now.getDate() &&
-    date.getMonth() === now.getMonth() &&
-    date.getFullYear() === now.getFullYear();
-
-  const time = date.toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-
-  if (isToday) return `Today at ${time}`;
-  return date.toLocaleString(undefined, {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+function formatReminderStatus(status: ReminderRow['status']): string {
+  switch (status) {
+    case 'PENDING':
+      return 'Pending';
+    case 'PAUSED':
+      return 'Paused';
+    case 'FIRED':
+      return 'Completed';
+    case 'CANCELLED':
+      return 'Cancelled';
+    case 'FAILED':
+      return 'Failed';
+    default:
+      return String(status).toLowerCase();
+  }
 }
 
 const styles = StyleSheet.create({
@@ -207,6 +240,12 @@ const styles = StyleSheet.create({
   subtitle: { marginBottom: spacing.md },
   rowWrap: { marginBottom: spacing.sm },
   card: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  cardMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
   icon: {
     width: 40,
     height: 40,

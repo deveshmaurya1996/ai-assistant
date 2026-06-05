@@ -1,6 +1,5 @@
-import { prisma, Prisma } from '@ai-assistant/database';
+import { prisma } from '@ai-assistant/database';
 import { EventNames, publishEvent } from '@ai-assistant/events';
-import { toolRuntimeFetch } from '../lib/runtime-clients';
 import { sendPushToUser } from '../services/push-notification.service';
 import { nextFireFromCron } from './cron-utils';
 import { scheduleCronJob, scheduleJob } from './scheduler.service';
@@ -14,31 +13,6 @@ export async function fireReminder(
   if (reminder.status !== 'PENDING') return;
 
   const payload = reminder.payload as Record<string, unknown>;
-  const action = payload.action as
-    | { tool?: string; args?: Record<string, unknown> }
-    | undefined;
-
-  if (action?.tool) {
-    try {
-      await toolRuntimeFetch('/v1/executions', {
-        method: 'POST',
-        body: JSON.stringify({
-          userId: reminder.userId,
-          tool: action.tool,
-          args: action.args ?? {},
-          source: 'automation',
-          confirmed: true,
-        }),
-      });
-    } catch (err) {
-      await prisma.reminder.update({
-        where: { id: reminderId },
-        data: { status: 'FAILED' },
-      });
-      console.warn('[reminder] action failed:', err);
-      return;
-    }
-  }
 
   const title = String(payload.title ?? 'Reminder');
   let body = String(payload.body ?? payload.title ?? '');

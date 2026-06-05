@@ -457,7 +457,9 @@ async def build_context(
     include_manifest: bool = True,
     rag_block: Optional[str] = None,
 ) -> str:
-    parts = []
+    from orchestration.platform_capabilities import platform_capabilities_block
+
+    parts = [platform_capabilities_block()]
 
     if include_manifest:
         if manifest_text is None:

@@ -12,6 +12,7 @@ export {
   validateCronExpression,
   nextFireFromCron,
   humanizeCron,
+  normalizeCronForHumanize,
 } from './cron-utils';
 export { fireReminder } from './reminder.handler';
 export { fireAutomation } from './automation.handler';

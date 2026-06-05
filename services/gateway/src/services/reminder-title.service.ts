@@ -1,5 +1,6 @@
 const PREFIX_PATTERNS = [
   /^hey\s+(?:can\s+you\s+|could\s+you\s+)?/i,
+  /^i\s+need\s+you\s+to\s+set\s+(?:a\s+)?reminder\s+(?:for\s+me\s+)?(?:to\s+)?/i,
   /^i\s+need\s+you\s+to\s+/i,
   /^please\s+/i,
   /^can\s+you\s+set\s+(?:a\s+)?reminder\s+(?:for\s+me\s+)?(?:to\s+)?/i,
@@ -8,6 +9,9 @@ const PREFIX_PATTERNS = [
   /^could\s+you\s+/i,
   /^set\s+a\s+reminder\s+(?:for\s+me\s+)?(?:to\s+)?/i,
   /^set\s+reminder\s+(?:for\s+me\s+)?(?:to\s+)?/i,
+  /^schedule\s+(?:a\s+)?reminder\s+(?:for\s+me\s+)?(?:to\s+)?/i,
+  /^add\s+(?:a\s+)?reminder\s+(?:for\s+me\s+)?(?:to\s+)?/i,
+  /^create\s+(?:a\s+)?reminder\s+(?:for\s+me\s+)?(?:to\s+)?/i,
   /^remind\s+me\s+(?:to\s+)?/i,
 ];
 

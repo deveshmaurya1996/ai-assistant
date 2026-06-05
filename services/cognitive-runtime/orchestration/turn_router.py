@@ -1,4 +1,4 @@
-"""Unified turn intent classification for agent_turn routing."""
+
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ from orchestration.context import (
     should_retrieve_rag_context_async,
 )
 from orchestration.attachment_intent import attachment_turn_needs_tools
-from orchestration.planner import is_conversational_query, is_likely_tool_query
-from orchestration.reminder_intent import is_timed_remind_intent
+from orchestration.planner import is_likely_tool_query
+from orchestration.scheduling_planner import _looks_like_scheduling_query
 
 
 class TurnIntent(str, Enum):
@@ -37,6 +37,19 @@ class TurnRoute:
     include_identity: bool
     history_limit: int
     skip_episodic: bool = False
+
+
+def _is_short_followup_turn(query: str, chat_history: List[Dict[str, str]]) -> bool:
+    """Route brief replies after assistant messages to the planner (LLM decides scheduling)."""
+    q = (query or "").strip()
+    if not q or not chat_history or len(q) > 150:
+        return False
+    if is_assistant_meta_query(q):
+        return False
+    for msg in reversed(chat_history):
+        if msg.get("role") == "assistant":
+            return bool(str(msg.get("content") or "").strip())
+    return False
 
 
 def _default_history_limit() -> int:
@@ -65,6 +78,7 @@ def classify_turn(
     *,
     query: str,
     routing_query: Optional[str] = None,
+    chat_history: Optional[List[Dict[str, str]]] = None,
     confirmed: bool,
     skip_planning: bool,
     rag_enabled: bool,
@@ -121,7 +135,20 @@ def classify_turn(
             skip_episodic=bool(has_file_context and not is_memory_recall_query(route_q)),
         )
 
-    if is_timed_remind_intent(route_q):
+    history = chat_history or []
+
+    if _is_short_followup_turn(route_q, history):
+        return TurnRoute(
+            intent=TurnIntent.TOOL,
+            stream_task="auto",
+            retrieve_memory=False,
+            run_planner=not skip_planning,
+            run_tools=True,
+            include_identity=True,
+            history_limit=history_limit,
+        )
+
+    if _looks_like_scheduling_query(route_q, history):
         return TurnRoute(
             intent=TurnIntent.TOOL,
             stream_task="auto",

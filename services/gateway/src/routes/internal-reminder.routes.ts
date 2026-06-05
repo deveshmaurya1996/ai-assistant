@@ -7,6 +7,7 @@ import {
   softDeleteReminder,
   findReminderByTitle,
   cancelReminder,
+  listRemindersForUser,
 } from '../services/reminder.service';
 
 const InternalCreateSchema = z.object({
@@ -19,7 +20,7 @@ const InternalCreateSchema = z.object({
     .optional(),
   cronExpression: z.string().optional(),
   timezone: z.string().optional(),
-  nextFireAt: z.string().datetime().optional(),
+  nextFireAt: z.string().optional(),
 });
 
 const InternalUpdateSchema = z.object({
@@ -33,7 +34,7 @@ const InternalUpdateSchema = z.object({
     .optional(),
   cronExpression: z.string().nullable().optional(),
   timezone: z.string().optional(),
-  nextFireAt: z.string().datetime().optional(),
+  nextFireAt: z.string().optional(),
   status: z.enum(['PENDING', 'PAUSED', 'FIRED', 'CANCELLED', 'FAILED']).optional(),
 });
 
@@ -44,6 +45,25 @@ const InternalCancelSchema = z.object({
 });
 
 export async function internalReminderRoutes(fastify: FastifyInstance) {
+  fastify.get('/reminders', async (request, reply) => {
+    try {
+      const query = z
+        .object({
+          userId: z.string(),
+          status: z.enum(['PENDING', 'PAUSED', 'ALL']).optional(),
+          title: z.string().optional(),
+        })
+        .parse(request.query);
+      const reminders = await listRemindersForUser(query.userId, {
+        status: query.status,
+        title: query.title,
+      });
+      return reply.send(reminders);
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
   fastify.post('/reminders', async (request, reply) => {
     try {
       const body = InternalCreateSchema.parse(request.body);

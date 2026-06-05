@@ -17,6 +17,7 @@ import type {
   ModelsResponse,
   Reminder,
   Automation,
+  UpdateAutomationInput,
   CreateWorkflowInput,
   Workflow,
   ServerToClientEvents,
@@ -236,6 +237,12 @@ export class AssistantClient {
     return this.request<ChatSession>(`/chat/sessions/${sessionId}`, {
       method: 'PATCH',
       body: JSON.stringify(body),
+    });
+  }
+
+  async markSessionRead(sessionId: string) {
+    return this.request<ChatSession>(`/chat/sessions/${sessionId}/read`, {
+      method: 'POST',
     });
   }
 
@@ -536,6 +543,17 @@ export class AssistantClient {
 
   async listAutomations(): Promise<Automation[]> {
     return this.request<Automation[]>('/automations');
+  }
+
+  async updateAutomation(id: string, body: UpdateAutomationInput) {
+    return this.request<Automation>(`/automations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async deleteAutomation(id: string) {
+    return this.request(`/automations/${id}`, { method: 'DELETE' });
   }
 
   async listReminders(): Promise<Reminder[]> {

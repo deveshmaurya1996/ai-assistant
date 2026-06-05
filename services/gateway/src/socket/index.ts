@@ -127,10 +127,22 @@ export function setupSocketIO(fastify: FastifyInstance) {
         socket.emit('chat:error', { error: 'Maximum 4 attachments per message' });
         return;
       }
-      if (!data.timezone?.trim()) {
+      const deviceTimezone = data.timezone?.trim() || undefined;
+      if (!deviceTimezone) {
         fastify.log.warn(
-          { userId, socketId: socket.id },
+          { userId, socketId: socket.id, textPreview: data.text?.slice(0, 80) },
           '[chat] chat:message missing device timezone — reminder scheduling may fail'
+        );
+      } else {
+        fastify.log.info(
+          {
+            userId,
+            socketId: socket.id,
+            timezone: deviceTimezone,
+            textPreview: data.text?.slice(0, 80),
+            hasSession: Boolean(data.chatSessionId),
+          },
+          '[chat] chat:message received'
         );
       }
 
@@ -226,7 +238,7 @@ export function setupSocketIO(fastify: FastifyInstance) {
             confirmed: data.confirmed,
             personalityId: data.personalityId,
             assistantDisplayName: data.assistantDisplayName,
-            timezone: data.timezone,
+            timezone: deviceTimezone,
             source: 'socket',
             signal: turnAbort.signal,
             agentSource:
