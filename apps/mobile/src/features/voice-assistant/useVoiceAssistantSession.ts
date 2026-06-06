@@ -331,6 +331,10 @@ export function useVoiceAssistantSession() {
             const assistantMessage = await waitForAssistantReply(sid);
             if (stoppedRef.current) break;
 
+            useOverlaySessionStore
+              .getState()
+              .setLastReply(sid, assistantMessage.content);
+
             markActivity();
             if (ttsQueue) {
               const remainder = assistantMessage.content.slice(streamedCharsRef.current);

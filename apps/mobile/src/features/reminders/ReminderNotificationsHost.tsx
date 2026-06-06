@@ -6,10 +6,15 @@ import { useSettingsStore } from '@/stores/settings';
 import { Routes } from '@/lib/routes';
 import { registerPushTokenIfNeeded } from './registerPushToken';
 import { emitReminderRefresh } from './reminderEvents';
-import { showReminderOverlay } from '@/lib/overlay';
 import { useChatSocket } from '@/features/chat/ChatSocketProvider';
-
-const handledReminderIds = new Set<string>();
+import {
+  registerReminderOverlayTask,
+  REMINDER_OVERLAY_TASK,
+} from './reminderOverlayTask';
+import {
+  showReminderOverlayFromPayload,
+  type ReminderNotificationPayload,
+} from './reminderNotificationUtils';
 
 export function ReminderNotificationsHost() {
   const session = useAuthStore((s) => s.session);
@@ -19,26 +24,19 @@ export function ReminderNotificationsHost() {
   useEffect(() => {
     if (!session) return;
     void registerPushTokenIfNeeded(reminderOverlayEnabled);
+    void registerReminderOverlayTask().catch(() => {});
   }, [session, reminderOverlayEnabled]);
 
   useEffect(() => {
     if (!socket) return;
 
-    const onNotification = (data: {
-      type?: string;
-      reminderId?: string;
-      title?: string;
-      body?: string;
-      missed?: boolean;
-    }) => {
+    const onNotification = (data: ReminderNotificationPayload) => {
       if (data.type !== 'reminder') return;
-      if (data.reminderId && handledReminderIds.has(data.reminderId)) return;
-      if (data.reminderId) handledReminderIds.add(data.reminderId);
 
       emitReminderRefresh();
 
-      if (reminderOverlayEnabled && data.title) {
-        void showReminderOverlay(data.title, data.body ?? '');
+      if (reminderOverlayEnabled) {
+        void showReminderOverlayFromPayload(data);
       }
     };
 
@@ -60,16 +58,11 @@ export function ReminderNotificationsHost() {
 
   useEffect(() => {
     const sub = Notifications.addNotificationReceivedListener((notification) => {
-      const data = notification.request.content.data as {
-        type?: string;
-        reminderId?: string;
-        showOverlay?: boolean;
-      };
+      const data = notification.request.content.data as ReminderNotificationPayload;
       if (data?.type !== 'reminder') return;
       emitReminderRefresh();
       if (data.showOverlay && reminderOverlayEnabled) {
-        const { title, body } = notification.request.content;
-        void showReminderOverlay(String(title ?? 'Reminder'), String(body ?? ''));
+        void showReminderOverlayFromPayload(data, notification.request.content);
       }
     });
     return () => sub.remove();
@@ -77,3 +70,5 @@ export function ReminderNotificationsHost() {
 
   return null;
 }
+
+export { REMINDER_OVERLAY_TASK };

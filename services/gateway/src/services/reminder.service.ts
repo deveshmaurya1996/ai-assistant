@@ -154,7 +154,7 @@ export async function createReminder(userId: string, params: CreateReminderParam
   );
   const payload: Record<string, unknown> = {
     title: parsed.title,
-    body: parsed.body ?? parsed.title,
+    ...(parsed.body ? { body: parsed.body } : {}),
   };
 
   const reminder = await prisma.reminder.create({

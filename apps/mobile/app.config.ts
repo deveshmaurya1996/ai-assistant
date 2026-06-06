@@ -29,6 +29,7 @@ const config: ExpoConfig = {
   },
   android: {
     package: 'com.aiassistant.app',
+    googleServicesFile: './google-services.json',
     versionCode: 1,
     softwareKeyboardLayoutMode: 'resize',
     permissions: [

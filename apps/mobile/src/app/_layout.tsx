@@ -1,4 +1,5 @@
 import 'react-native-reanimated';
+import '@/features/reminders/reminderOverlayTask';
 import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';

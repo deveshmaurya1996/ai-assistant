@@ -103,4 +103,34 @@ describe('validateStructuredReminderSchedule', () => {
     );
     assert.equal(result.timezone, 'Asia/Kolkata');
   });
+
+  it('recomputes past nextFireAt when user asked for a relative minute delay', () => {
+    const past = new Date(Date.now() - 30_000).toISOString();
+    const result = validateStructuredReminderSchedule(
+      {
+        title: 'Water',
+        userPrompt: 'remind me in 1 minute to drink water',
+        nextFireAt: past,
+        recurrence: 'NONE',
+        timezone: 'UTC',
+      },
+      { chatCreated: true }
+    );
+    assert.ok(result.nextFireAt.getTime() > Date.now());
+  });
+
+  it('interprets naive ISO in the user timezone', () => {
+    const result = validateStructuredReminderSchedule(
+      {
+        title: 'Call',
+        nextFireAt: '2099-06-01T21:30:00',
+        recurrence: 'NONE',
+        timezone: 'Asia/Kolkata',
+      },
+      { chatCreated: false }
+    );
+    const fire = result.nextFireAt;
+    assert.equal(fire.getUTCHours(), 16);
+    assert.equal(fire.getUTCMinutes(), 0);
+  });
 });

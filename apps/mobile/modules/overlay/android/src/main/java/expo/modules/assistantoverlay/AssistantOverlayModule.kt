@@ -61,7 +61,11 @@ class AssistantOverlayModule : Module() {
     }
 
     AsyncFunction("hideOverlay") {
-      OverlayWindowManager.hide()
+      OverlayWindowManager.hideAssistant()
+    }
+
+    AsyncFunction("isReminderOverlayPinned") {
+      OverlayWindowManager.isReminderPinned()
     }
 
     AsyncFunction("updateOverlayText") { text: String ->
@@ -75,7 +79,7 @@ class AssistantOverlayModule : Module() {
     }
 
     AsyncFunction("hideBubble") {
-      OverlayWindowManager.hide()
+      OverlayWindowManager.hideAssistant()
     }
 
     AsyncFunction("setBubbleState") { state: String ->
@@ -128,15 +132,13 @@ class AssistantOverlayModule : Module() {
         .apply()
     }
 
-    AsyncFunction("showReminderOverlay") { title: String, body: String ->
+    AsyncFunction("showReminderOverlay") { displayTitle: String, userPrompt: String ->
       val context = appContext.reactContext ?: return@AsyncFunction null
       if (!OverlayWindowManager.canDrawOverlays(context)) return@AsyncFunction null
       val prefs =
         context.getSharedPreferences("reminder_overlay_prefs", android.content.Context.MODE_PRIVATE)
       if (!prefs.getBoolean("reminder_overlay_enabled", false)) return@AsyncFunction null
-      val text = if (body.isNotBlank()) "$title\n$body" else title
-      OverlayWindowManager.setContextLabel("Reminder")
-      OverlayWindowManager.show(context, text)
+      OverlayWindowManager.showReminderPinned(context, displayTitle, userPrompt)
     }
 
     AsyncFunction("stopVoiceService") {
@@ -150,7 +152,7 @@ class AssistantOverlayModule : Module() {
           e.message ?: "Failed to stop voice assistant foreground service"
         )
       }
-      OverlayWindowManager.hide()
+      OverlayWindowManager.hideAssistant()
     }
   }
 }

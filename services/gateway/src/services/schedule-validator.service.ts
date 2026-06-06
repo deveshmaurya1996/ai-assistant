@@ -28,6 +28,11 @@ export type ValidatedSchedule = {
 const AUTOMATION_TASK_PATTERN =
   /\b(inbox|digest|check\s+my|monitor|summarize\s+my|scan\s+my|automation)\b/i;
 
+const MIN_LEAD_SECONDS = 15;
+
+const RELATIVE_ONE_MINUTE_RE = /\b(?:in|after)\s+(?:a|one)\s+min(?:ute)?\b/i;
+const RELATIVE_MINUTES_RE = /\b(?:in|after)\s+(\d+)\s*(?:min(?:ute)?s?)\b/i;
+
 function assertNotAutomationTaskLanguage(
   userPrompt: string | undefined,
   title: string,
@@ -43,16 +48,60 @@ function assertNotAutomationTaskLanguage(
   }
 }
 
+export function parseRelativeMinutesFromPrompt(text: string | undefined): number | null {
+  const raw = (text ?? '').trim();
+  if (!raw) return null;
+  if (RELATIVE_ONE_MINUTE_RE.test(raw)) return 1;
+  const match = RELATIVE_MINUTES_RE.exec(raw);
+  if (!match) return null;
+  const minutes = parseInt(match[1], 10);
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : null;
+}
+
+function isoHasExplicitOffset(iso: string): boolean {
+  return /([zZ]|[+-]\d{2}:?\d{2})$/.test(iso.trim());
+}
+
 function parseNextFireAt(iso: string, timezone: string): Date {
-  const parsed = DateTime.fromISO(iso, { setZone: true });
+  const trimmed = iso.trim();
+  let parsed = isoHasExplicitOffset(trimmed)
+    ? DateTime.fromISO(trimmed, { setZone: true }).setZone(timezone)
+    : DateTime.fromISO(trimmed, { zone: timezone });
   if (!parsed.isValid) {
     throw badRequest(`nextFireAt is not a valid ISO datetime: ${iso}`);
   }
-  const inTz = parsed.setZone(timezone);
-  if (!inTz.isValid) {
+  if (!parsed.isValid) {
     throw badRequest(`nextFireAt could not be interpreted in timezone ${timezone}`);
   }
-  return inTz.toJSDate();
+  return parsed.toJSDate();
+}
+
+function stabilizeOneShotNextFireAt(
+  nextFireAt: Date,
+  timezone: string,
+  userPrompt: string | undefined
+): Date {
+  const now = DateTime.now().setZone(timezone);
+  let fire = DateTime.fromJSDate(nextFireAt, { zone: timezone });
+
+  if (fire <= now) {
+    const relativeMin = parseRelativeMinutesFromPrompt(userPrompt);
+    if (relativeMin != null) {
+      return now.plus({ minutes: relativeMin }).toJSDate();
+    }
+    if (fire > now.minus({ minutes: 5 })) {
+      return now.plus({ seconds: MIN_LEAD_SECONDS }).toJSDate();
+    }
+    throw badRequest('nextFireAt must be in the future');
+  }
+
+  const leadSeconds = fire.diff(now, 'seconds').seconds;
+  if (leadSeconds < MIN_LEAD_SECONDS) {
+    fire = now.plus({ seconds: MIN_LEAD_SECONDS });
+    return fire.toJSDate();
+  }
+
+  return nextFireAt;
 }
 
 export function validateStructuredReminderSchedule(
@@ -103,11 +152,7 @@ export function validateStructuredReminderSchedule(
   if (recurrence !== 'NONE' && cronExpression) {
     nextFireAt = nextFireFromCron(cronExpression, timezone);
   } else {
-    const now = DateTime.now().setZone(timezone);
-    const fire = DateTime.fromJSDate(nextFireAt, { zone: timezone });
-    if (fire < now.minus({ minutes: 1 })) {
-      throw badRequest('nextFireAt must be in the future');
-    }
+    nextFireAt = stabilizeOneShotNextFireAt(nextFireAt, timezone, userPrompt);
   }
 
   return {

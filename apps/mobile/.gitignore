@@ -35,6 +35,9 @@ yarn-error.*
 # local env files
 .env*.local
 
+# Firebase admin SDK keys (upload to EAS only — never commit)
+*firebase-adminsdk*.json
+
 # typescript
 *.tsbuildinfo
 

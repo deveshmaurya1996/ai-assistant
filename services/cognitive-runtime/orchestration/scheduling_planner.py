@@ -9,13 +9,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from zoneinfo import ZoneInfo
-except ImportError:  # pragma: no cover
-    ZoneInfo = None  # type: ignore[misc, assignment]
+except ImportError:
+    ZoneInfo = None 
 
 import httpx
 
 from env_loader import resolve_public_api_url
 from orchestration.platform_capabilities import platform_capabilities_block
+from orchestration.scheduling_relative_time import resolve_one_shot_next_fire_at
 from orchestration.scheduling_timezone import (
     resolve_effective_timezone,
     resolve_timezone_hint,
@@ -92,7 +93,15 @@ def _coerce_reminder_from_alt_shape(
     except Exception:
         return []
 
-    next_fire = f"{date}T{hour:02d}:{minute:02d}:00"
+    if ZoneInfo is not None and effective_tz:
+        try:
+            tz = ZoneInfo(effective_tz)
+            naive = datetime.strptime(f"{date}T{hour:02d}:{minute:02d}:00", "%Y-%m-%dT%H:%M:%S")
+            next_fire = naive.replace(tzinfo=tz).isoformat(timespec="seconds")
+        except Exception:
+            next_fire = f"{date}T{hour:02d}:{minute:02d}:00"
+    else:
+        next_fire = f"{date}T{hour:02d}:{minute:02d}:00"
 
     title = str(content.get("title") or content.get("label") or "Reminder").strip()
     if not title or title == "Reminder":
@@ -428,6 +437,13 @@ def _normalize_action(action: Dict[str, Any], effective_tz: Optional[str]) -> Op
             out_args["timezone"] = effective_tz
         if not out_args.get("title") and out_args.get("userPrompt"):
             out_args["title"] = str(out_args["userPrompt"])[:80]
+        if tool == "reminder.create" and effective_tz:
+            user_prompt = str(out_args.get("userPrompt") or "")
+            relative_fire = resolve_one_shot_next_fire_at(user_prompt, effective_tz)
+            if relative_fire:
+                out_args["nextFireAt"] = relative_fire
+                if not out_args.get("recurrence"):
+                    out_args["recurrence"] = "NONE"
     if tool.startswith("automation."):
         if effective_tz and not out_args.get("timezone"):
             out_args["timezone"] = effective_tz

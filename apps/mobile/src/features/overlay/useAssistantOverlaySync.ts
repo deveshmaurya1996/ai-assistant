@@ -24,6 +24,7 @@ export function useAssistantOverlaySync() {
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
   const userDismissed = useOverlaySessionStore((s) => s.userDismissed);
   const setUserDismissed = useOverlaySessionStore((s) => s.setUserDismissed);
+  const lastReplies = useOverlaySessionStore((s) => s.lastReplies);
   const segments = useSegments();
   const foregroundScreen = useMemo(
     () => resolveOverlayForegroundScreen(segments),
@@ -54,6 +55,8 @@ export function useAssistantOverlaySync() {
         voiceSessionId: sessionId,
         voiceAssistantText: visibleText,
         voiceTitle,
+        appState,
+        lastReplies,
       }),
     [
       chatSessions,
@@ -62,6 +65,8 @@ export function useAssistantOverlaySync() {
       sessionId,
       visibleText,
       voiceTitle,
+      appState,
+      lastReplies,
     ]
   );
 

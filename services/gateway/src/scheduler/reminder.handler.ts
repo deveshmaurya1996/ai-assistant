@@ -14,10 +14,14 @@ export async function fireReminder(
 
   const payload = reminder.payload as Record<string, unknown>;
 
-  const title = String(payload.title ?? 'Reminder');
-  let body = String(payload.body ?? payload.title ?? '');
+  const displayTitle = String(payload.title ?? 'Reminder');
+  const userMessage = reminder.userPrompt?.trim() || displayTitle;
+  const pushTitle = `Reminder: "${displayTitle}"`;
+  let pushBody = userMessage;
   if (options.missed) {
-    body = body ? `Sorry this is late — ${body}` : 'Sorry this is late — your reminder is due now.';
+    pushBody = pushBody
+      ? `Sorry this is late — ${pushBody}`
+      : 'Sorry this is late — your reminder is due now.';
   }
 
   const now = new Date();
@@ -46,8 +50,10 @@ export async function fireReminder(
 
   await publishEvent(EventNames.NOTIFICATION_CREATED, {
     userId: reminder.userId,
-    title,
-    body,
+    title: pushTitle,
+    body: pushBody,
+    displayTitle,
+    userPrompt: userMessage,
     type: 'reminder',
     reminderId: reminderId,
     missed: options.missed === true,
@@ -55,11 +61,13 @@ export async function fireReminder(
 
   await sendPushToUser({
     userId: reminder.userId,
-    title,
-    body,
+    title: pushTitle,
+    body: pushBody,
     data: {
       type: 'reminder',
       reminderId,
+      displayTitle,
+      userPrompt: userMessage,
       missed: options.missed === true,
     },
   });

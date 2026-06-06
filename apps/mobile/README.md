@@ -127,7 +127,21 @@ pnpm mobile:android
 - First build can take several minutes.
 - Grant on device when asked: **microphone**, **notifications** (Android 13+), **display over other apps** (overlay).
 
-**Rebuild native code** only when you change native deps, `app.config.ts` plugins, or `modules/overlay/`:
+### Push notifications (Android)
+
+`google-services.json` lives in `apps/mobile/` and is wired in `app.config.ts`. After adding or changing it, rebuild native code.
+
+Upload the **FCM v1 service account key** (Firebase → Project settings → Service accounts → Generate new private key) to EAS — do **not** commit that JSON:
+
+```bash
+cd apps/mobile
+eas credentials -p android
+# production → Google Service Account → FCM V1 → upload key
+```
+
+Optional: set `EXPO_ACCESS_TOKEN` on the gateway (create at [expo.dev/settings/access-tokens](https://expo.dev/settings/access-tokens)).
+
+**Rebuild native code** only when you change native deps, `app.config.ts` plugins, `google-services.json`, or `modules/overlay/`:
 
 ```bash
 pnpm mobile:android
@@ -407,7 +421,7 @@ npm install --global eas-cli
 cd apps/mobile
 eas login
 eas init --id e571137a-6ce6-4d5f-bba1-ee812975eb4a
-eas credentials   # Android keystore (first cloud build)
+eas credentials   # Android keystore + FCM v1 push key (first cloud build)
 ```
 
 Config lives in [`app.config.ts`](app.config.ts) and [`eas.json`](eas.json). Run all `eas` commands from `apps/mobile`.

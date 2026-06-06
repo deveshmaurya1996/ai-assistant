@@ -9,6 +9,11 @@ import type { OverlayForegroundScreen } from './resolveOverlayRoute';
 
 export type OverlayActivityKind = 'chat' | 'voice';
 
+export type OverlayLastReply = {
+  text: string;
+  updatedAt: number;
+};
+
 export type OverlayActivity = {
   kind: OverlayActivityKind;
   sessionKey: string;
@@ -17,6 +22,7 @@ export type OverlayActivity = {
   text: string;
   bubbleState: OverlayBubbleState;
   isGenerating: boolean;
+  persisted?: boolean;
   lastUpdatedAt: number;
 };
 
@@ -45,12 +51,16 @@ type BuildChatActivitiesInput = {
   sessions: Record<string, SessionStreamState>;
   assistantName: string;
   excludeSessionKeys?: Set<string>;
+  inBackground?: boolean;
+  lastReplies?: Record<string, OverlayLastReply>;
 };
 
 function buildChatActivities({
   sessions,
   assistantName,
   excludeSessionKeys,
+  inBackground,
+  lastReplies,
 }: BuildChatActivitiesInput): OverlayActivity[] {
   const items: OverlayActivity[] = [];
 
@@ -58,23 +68,61 @@ function buildChatActivities({
     if (sessionKey === PENDING_CHAT_STREAM_KEY && !stream.isGenerating) continue;
     if (excludeSessionKeys?.has(sessionKey)) continue;
 
-    if (!stream.isGenerating) continue;
+    if (stream.isGenerating) {
+      const contextLabel =
+        sessionKey === PENDING_CHAT_STREAM_KEY
+          ? 'New chat'
+          : getOverlayContextLabel(sessionKey);
 
-    const contextLabel =
-      sessionKey === PENDING_CHAT_STREAM_KEY
-        ? 'New chat'
-        : getOverlayContextLabel(sessionKey);
+      items.push({
+        kind: 'chat',
+        sessionKey,
+        contextLabel,
+        assistantName,
+        text: stream.streamText,
+        bubbleState: 'processing',
+        isGenerating: true,
+        lastUpdatedAt: stream.revision,
+      });
+      continue;
+    }
+
+    if (!inBackground || !lastReplies) continue;
+    const persisted = lastReplies[sessionKey];
+    if (!persisted?.text.trim()) continue;
 
     items.push({
       kind: 'chat',
       sessionKey,
-      contextLabel,
+      contextLabel: getOverlayContextLabel(sessionKey),
       assistantName,
-      text: stream.streamText,
-      bubbleState: 'processing',
-      isGenerating: true,
-      lastUpdatedAt: stream.revision,
+      text: persisted.text,
+      bubbleState: 'idle',
+      isGenerating: false,
+      persisted: true,
+      lastUpdatedAt: persisted.updatedAt,
     });
+  }
+
+  if (inBackground && lastReplies) {
+    for (const [sessionKey, persisted] of Object.entries(lastReplies)) {
+      if (excludeSessionKeys?.has(sessionKey)) continue;
+      if (sessions[sessionKey]?.isGenerating) continue;
+      if (!persisted.text.trim()) continue;
+      if (items.some((item) => item.sessionKey === sessionKey)) continue;
+
+      items.push({
+        kind: 'chat',
+        sessionKey,
+        contextLabel: getOverlayContextLabel(sessionKey),
+        assistantName,
+        text: persisted.text,
+        bubbleState: 'idle',
+        isGenerating: false,
+        persisted: true,
+        lastUpdatedAt: persisted.updatedAt,
+      });
+    }
   }
 
   return items;
@@ -86,6 +134,8 @@ type BuildVoiceActivityInput = {
   assistantText: string;
   assistantName: string;
   voiceTitle?: string;
+  inBackground?: boolean;
+  lastReplies?: Record<string, OverlayLastReply>;
 };
 
 function buildVoiceActivity({
@@ -94,21 +144,40 @@ function buildVoiceActivity({
   assistantText,
   assistantName,
   voiceTitle,
+  inBackground,
+  lastReplies,
 }: BuildVoiceActivityInput): OverlayActivity | null {
-  if (!VOICE_ACTIVE_PHASES.has(phase)) return null;
-
   const sessionKey = voiceSessionId ?? '__voice__';
-  const contextLabel = voiceTitle ?? `Voice chat with ${assistantName}`;
+
+  if (VOICE_ACTIVE_PHASES.has(phase)) {
+    const contextLabel = voiceTitle ?? `Voice chat with ${assistantName}`;
+
+    return {
+      kind: 'voice',
+      sessionKey,
+      contextLabel,
+      assistantName,
+      text: assistantText,
+      bubbleState: phaseToBubbleState(phase),
+      isGenerating: phase === 'waiting_for_ai' || phase === 'speaking',
+      lastUpdatedAt: Date.now(),
+    };
+  }
+
+  if (!inBackground || !lastReplies) return null;
+  const persisted = lastReplies[sessionKey];
+  if (!persisted?.text.trim()) return null;
 
   return {
     kind: 'voice',
     sessionKey,
-    contextLabel,
+    contextLabel: voiceTitle ?? `Voice chat with ${assistantName}`,
     assistantName,
-    text: assistantText,
-    bubbleState: phaseToBubbleState(phase),
-    isGenerating: phase === 'waiting_for_ai' || phase === 'speaking',
-    lastUpdatedAt: Date.now(),
+    text: persisted.text,
+    bubbleState: 'idle',
+    isGenerating: false,
+    persisted: true,
+    lastUpdatedAt: persisted.updatedAt,
   };
 }
 
@@ -119,17 +188,23 @@ export type BuildOverlayActivitiesInput = {
   voiceSessionId?: string | null;
   voiceAssistantText?: string;
   voiceTitle?: string;
+  appState?: string;
+  lastReplies?: Record<string, OverlayLastReply>;
 };
 
 export function buildOverlayActivities(
   input: BuildOverlayActivitiesInput
 ): OverlayActivity[] {
+  const inBackground = input.appState !== 'active' && input.appState !== undefined;
+
   const voice = buildVoiceActivity({
     phase: input.voicePhase,
     voiceSessionId: input.voiceSessionId,
     assistantText: input.voiceAssistantText ?? '',
     assistantName: input.assistantName,
     voiceTitle: input.voiceTitle,
+    inBackground,
+    lastReplies: input.lastReplies,
   });
 
   const excludeKeys = voice?.sessionKey ? new Set([voice.sessionKey]) : undefined;
@@ -138,6 +213,8 @@ export function buildOverlayActivities(
     sessions: input.chatSessions,
     assistantName: input.assistantName,
     excludeSessionKeys: excludeKeys,
+    inBackground,
+    lastReplies: input.lastReplies,
   });
 
   const items = voice ? [voice, ...chatItems] : chatItems;
@@ -174,12 +251,12 @@ export function shouldShowOverlay({
 
   if (activeItem.kind === 'chat') {
     if (!inBackground && foregroundScreen === 'chat') return false;
-    if (inBackground) return activeItem.isGenerating;
+    if (inBackground) return activeItem.isGenerating || activeItem.persisted === true;
     return overlayEnabled && activeItem.isGenerating;
   }
 
   if (activeItem.kind === 'voice') {
-    if (inBackground) return true;
+    if (inBackground) return activeItem.isGenerating || activeItem.persisted === true;
     if (foregroundScreen === 'voice') return voiceOverlayEnabled;
     return overlayEnabled;
   }

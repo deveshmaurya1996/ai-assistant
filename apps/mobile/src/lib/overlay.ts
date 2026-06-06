@@ -50,7 +50,8 @@ type OverlayModule = {
   stopVoiceService?: () => Promise<void>;
   setOverlayNavigationTarget?: (kind: string, sessionKey: string) => Promise<void>;
   setReminderOverlayEnabled?: (enabled: boolean) => Promise<void>;
-  showReminderOverlay?: (title: string, body: string) => Promise<void>;
+  showReminderOverlay?: (displayTitle: string, userPrompt: string) => Promise<void>;
+  isReminderOverlayPinned?: () => Promise<boolean>;
   addListener?: (
     eventName: string,
     listener: (payload: Record<string, string>) => void
@@ -101,8 +102,16 @@ export async function showOverlayPanel(text: string): Promise<void> {
   }
 }
 
+export async function isReminderOverlayPinned(): Promise<boolean> {
+  if (Platform.OS !== 'android' || !NativeOverlay?.isReminderOverlayPinned) {
+    return false;
+  }
+  return NativeOverlay.isReminderOverlayPinned();
+}
+
 export async function hideOverlayPanel(): Promise<void> {
   if (Platform.OS !== 'android') return;
+  if (await isReminderOverlayPinned()) return;
   if (NativeOverlay?.hideOverlay) {
     await NativeOverlay.hideOverlay();
     return;
@@ -195,6 +204,8 @@ export async function syncAssistantOverlay(input: AssistantOverlaySyncInput): Pr
     currentChatSessionKey,
   } = input;
 
+  const pinned = await isReminderOverlayPinned();
+
   if (
     !shouldShowOverlay({
       appState,
@@ -206,6 +217,7 @@ export async function syncAssistantOverlay(input: AssistantOverlaySyncInput): Pr
       currentChatSessionKey,
     })
   ) {
+    if (pinned) return;
     await setOverlayNavigationTarget(null);
     await hideOverlayPanel();
     await setBubbleState('idle');
@@ -216,10 +228,13 @@ export async function syncAssistantOverlay(input: AssistantOverlaySyncInput): Pr
   if (!can) return;
 
   if (!activeItem) {
+    if (pinned) return;
     await setOverlayNavigationTarget(null);
     await hideOverlayPanel();
     return;
   }
+
+  if (pinned) return;
 
   await setOverlayNavigationTarget({
     kind: activeItem.kind,
@@ -308,13 +323,23 @@ export async function setReminderOverlayEnabledNative(enabled: boolean): Promise
   await NativeOverlay.setReminderOverlayEnabled(enabled);
 }
 
-export async function showReminderOverlay(title: string, body: string): Promise<void> {
+function formatReminderOverlayText(displayTitle: string, userPrompt: string): string {
+  const title = displayTitle.trim() || 'Reminder';
+  const prompt = userPrompt.trim();
+  if (!prompt || prompt.toLowerCase() === title.toLowerCase()) return title;
+  return `${title}\n${prompt}`;
+}
+
+export async function showReminderOverlay(
+  displayTitle: string,
+  userPrompt: string
+): Promise<void> {
   if (Platform.OS !== 'android') return;
   if (NativeOverlay?.showReminderOverlay) {
-    await NativeOverlay.showReminderOverlay(title, body);
+    await NativeOverlay.showReminderOverlay(displayTitle, userPrompt);
     return;
   }
-  await showOverlayPanel(body ? `${title}\n${body}` : title);
+  await showOverlayPanel(formatReminderOverlayText(displayTitle, userPrompt));
 }
 
 export async function toggleOverlay(enabled: boolean): Promise<void> {

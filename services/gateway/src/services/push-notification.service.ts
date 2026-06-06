@@ -13,10 +13,22 @@ export async function sendPushToUser(input: PushPayload): Promise<void> {
   const tokens = await prisma.devicePushToken.findMany({
     where: { userId: input.userId },
   });
-  if (tokens.length === 0) return;
+  if (tokens.length === 0) {
+    console.warn(`[push] no device tokens for user ${input.userId}`);
+    return;
+  }
 
   const messages = tokens.map((t) => {
     const prefs = (t.prefs ?? {}) as { reminderOverlayEnabled?: boolean };
+    const showOverlay =
+      t.platform === 'android' && prefs.reminderOverlayEnabled === true;
+    const data: Record<string, string> = {};
+    for (const [key, value] of Object.entries(input.data ?? {})) {
+      if (value !== undefined && value !== null) {
+        data[key] = String(value);
+      }
+    }
+    data.showOverlay = showOverlay ? 'true' : 'false';
     return {
       to: t.token,
       title: input.title,
@@ -24,11 +36,7 @@ export async function sendPushToUser(input: PushPayload): Promise<void> {
       sound: 'default',
       priority: 'high' as const,
       channelId: 'reminders',
-      data: {
-        ...input.data,
-        showOverlay:
-          t.platform === 'android' && prefs.reminderOverlayEnabled === true,
-      },
+      data,
     };
   });
 
@@ -55,11 +63,10 @@ export async function sendPushToUser(input: PushPayload): Promise<void> {
     };
     const stale: string[] = [];
     result.data?.forEach((item, i) => {
-      if (
-        item.status === 'error' &&
-        item.details?.error === 'DeviceNotRegistered' &&
-        tokens[i]
-      ) {
+      if (item.status !== 'error') return;
+      const error = item.details?.error ?? 'unknown';
+      console.warn(`[push] ticket error for token ${i}: ${error}`);
+      if (error === 'DeviceNotRegistered' && tokens[i]) {
         stale.push(tokens[i].token);
       }
     });

@@ -54,3 +54,6 @@ eas-build-meta.json
 app.json
 
 *.tsbuildinfo
+
+# Firebase admin SDK keys (secrets — upload to EAS only)
+*firebase-adminsdk*.json

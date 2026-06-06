@@ -27,6 +27,19 @@ object OverlayWindowManager {
   private var navigationSessionKey: String = ""
   private var onDismissListener: (() -> Unit)? = null
   private var onOpenListener: ((String, String) -> Unit)? = null
+  private var overlayMode: String = "none"
+  private var isPinnedReminder: Boolean = false
+
+  fun isReminderPinned(): Boolean = isPinnedReminder
+
+  fun showReminderPinned(context: Context, displayTitle: String, userPrompt: String) {
+    val text = ReminderOverlayPushHandler.formatReminderText(displayTitle, userPrompt)
+    overlayMode = "reminder"
+    isPinnedReminder = true
+    contextLabel = "Reminder"
+    setContextLabel(contextLabel)
+    show(context, text)
+  }
 
   fun setOnOpenListener(listener: ((String, String) -> Unit)?) {
     onOpenListener = listener
@@ -88,6 +101,10 @@ object OverlayWindowManager {
   }
 
   fun show(context: Context, text: String) {
+    if (isPinnedReminder && overlayMode == "reminder") {
+      return
+    }
+    overlayMode = "assistant"
     val ctx = context.applicationContext
     appContext = ctx
 
@@ -125,6 +142,11 @@ object OverlayWindowManager {
     }
   }
 
+  fun hideAssistant() {
+    if (isPinnedReminder) return
+    hide()
+  }
+
   fun hide() {
     val wm = windowManager ?: return
     val view = overlayView ?: return
@@ -136,9 +158,12 @@ object OverlayWindowManager {
     overlayView = null
     layoutParams = null
     userResized = false
+    overlayMode = "none"
+    isPinnedReminder = false
   }
 
   fun updateText(text: String) {
+    if (isPinnedReminder) return
     overlayView?.setOverlayText(text)
     if (!userResized) {
       applySizeTier(if (text.isBlank()) "compact" else "medium")
