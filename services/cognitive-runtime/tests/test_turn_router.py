@@ -21,6 +21,8 @@ from orchestration.turn_router import TurnIntent, classify_turn
         ("check my inbox every morning at 8", TurnIntent.TOOL),
         ("call my father at 9 pm", TurnIntent.CASUAL),
         ("at 9 pm to call my father", TurnIntent.CASUAL),
+        ("generate a peter pan image", TurnIntent.KNOWLEDGE),
+        ("what apps are connected", TurnIntent.TOOL),
     ],
 )
 def test_classify_turn_text_only(query, expected):

@@ -24,9 +24,14 @@ import { useTheme } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/tokens';
 import { apiClient } from '@/lib/api-client';
 import { integrationProviderRoute } from '@/lib/routes';
-import type { UserConnection } from '@ai-assistant/types';
+import type { UserConnection as BaseUserConnection } from '@ai-assistant/types';
 
 const TITLE = 'Connect Apps';
+
+type UserConnection = BaseUserConnection & {
+  runtimeHealthy?: boolean;
+  aiReady?: boolean;
+};
 
 const PROVIDERS = [
   {
@@ -99,6 +104,21 @@ export default function IntegrationsScreen() {
 
   const isActive = (providerId: string) => getConnection(providerId)?.status === 'ACTIVE';
 
+  const isAiReady = (providerId: string) => {
+    const connection = getConnection(providerId);
+    if (!connection || connection.status !== 'ACTIVE') return false;
+    return connection.aiReady !== false && connection.runtimeHealthy !== false;
+  };
+
+  const connectionSubtitle = (providerId: string, description: string) => {
+    const connection = getConnection(providerId);
+    if (!connection || connection.status !== 'ACTIVE') return description;
+    if (!isAiReady(providerId)) {
+      return `${description} · Connected — offline (reconnect for AI access)`;
+    }
+    return `${description} · Available to AI`;
+  };
+
   const handleConnect = async (providerId: string) => {
     setBusyId(providerId);
     try {
@@ -133,6 +153,25 @@ export default function IntegrationsScreen() {
     } finally {
       setBusyId(null);
     }
+  };
+
+  const handleOfflineAction = (providerId: string, name: string) => {
+    const runReconnect = () => void handleConnect(providerId);
+    const runDisconnect = () => confirmDisconnect(providerId, name);
+
+    if (Platform.OS === 'web') {
+      const reconnect = window.confirm(
+        `${name} is connected but offline. Reconnect now? (Cancel to stay linked.)`
+      );
+      if (reconnect) runReconnect();
+      return;
+    }
+
+    Alert.alert(`${name} offline`, 'Reconnect to restore AI access, or disconnect the app.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Reconnect', onPress: runReconnect },
+      { text: 'Disconnect', style: 'destructive', onPress: runDisconnect },
+    ]);
   };
 
   const confirmDisconnect = (providerId: string, name: string) => {
@@ -202,6 +241,7 @@ export default function IntegrationsScreen() {
         }
         renderItem={({ item, index }) => {
           const connected = isActive(item.id);
+          const aiReady = isAiReady(item.id);
           const busy = busyId === item.id;
 
           return (
@@ -212,20 +252,30 @@ export default function IntegrationsScreen() {
                   <Text variant="bodyMedium" numberOfLines={1}>
                     {item.name}
                   </Text>
-                  <Text variant="caption" muted numberOfLines={1}>
-                    {connected ? `${item.description} · Available to AI` : item.description}
+                  <Text variant="caption" muted numberOfLines={2}>
+                    {connected
+                      ? connectionSubtitle(item.id, item.description)
+                      : item.description}
                   </Text>
                 </View>
                 <IntegrationActionButton
                   variant={connected ? 'disconnect' : 'connect'}
-                  label={busy ? '…' : connected ? 'Disconnect' : 'Connect'}
+                  label={
+                    busy
+                      ? '…'
+                      : connected
+                        ? aiReady
+                          ? 'Disconnect'
+                          : 'Reconnect'
+                        : 'Connect'
+                  }
                   loading={busy}
                   disabled={busy}
-                  onPress={() =>
-                    connected
-                      ? confirmDisconnect(item.id, item.name)
-                      : void handleConnect(item.id)
-                  }
+                  onPress={() => {
+                    if (!connected) void handleConnect(item.id);
+                    else if (aiReady) confirmDisconnect(item.id, item.name);
+                    else handleOfflineAction(item.id, item.name);
+                  }}
                 />
               </Card>
             </FadeIn>

@@ -5,6 +5,8 @@ const {
 
 const VOICE_SERVICE =
   'expo.modules.assistantoverlay.VoiceAssistantForegroundService';
+const EXPO_FCM_SERVICE =
+  'expo.modules.notifications.service.ExpoFirebaseMessagingService';
 
 const STALE_SERVICE_NAMES = new Set([
   '.overlay.OverlayBubbleService',
@@ -19,7 +21,9 @@ function addOverlayService(androidManifest) {
   }
 
   app.service = app.service.filter(
-    (s) => !STALE_SERVICE_NAMES.has(s.$?.['android:name'])
+    (s) =>
+      !STALE_SERVICE_NAMES.has(s.$?.['android:name']) &&
+      s.$?.['android:name'] !== EXPO_FCM_SERVICE
   );
 
   const exists = app.service.some((s) => s.$?.['android:name'] === VOICE_SERVICE);

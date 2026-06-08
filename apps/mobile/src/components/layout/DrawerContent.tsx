@@ -1,9 +1,25 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { View, StyleSheet, RefreshControl, Pressable } from 'react-native';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import {
+  View,
+  StyleSheet,
+  RefreshControl,
+  Pressable,
+  ActivityIndicator,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, usePathname } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
+import { useDrawerProgress } from 'react-native-drawer-layout';
+import { useAnimatedReaction } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { LogOut, Pencil, Settings } from 'lucide-react-native';
 import type { ChatSession } from '@ai-assistant/sdk';
 import { Text } from '@/components/ui/Text';
@@ -30,7 +46,7 @@ type DrawerContentProps = {
   navigation: { closeDrawer: () => void };
 };
 
-const COLLAPSED_CHAT_COUNT = 5;
+const COLLAPSED_CHAT_COUNT = 3;
 
 function getCollapsedSessions(
   sessions: ChatSession[],
@@ -194,6 +210,18 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
   const [actionsSession, setActionsSession] = useState<ChatSession | null>(null);
   const [actionsAnchor, setActionsAnchor] = useState<MenuAnchorRect | null>(null);
   const [chatsExpanded, setChatsExpanded] = useState(false);
+  const drawerProgress = useDrawerProgress();
+  const pendingAfterCloseRef = useRef<(() => void) | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(true);
+
+  useAnimatedReaction(
+    () => drawerProgress.value > 0.5,
+    (open, previous) => {
+      if (previous !== null && open === previous) return;
+      scheduleOnRN(setDrawerOpen, open);
+    },
+    [drawerProgress]
+  );
 
   const isAssistantActive = pathname.includes('/assistant');
   const isSettingsActive = pathname.includes('/settings');
@@ -222,12 +250,31 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
     setChatsExpanded(false);
   }, [pathname]);
 
+  useEffect(() => {
+    if (drawerOpen) return;
+    const fn = pendingAfterCloseRef.current;
+    if (!fn) return;
+    pendingAfterCloseRef.current = null;
+    fn();
+  }, [drawerOpen]);
+
   const closeAnd = useCallback(
     (fn: () => void) => {
+      if (!drawerOpen) {
+        fn();
+        return;
+      }
+
+      pendingAfterCloseRef.current = fn;
       navigation.closeDrawer();
-      fn();
+
+      setTimeout(() => {
+        if (pendingAfterCloseRef.current !== fn) return;
+        pendingAfterCloseRef.current = null;
+        fn();
+      }, 420);
     },
-    [navigation]
+    [drawerOpen, navigation]
   );
 
   const openSession = useCallback(
@@ -281,7 +328,8 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
     [activeSessionId, handleMenuPress, openSession]
   );
 
-  const listHeader = (
+  const drawerTop = useMemo(
+    () => (
     <View style={{ paddingTop: insets.top }}>
       <View style={[styles.profile, { borderBottomColor: colors.border }]}>
         <UserAvatar
@@ -337,10 +385,27 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
         Recent chats
       </Text>
     </View>
+    ),
+    [
+      closeAnd,
+      colors.border,
+      colors.onPrimary,
+      colors.primary,
+      colors.primaryMuted,
+      colors.surfaceElevated,
+      colors.text,
+      handleNewChat,
+      insets.top,
+      isSettingsActive,
+      user?.email,
+      user?.image,
+      user?.name,
+    ]
   );
 
-  const listFooter = (
-    <View style={{ paddingBottom: insets.bottom + spacing.md }}>
+  const chatListFooter = useMemo(
+    () => (
+      <View>
       {hasMoreChats ? (
         <PressableScale
           onPress={() => setChatsExpanded(true)}
@@ -383,7 +448,28 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
           </View>
         </PressableScale>
       ) : null}
+        {loadingMore ? (
+          <ActivityIndicator
+            color={colors.primary}
+            style={styles.loadingMore}
+          />
+        ) : null}
+      </View>
+    ),
+    [
+      colors.background,
+      colors.border,
+      colors.primary,
+      colors.surfaceElevated,
+      hasMoreChats,
+      hiddenChatCount,
+      loadingMore,
+    ]
+  );
 
+  const drawerBottom = useMemo(
+    () => (
+    <View style={{ paddingBottom: insets.bottom + spacing.md }}>
       <View style={[styles.divider, { backgroundColor: colors.border }]} />
       <View style={styles.navSection}>
         <NavRow
@@ -451,17 +537,35 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
         </Text>
       ) : null}
     </View>
+    ),
+    [
+      assistantDisplayName,
+      closeAnd,
+      colors.border,
+      colors.danger,
+      insets.bottom,
+      isAssistantActive,
+      isAutomationsActive,
+      isIntegrationsActive,
+      isNotesActive,
+      navigation,
+      signOut,
+      versionLines.primary,
+      versionLines.secondary,
+    ]
   );
 
   return (
     <>
       <View style={[styles.root, { backgroundColor: colors.background }]}>
+        {drawerTop}
         <FlashList
+          style={styles.chatList}
           data={visibleSessions}
+          extraData={`${activeSessionId}|${refreshing}|${loadingMore}|${chatsExpanded}`}
           keyExtractor={(item) => item.id}
           renderItem={renderSession}
-          ListHeaderComponent={listHeader}
-          ListFooterComponent={listFooter}
+          ListFooterComponent={chatListFooter}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />
           }
@@ -469,6 +573,7 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
             chatsExpanded ? () => void loadMore() : undefined
           }
           onEndReachedThreshold={0.4}
+          keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
             !refreshing ? (
               <View style={styles.empty}>
@@ -479,6 +584,7 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
             ) : null
           }
         />
+        {drawerBottom}
       </View>
 
       <ChatSessionActionsModal
@@ -501,6 +607,12 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  chatList: {
+    flex: 1,
+  },
+  loadingMore: {
+    paddingVertical: spacing.md,
   },
   profile: {
     flexDirection: 'row',
@@ -586,8 +698,6 @@ const styles = StyleSheet.create({
   },
   expandTeaser: {
     marginHorizontal: spacing.sm,
-    marginTop: spacing.xs,
-    marginBottom: spacing.sm,
     minHeight: 72,
     justifyContent: 'flex-end',
     overflow: 'hidden',

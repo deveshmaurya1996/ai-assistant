@@ -15,6 +15,7 @@ from orchestration.context import (
     should_retrieve_rag_context_async,
 )
 from orchestration.attachment_intent import attachment_turn_needs_tools
+from orchestration.image_intent import classify_image_intent
 from orchestration.planner import is_likely_tool_query
 from orchestration.scheduling_planner import _looks_like_scheduling_query
 
@@ -156,6 +157,17 @@ def classify_turn(
             run_planner=not skip_planning,
             run_tools=True,
             include_identity=True,
+            history_limit=history_limit,
+        )
+
+    if classify_image_intent(q) == "image":
+        return TurnRoute(
+            intent=TurnIntent.KNOWLEDGE,
+            stream_task="auto",
+            retrieve_memory=False,
+            run_planner=False,
+            run_tools=False,
+            include_identity=False,
             history_limit=history_limit,
         )
 

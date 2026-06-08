@@ -1,10 +1,14 @@
 import os
+import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from orchestration.context import (
+    _manifest_cache,
     build_context,
+    fetch_integration_manifest,
+    invalidate_integration_manifest,
     is_assistant_meta_query,
     is_memory_recall_query,
     is_rag_globally_enabled,
@@ -213,3 +217,37 @@ async def test_fetch_layered_memory_context_merges_facts_and_episodic():
 
     assert "likes tea" in block
     assert "past chat snippet" in block
+
+
+def test_invalidate_integration_manifest_clears_cache():
+    _manifest_cache["user-x"] = (time.monotonic() + 60, "cached", {"cap"}, [])
+    invalidate_integration_manifest("user-x")
+    assert "user-x" not in _manifest_cache
+
+
+@pytest.mark.asyncio
+async def test_fetch_integration_manifest_prefers_gateway_over_skill():
+    gateway_payload = (
+        "Connected apps (ACTIVE): google.",
+        {"email.list_unread"},
+        [{"id": "google_u1", "providerId": "google"}],
+    )
+    skill_payload = (
+        "Connected apps (ACTIVE): google, whatsapp.",
+        {"email.list_unread", "messaging.list_unread"},
+        [{"id": "whatsapp_u1", "providerId": "whatsapp"}],
+    )
+
+    with (
+        patch(
+            "orchestration.context._fetch_manifest_endpoint",
+            AsyncMock(side_effect=[gateway_payload, skill_payload]),
+        ),
+        patch.dict("orchestration.context._manifest_cache", {}, clear=True),
+    ):
+        text, caps, connections = await fetch_integration_manifest("user-1")
+
+    assert "google" in text
+    assert "whatsapp" not in text
+    assert caps == {"email.list_unread"}
+    assert len(connections) == 1

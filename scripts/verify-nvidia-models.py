@@ -18,10 +18,13 @@ INTEGRATE = "https://integrate.api.nvidia.com/v1"
 RERANK_URL = "https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking"
 
 EXPECTED_CHAT = {
+    "deepseek-ai/deepseek-v4-flash",
     "z-ai/glm-5.1",
-    "mistralai/mistral-nemotron",
-    "nvidia/nemotron-mini-4b-instruct",
+    "qwen/qwen3-coder-480b-a35b-instruct",
+    "nvidia/nemotron-3-ultra-550b-a55b",
     "meta/llama-4-maverick-17b-128e-instruct",
+    "moonshotai/kimi-k2.6",
+    "nvidia/nemotron-3.5-content-safety",
     "nvidia/nv-embed-v1",
 }
 

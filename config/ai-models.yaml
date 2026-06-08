@@ -73,11 +73,28 @@ providers:
 
 models:
   # Tier A — primary intelligence (text + RAG)
+  - id: nvidia/deepseek-v4-flash
+    label: DeepSeek V4 Flash
+    provider: nvidia
+    providerModel: deepseek-ai/deepseek-v4-flash
+    tasks: [fast_chat, summary, title]
+    tier: A
+    streamTimeout: 120
+    completeTimeout: 90
+    defaultParams:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 16384
+      extra_body:
+        chat_template_kwargs:
+          thinking: true
+          reasoning_effort: high
+
   - id: nvidia/glm-5.1
     label: GLM 5.1
     provider: nvidia
     providerModel: z-ai/glm-5.1
-    tasks: [fast_chat, reasoning, coding, planner, summary]
+    tasks: [reasoning]
     tier: A
     streamTimeout: 120
     completeTimeout: 90
@@ -85,6 +102,66 @@ models:
       temperature: 1.0
       top_p: 1.0
       max_tokens: 16384
+
+  - id: nvidia/qwen3-coder-480b
+    label: Qwen3 Coder 480B
+    provider: nvidia
+    providerModel: qwen/qwen3-coder-480b-a35b-instruct
+    tasks: [coding]
+    tier: A
+    streamTimeout: 90
+    completeTimeout: 60
+    defaultParams:
+      temperature: 0.7
+      top_p: 0.8
+      max_tokens: 4096
+
+  - id: nvidia/nemotron-3-ultra
+    label: Nemotron 3 Ultra
+    provider: nvidia
+    providerModel: nvidia/nemotron-3-ultra-550b-a55b
+    tasks: [planner]
+    tier: A
+    streamTimeout: 180
+    completeTimeout: 120
+    defaultParams:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 16384
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: true
+        reasoning_budget: 16384
+
+  - id: nvidia/kimi-k2.6
+    label: Kimi K2.6
+    provider: nvidia
+    providerModel: moonshotai/kimi-k2.6
+    tasks: [file_analysis, attachment_read]
+    tier: A
+    streamTimeout: 180
+    completeTimeout: 120
+    defaultParams:
+      temperature: 1.0
+      top_p: 1.0
+      max_tokens: 16384
+
+  - id: nvidia/nemotron-3.5-content-safety
+    label: Nemotron 3.5 Content Safety
+    provider: nvidia
+    providerModel: nvidia/nemotron-3.5-content-safety
+    tasks: [safety]
+    tier: A
+    streamTimeout: 30
+    completeTimeout: 20
+    defaultParams:
+      temperature: 0.2
+      top_p: 0.7
+      max_tokens: 512
+      extra_body:
+        chat_template_kwargs:
+          request_categories: /categories
+          enable_thinking: true
 
   - id: nvidia/mistral-nemotron
     label: Mistral Nemotron
@@ -169,7 +246,7 @@ models:
     label: Llama 4 Maverick 17B
     provider: nvidia
     providerModel: meta/llama-4-maverick-17b-128e-instruct
-    tasks: [vision, file_analysis]
+    tasks: [vision]
     tier: C
     streamTimeout: 120
     completeTimeout: 90
@@ -291,48 +368,46 @@ models:
 
 routingTiers:
   fast_chat:
-    tier1: [nvidia/mistral-nemotron, groq/llama-3.3-70b]
+    tier1: [nvidia/deepseek-v4-flash, groq/llama-3.3-70b]
     tier2: [groq/llama-3.1-8b, groq/gpt-oss-20b]
-    tier3: [nvidia/glm-5.1, nvidia/nemotron-mini-4b-instruct, pollinations/openai]
+    tier3: [pollinations/openai]
   reasoning:
     tier1: [nvidia/glm-5.1, groq/gpt-oss-120b]
     tier2: [groq/llama-3.3-70b, groq/gpt-oss-20b]
     tier3: [nvidia/mistral-nemotron, pollinations/openai]
   coding:
-    tier1: [nvidia/glm-5.1, groq/gpt-oss-120b]
+    tier1: [nvidia/qwen3-coder-480b, groq/llama-3.3-70b]
     tier2: [groq/llama-3.3-70b, groq/gpt-oss-20b]
     tier3: [nvidia/mistral-nemotron, pollinations/openai]
   attachment_read:
-    tier1: [nvidia/nemotron-mini-4b-instruct, groq/llama-3.1-8b]
+    tier1: [nvidia/kimi-k2.6, groq/llama-3.1-8b]
     tier2: [groq/llama-3.3-70b, groq/gpt-oss-20b]
-    tier3: [nvidia/mistral-nemotron, pollinations/openai]
+    tier3: [nvidia/deepseek-v4-flash, pollinations/openai]
   summary:
-    tier1: [nvidia/glm-5.1, groq/llama-3.3-70b]
+    tier1: [nvidia/deepseek-v4-flash, groq/llama-3.3-70b]
     tier2: [groq/llama-3.1-8b, groq/gpt-oss-20b]
-    tier3: [nvidia/nemotron-mini-4b-instruct, pollinations/openai]
+    tier3: [pollinations/openai]
   planner:
-    tier1: [nvidia/glm-5.1, groq/gpt-oss-20b]
-    tier2: [groq/llama-3.1-8b, groq/llama-3.3-70b]
-    tier3: [nvidia/nemotron-mini-4b-instruct, pollinations/openai]
+    tier1: [nvidia/nemotron-3-ultra, groq/gpt-oss-120b]
+    tier2: [nvidia/glm-5.1, groq/gpt-oss-20b]
+    tier3: [pollinations/openai]
   title:
-    tier1: [nvidia/nemotron-mini-4b-instruct, groq/llama-3.1-8b]
+    tier1: [nvidia/deepseek-v4-flash, groq/llama-3.1-8b]
     tier2: [groq/llama-3.3-70b, groq/gpt-oss-20b]
-    tier3: [nvidia/mistral-nemotron, pollinations/openai]
+    tier3: [pollinations/openai]
 
 routing:
   attachment_read:
-    - nvidia/nemotron-mini-4b-instruct
+    - nvidia/kimi-k2.6
     - groq/llama-3.1-8b
     - groq/llama-3.3-70b
-    - nvidia/mistral-nemotron
+    - nvidia/deepseek-v4-flash
     - pollinations/openai
   fast_chat:
-    - nvidia/mistral-nemotron
+    - nvidia/deepseek-v4-flash
     - groq/llama-3.3-70b
     - groq/llama-3.1-8b
     - groq/gpt-oss-20b
-    - nvidia/glm-5.1
-    - nvidia/nemotron-mini-4b-instruct
     - pollinations/openai
   reasoning:
     - nvidia/glm-5.1
@@ -342,47 +417,45 @@ routing:
     - nvidia/mistral-nemotron
     - pollinations/openai
   coding:
-    - nvidia/glm-5.1
-    - groq/gpt-oss-120b
+    - nvidia/qwen3-coder-480b
     - groq/llama-3.3-70b
     - groq/gpt-oss-20b
-    - nvidia/mistral-nemotron
     - pollinations/openai
   summary:
-    - nvidia/glm-5.1
+    - nvidia/deepseek-v4-flash
     - groq/llama-3.3-70b
     - groq/llama-3.1-8b
     - groq/gpt-oss-20b
-    - nvidia/nemotron-mini-4b-instruct
     - pollinations/openai
   planner:
+    - nvidia/nemotron-3-ultra
+    - groq/gpt-oss-120b
     - nvidia/glm-5.1
     - groq/gpt-oss-20b
     - groq/llama-3.1-8b
     - groq/llama-3.3-70b
-    - nvidia/nemotron-mini-4b-instruct
     - pollinations/openai
   title:
-    - nvidia/nemotron-mini-4b-instruct
+    - nvidia/deepseek-v4-flash
     - groq/llama-3.1-8b
     - groq/llama-3.3-70b
-    - nvidia/mistral-nemotron
     - pollinations/openai
   # Tier C vision chain — only when attachments include images (VLM skips otherwise)
   vision:
-    - google/paligemma
     - nvidia/llama-4-maverick-17b-128e-instruct
     - groq/llama-4-scout
-    - nvidia/glm-5.1
-    - nvidia/mistral-nemotron
+    - google/paligemma
+    - nvidia/deepseek-v4-flash
     - pollinations/openai
   file_analysis:
-    - google/paligemma
+    - nvidia/kimi-k2.6
     - nvidia/llama-4-maverick-17b-128e-instruct
     - groq/llama-4-scout
-    - nvidia/glm-5.1
+    - nvidia/deepseek-v4-flash
     - nvidia/mistral-nemotron
     - pollinations/openai
+  safety:
+    - nvidia/nemotron-3.5-content-safety
   transcription:
     - pollinations/whisper-large-v3
     - pollinations/whisper-1

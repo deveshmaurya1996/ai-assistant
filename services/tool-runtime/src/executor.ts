@@ -4,7 +4,7 @@ import { getConnectorForTool } from '@ai-assistant/integrations';
 import { checkToolPermission, recordToolExecution } from '@ai-assistant/permissions';
 import { getToolDefinition, validateToolArgs } from '@ai-assistant/tool-schema';
 import type { ToolSource } from '@ai-assistant/types';
-import { decryptCredentials } from './encryption';
+import { decryptCredentials, encryptCredentials } from './encryption';
 import { executeNotesTool } from './notes-executor';
 import { executePlatformTool } from './platform-tools';
 
@@ -228,6 +228,33 @@ async function runExecution(
     let credentials: Record<string, unknown> = {};
     if (encryptedCredentials) {
       credentials = JSON.parse(decryptCredentials(encryptedCredentials));
+    }
+
+    if (
+      record.connector === 'google' &&
+      connector.refreshTokens &&
+      credentials.refresh_token &&
+      record.connectionId
+    ) {
+      try {
+        const refreshed = await connector.refreshTokens(
+          record.connectionId,
+          credentials as Record<string, unknown>
+        );
+        credentials = refreshed as Record<string, unknown>;
+        const expiresIn = credentials.expires_in;
+        await prisma.userConnection.update({
+          where: { id: record.connectionId },
+          data: {
+            encryptedCredentials: encryptCredentials(JSON.stringify(credentials)),
+            ...(typeof expiresIn === 'number'
+              ? { expiresAt: new Date(Date.now() + expiresIn * 1000) }
+              : {}),
+          },
+        });
+      } catch {
+        /* executeTool will retry refresh or return a clear auth error */
+      }
     }
 
     const bridgeSessionId = connectionMetadata?.bridgeSessionId as string | undefined;

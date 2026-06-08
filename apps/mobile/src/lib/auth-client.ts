@@ -6,7 +6,6 @@ import type { SessionInfo } from '@ai-assistant/sdk';
 import { API_URL } from './config';
 import { authStorage } from '@/lib/secure-storage';
 import { readWebSessionCache, writeWebSessionCache } from '@/lib/web-session-cache';
-import { hasAuthCredentials } from '@/lib/auth-cookies';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -106,11 +105,4 @@ export async function fetchSession(): Promise<SessionInfo | null> {
     if (Platform.OS === 'web') writeWebSessionCache(null);
     return null;
   }
-}
-
-export async function fetchVerifiedSession(): Promise<SessionInfo | null> {
-  const session = await fetchSession();
-  if (!session) return null;
-  if (!hasAuthCredentials()) return null;
-  return session;
 }

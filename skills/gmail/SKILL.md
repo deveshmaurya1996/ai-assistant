@@ -2,27 +2,37 @@
 
 ## Capabilities
 
-- `communication.email.search` — search the user's mailbox
-- `communication.email.send` — send an email
+- `email.list_unread` — list unread emails with subject and preview
+- `email.read_email` — read a single email by id or latest unread
+- `email.send_email` — send an email
 
-## Search Email
+## List Unread
 
-**Capability:** `communication.email.search`
+**Capability:** `email.list_unread`
 
 **Arguments:**
 
-- `query` (string, required) — Gmail search query
 - `maxResults` (number, optional)
 
 **Permissions:** `gmail.read`
 
 **Risk:** low
 
-**Requires confirmation:** no
+## Read Email
+
+**Capability:** `email.read_email`
+
+**Arguments:**
+
+- `messageId` (string, optional) — omit for latest unread
+
+**Permissions:** `gmail.read`
+
+**Risk:** low
 
 ## Send Email
 
-**Capability:** `communication.email.send`
+**Capability:** `email.send_email`
 
 **Arguments:**
 
@@ -34,6 +44,6 @@
 
 **Risk:** high
 
-**Requires confirmation:** yes (external recipients)
+**Requires confirmation:** yes
 
-**Provider:** `google` (maps to legacy tool `gmail.send`)
+**Provider:** `google`

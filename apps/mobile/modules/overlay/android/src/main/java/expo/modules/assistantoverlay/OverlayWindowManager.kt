@@ -34,11 +34,8 @@ object OverlayWindowManager {
 
   fun showReminderPinned(context: Context, displayTitle: String, userPrompt: String) {
     val text = ReminderOverlayPushHandler.formatReminderText(displayTitle, userPrompt)
-    overlayMode = "reminder"
-    isPinnedReminder = true
     contextLabel = "Reminder"
-    setContextLabel(contextLabel)
-    show(context, text)
+    showOverlay(context, text, mode = "reminder", pinned = true)
   }
 
   fun setOnOpenListener(listener: ((String, String) -> Unit)?) {
@@ -104,7 +101,16 @@ object OverlayWindowManager {
     if (isPinnedReminder && overlayMode == "reminder") {
       return
     }
-    overlayMode = "assistant"
+    showOverlay(context, text, mode = "assistant", pinned = false)
+  }
+
+  private fun showOverlay(context: Context, text: String, mode: String, pinned: Boolean) {
+    overlayMode = mode
+    isPinnedReminder = pinned
+    if (mode == "reminder") {
+      contextLabel = "Reminder"
+    }
+    setContextLabel(contextLabel)
     val ctx = context.applicationContext
     appContext = ctx
 

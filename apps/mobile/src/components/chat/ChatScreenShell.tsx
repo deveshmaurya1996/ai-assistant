@@ -67,8 +67,9 @@ export function ChatScreenShell({
 }: ChatScreenShellProps) {
   const { colors, screenStyle } = useTheme();
   const insets = useSafeAreaInsets();
-  const { height: keyboardHeight } = useGradualKeyboardAnimation();
+  const { height: keyboardHeight, progress: keyboardProgress } = useGradualKeyboardAnimation();
   const messageListRef = useRef<ChatMessageListHandle>(null);
+  const safeBottom = insets.bottom;
   const [actionsOpen, setActionsOpen] = useState(false);
   const [actionsAnchor, setActionsAnchor] = useState<MenuAnchorRect | null>(null);
   const { renameSession, deleteSession } = useChatSessions();
@@ -81,14 +82,9 @@ export function ChatScreenShell({
     }).catch(() => {});
   }, [sessionId, patchUnread]);
 
-  const keyboardSpacerStyle = useAnimatedStyle(() => ({
-    height: keyboardHeight.value,
-    backgroundColor: colors.background,
-  }));
-
   const composerInsetStyle = useAnimatedStyle(() => ({
     paddingBottom:
-      keyboardHeight.value > 0 ? spacing.sm : insets.bottom + spacing.sm,
+      keyboardHeight.value + spacing.sm + (1 - keyboardProgress.value) * safeBottom,
   }));
 
   const sessionForModal = useMemo(
@@ -157,8 +153,6 @@ export function ChatScreenShell({
           onInputFocus={() => messageListRef.current?.scrollToEnd(true)}
         />
       </Animated.View>
-
-      <Animated.View style={keyboardSpacerStyle} />
 
       <ChatSessionActionsModal
         session={actionsOpen ? sessionForModal : null}

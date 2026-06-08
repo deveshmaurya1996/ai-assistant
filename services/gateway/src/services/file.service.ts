@@ -8,6 +8,7 @@ import {
 import type { ChatAttachmentRef } from '@ai-assistant/types';
 import { enqueueIngestionJob } from '../lib/runtime-clients';
 import { getFileRegistryRecord } from './file-registry.service';
+import { invalidateCognitiveManifestCache } from './manifest-invalidation.service';
 
 export const FILE_LIMITS = {
   maxFileBytes: 25 * 1024 * 1024,
@@ -114,6 +115,21 @@ export async function uploadUserFile(params: {
       storageBackend: storage.backend,
     },
   });
+
+  const filesConnectionId = `files_${userId}`;
+  await prisma.userConnection.upsert({
+    where: { id: filesConnectionId },
+    create: {
+      id: filesConnectionId,
+      userId,
+      providerId: 'files',
+      status: 'ACTIVE',
+      scopes: [],
+    },
+    update: { status: 'ACTIVE' },
+  });
+
+  invalidateCognitiveManifestCache(userId);
 
   return updated;
 }

@@ -5,6 +5,7 @@ import QRCode from 'qrcode';
 import { getBaileys, type BaileysSocket } from './baileys-loader';
 import { syncWhatsAppMessage } from './message-sync';
 import { getWhatsAppAuthRoot } from './auth-paths';
+import { markWhatsAppDisconnectedForUser } from './connection-lifecycle';
 
 export type SessionStatus = 'pending' | 'active' | 'disconnected';
 
@@ -723,6 +724,9 @@ export class SessionManager {
           this.sockets.delete(sessionId);
           this.connectionPhases.delete(sessionId);
           void this.persistSessionMeta(current, true);
+          void markWhatsAppDisconnectedForUser(current.userId).catch((err) => {
+            logger.warn({ err, userId: current.userId }, 'Failed to mark WhatsApp disconnected in DB');
+          });
           return;
         }
         if (current.status !== 'active' && !this.starting.has(sessionId)) {

@@ -42,6 +42,10 @@ function AppDrawerLayoutContent() {
           drawerContentContainerStyle: { flex: 1, backgroundColor: colors.background },
           swipeEnabled: true,
           swipeEdgeWidth: 56,
+          swipeMinDistance: 12,
+          keyboardDismissMode: 'on-drag',
+          configureGestureHandler: (gesture) =>
+            gesture.activeOffsetX([-16, 16]).failOffsetY([-12, 12]),
         }}>
         <Drawer.Screen
           name="chat/compose"

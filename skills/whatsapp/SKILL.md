@@ -2,8 +2,35 @@
 
 ## Capabilities
 
-- `communication.chat.search` — find a chat by contact name
-- `communication.message.send` — send a WhatsApp message
+- `messaging.list_unread` — list unread chats with previews
+- `messaging.read_chat` — read recent messages in a conversation
+- `messaging.send_message` — send a WhatsApp message
+- `communication.chat.search` — find a chat by contact name (use before send when `to` is a name)
+
+## List Unread
+
+**Capability:** `messaging.list_unread`
+
+**Arguments:**
+
+- `limit` (number, optional) — max chats to return
+
+**Permissions:** `whatsapp.read`
+
+**Risk:** low
+
+## Read Chat
+
+**Capability:** `messaging.read_chat`
+
+**Arguments:**
+
+- `chatId` or `jid` (string, optional)
+- `limit` (number, optional)
+
+**Permissions:** `whatsapp.read`
+
+**Risk:** low
 
 ## Search Chats
 
@@ -17,11 +44,9 @@
 
 **Risk:** low
 
-**Requires confirmation:** no
-
 ## Send Message
 
-**Capability:** `communication.message.send`
+**Capability:** `messaging.send_message`
 
 **Arguments:**
 
@@ -36,4 +61,4 @@
 
 **Planning hint:** If `to` is a person name (not a JID with `@`), run `communication.chat.search` first, then send using the resolved JID.
 
-**Provider:** `whatsapp` (maps to legacy tool `whatsapp.send_message`)
+**Provider:** `whatsapp`

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -7,7 +7,7 @@ import {
   type ImageStyle,
   type StyleProp,
 } from 'react-native';
-import { Image, type ImageContentFit } from 'expo-image';
+import { Image, type ImageContentFit, type ImageLoadEventData } from 'expo-image';
 import {
   authenticatedFileHeaders,
   cacheAuthenticatedFile,
@@ -27,6 +27,7 @@ type Props = {
   contentFit?: ImageContentFit;
   previewable?: boolean;
   filename?: string;
+  onLoad?: (event: ImageLoadEventData) => void;
 };
 
 export function AuthenticatedChatImage({
@@ -35,11 +36,13 @@ export function AuthenticatedChatImage({
   contentFit = 'cover',
   previewable = true,
   filename,
+  onLoad,
 }: Props) {
   const { colors } = useTheme();
   const localPreview = useAttachmentPreviewStore((s) => s.byFileId[fileId]);
   const [uri, setUri] = useState<string | null>(localPreview ?? null);
   const [failed, setFailed] = useState(false);
+  const imageStyle = useMemo(() => StyleSheet.flatten(style) ?? {}, [style]);
 
   useEffect(() => {
     if (localPreview) {
@@ -80,11 +83,25 @@ export function AuthenticatedChatImage({
     void openChatFileImagePreview(fileId);
   }, [fileId, filename, localPreview, previewable, uri]);
 
-  if (failed || !uri) {
+  const source = useMemo(() => {
+    if (!uri) return null;
+    if (
+      uri.startsWith('blob:') ||
+      uri.startsWith('data:') ||
+      uri.startsWith('http') ||
+      uri.startsWith('file:')
+    ) {
+      return { uri };
+    }
+    const headers = authenticatedFileHeaders();
+    return headers ? { uri, headers } : { uri };
+  }, [uri]);
+
+  if (failed || !uri || !source) {
     return (
       <View
         style={[
-          style,
+          imageStyle,
           styles.placeholder,
           { backgroundColor: colors.surfaceElevated },
         ]}>
@@ -93,18 +110,12 @@ export function AuthenticatedChatImage({
     );
   }
 
-  const source =
-    uri.startsWith('blob:') || uri.startsWith('data:') || uri.startsWith('http')
-      ? { uri }
-      : authenticatedFileHeaders()
-        ? { uri, headers: authenticatedFileHeaders() }
-        : { uri };
-
   const image = (
     <Image
       source={source}
-      style={style}
+      style={imageStyle}
       contentFit={contentFit}
+      onLoad={onLoad}
       onError={() => {
         if (localPreview) {
           void cacheAuthenticatedFile(fileId)
@@ -124,6 +135,7 @@ export function AuthenticatedChatImage({
   return (
     <Pressable
       onPress={openPreview}
+      style={imageStyle}
       accessibilityRole="imagebutton"
       accessibilityLabel="View image full screen">
       {image}

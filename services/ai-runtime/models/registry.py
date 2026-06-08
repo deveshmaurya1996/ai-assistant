@@ -57,7 +57,7 @@ def get_nvidia_model_id() -> str:
         for mid in resolve_chain(task):
             if is_nvidia_model(mid):
                 return mid
-    return "nvidia/glm-5.1"
+    return "nvidia/deepseek-v4-flash"
 
 
 def resolve_models(

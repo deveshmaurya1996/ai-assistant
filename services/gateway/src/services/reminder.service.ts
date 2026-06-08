@@ -72,7 +72,7 @@ export async function getReminder(userId: string, id: string) {
 }
 
 export async function listReminders(userId: string) {
-  return listRemindersForUser(userId, { status: 'ALL' });
+  return listRemindersForUser(userId, { status: 'ALL', sort: 'createdAt' });
 }
 
 function formatCountdownLabel(nextFireAt: Date): string {
@@ -91,7 +91,11 @@ function formatCountdownLabel(nextFireAt: Date): string {
 
 export async function listRemindersForUser(
   userId: string,
-  options: { status?: 'PENDING' | 'PAUSED' | 'ALL'; title?: string } = {}
+  options: {
+    status?: 'PENDING' | 'PAUSED' | 'ALL';
+    title?: string;
+    sort?: 'nextFireAt' | 'createdAt';
+  } = {}
 ) {
   const statusFilter =
     options.status === 'ALL' || !options.status
@@ -106,7 +110,10 @@ export async function listRemindersForUser(
       deletedAt: null,
       ...(statusFilter ? { status: { in: statusFilter } } : {}),
     },
-    orderBy: { nextFireAt: 'asc' },
+    orderBy:
+      options.sort === 'createdAt'
+        ? { createdAt: 'desc' }
+        : { nextFireAt: 'asc' },
   });
 
   const titleNeedle = options.title?.trim().toLowerCase();

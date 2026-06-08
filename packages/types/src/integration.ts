@@ -31,6 +31,8 @@ export interface UserConnection {
   lastSyncAt: string | null;
   expiresAt: string | null;
   provider?: IntegrationProvider;
+  runtimeHealthy?: boolean;
+  aiReady?: boolean;
 }
 
 export interface ConnectChallenge {

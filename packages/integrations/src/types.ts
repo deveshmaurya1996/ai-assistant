@@ -42,6 +42,7 @@ export interface ConnectionMeta {
 export interface HealthStatus {
   healthy: boolean;
   message?: string;
+  refreshedCredentials?: JsonObject;
 }
 
 export interface SyncResult {

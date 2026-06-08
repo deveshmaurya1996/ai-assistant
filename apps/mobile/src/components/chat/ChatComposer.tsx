@@ -3,17 +3,16 @@ import { useCallback, useRef, useState } from 'react';
 import {
   Alert,
   Keyboard,
+  TextInput,
   View,
   StyleSheet,
   Platform,
-  type TextInput,
   type TextInputKeyPressEvent,
 } from 'react-native';
 import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import type { ChatAttachmentRef } from '@ai-assistant/types';
 import { router } from 'expo-router';
 import { useTheme } from '@/theme/ThemeProvider';
-import { Input } from '@/components/ui/Input';
 import { Text } from '@/components/ui/Text';
 import { PressableScale } from '@/components/motion/PressableScale';
 import { VoiceMicButton } from '@/components/voice/VoiceMicButton';
@@ -51,7 +50,7 @@ export function ChatComposer({
   onStop,
   onInputFocus,
 }: ChatComposerProps) {
-  const { colors } = useTheme();
+  const { colors, colorScheme } = useTheme();
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
   const autoSendAfterTranscribe = useSettingsStore((s) => s.autoSendAfterTranscribe);
   const [input, setInput] = useState('');
@@ -173,11 +172,7 @@ export function ChatComposer({
   );
 
   return (
-    <View
-      style={[
-        styles.container,
-        { backgroundColor: colors.background },
-      ]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       {error ? (
         <Text variant="caption" style={[styles.caption, { color: colors.danger }]}>
           {error}
@@ -212,11 +207,14 @@ export function ChatComposer({
             }),
           },
         ]}>
-        <Input
+        <TextInput
           ref={inputRef}
           value={input}
           onChangeText={setInput}
           placeholder="Ask anything…"
+          placeholderTextColor={colors.textMuted}
+          keyboardAppearance={colorScheme === 'dark' ? 'dark' : 'light'}
+          selectionColor={colors.primary}
           multiline
           scrollEnabled
           blurOnSubmit={false}
@@ -228,8 +226,6 @@ export function ChatComposer({
             styles.input,
             typography.body,
             {
-              backgroundColor: 'transparent',
-              borderWidth: 0,
               color: colors.text,
             },
           ]}
@@ -335,7 +331,7 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: radii.xl,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
     minHeight: 92,
     gap: spacing.sm,
@@ -344,9 +340,14 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: INPUT_MIN_HEIGHT,
     maxHeight: INPUT_MAX_HEIGHT,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: 0,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
     marginVertical: 0,
+    ...Platform.select({
+      android: { includeFontPadding: false },
+      default: {},
+    }),
   },
   actionsRow: {
     flexDirection: 'row',

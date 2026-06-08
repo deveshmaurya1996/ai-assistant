@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Text } from '@/components/ui/Text';
-import { Input } from '@/components/ui/Input';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing, radii } from '@/theme/tokens';
 import {
@@ -15,10 +15,39 @@ type Props = {
   onChange: (date: Date) => void;
 };
 
+type AndroidPickerStep = 'date' | 'time';
+
 export function ReminderWhenField({ value, onChange }: Props) {
   const { colors, isDark } = useTheme();
-  const [editing, setEditing] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [androidStep, setAndroidStep] = useState<AndroidPickerStep | null>(null);
+  const [draftDate, setDraftDate] = useState(value);
   const readable = formatReminderTime(value);
+
+  const openPicker = () => {
+    if (Platform.OS === 'android') {
+      setDraftDate(value);
+      setAndroidStep('date');
+      return;
+    }
+    setPickerOpen((open) => !open);
+  };
+
+  const closeAndroidPicker = () => setAndroidStep(null);
+
+  const handleAndroidDate = (_event: unknown, picked: Date) => {
+    const next = new Date(draftDate);
+    next.setFullYear(picked.getFullYear(), picked.getMonth(), picked.getDate());
+    setDraftDate(next);
+    setAndroidStep('time');
+  };
+
+  const handleAndroidTime = (_event: unknown, picked: Date) => {
+    const next = new Date(draftDate);
+    next.setHours(picked.getHours(), picked.getMinutes(), 0, 0);
+    onChange(next);
+    closeAndroidPicker();
+  };
 
   if (Platform.OS === 'web') {
     return (
@@ -52,45 +81,56 @@ export function ReminderWhenField({ value, onChange }: Props) {
     );
   }
 
-  if (editing) {
-    return (
-      <View style={styles.wrap}>
-        <Input
-          value={toLocalDatetimeInputValue(value)}
-          onChangeText={(text) => {
-            const next = parseLocalDatetimeInputValue(text);
-            if (next) onChange(next);
-          }}
-          onBlur={() => setEditing(false)}
-          placeholder="YYYY-MM-DDTHH:mm"
-          autoCapitalize="none"
-          autoCorrect={false}
-          autoFocus
-        />
-        <Text variant="caption" muted>
-          Local time · tap away when done
-        </Text>
-      </View>
-    );
-  }
-
   return (
-    <Pressable
-      onPress={() => setEditing(true)}
-      style={[
-        styles.readableBox,
-        {
-          backgroundColor: colors.surfaceElevated,
-          borderColor: colors.border,
-        },
-      ]}
-      accessibilityRole="button"
-      accessibilityLabel={`Next time: ${readable}. Tap to edit.`}>
-      <Text variant="body">{readable}</Text>
-      <Text variant="caption" muted style={styles.tapHint}>
-        Tap to change
-      </Text>
-    </Pressable>
+    <View style={styles.wrap}>
+      <Pressable
+        onPress={openPicker}
+        style={[
+          styles.readableBox,
+          {
+            backgroundColor: colors.surfaceElevated,
+            borderColor: colors.border,
+          },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={`Next time: ${readable}. Tap to edit.`}>
+        <Text variant="body">{readable}</Text>
+        <Text variant="caption" muted style={styles.tapHint}>
+          Tap to change
+        </Text>
+      </Pressable>
+
+      {Platform.OS === 'ios' && pickerOpen ? (
+        <DateTimePicker
+          value={value}
+          mode="datetime"
+          display="inline"
+          minimumDate={new Date()}
+          onValueChange={(_event, selected) => onChange(selected)}
+        />
+      ) : null}
+
+      {Platform.OS === 'android' && androidStep === 'date' ? (
+        <DateTimePicker
+          value={draftDate}
+          mode="date"
+          display="default"
+          minimumDate={new Date()}
+          onValueChange={handleAndroidDate}
+          onDismiss={closeAndroidPicker}
+        />
+      ) : null}
+
+      {Platform.OS === 'android' && androidStep === 'time' ? (
+        <DateTimePicker
+          value={draftDate}
+          mode="time"
+          display="default"
+          onValueChange={handleAndroidTime}
+          onDismiss={closeAndroidPicker}
+        />
+      ) : null}
+    </View>
   );
 }
 

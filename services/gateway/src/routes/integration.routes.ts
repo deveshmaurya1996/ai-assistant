@@ -18,6 +18,7 @@ import {
 } from '../services/encryption.service';
 import { sessionManager } from '../whatsapp/session-manager';
 import { markConnectionActive } from '../whatsapp/connection-lifecycle';
+import { assessConnectionsHealth } from '../services/integration-health.service';
 import { ensureIntegrationProvider } from '../services/ensure-integration-provider.service';
 import { randomBytes } from 'crypto';
 
@@ -157,17 +158,29 @@ export async function integrationRoutes(fastify: FastifyInstance) {
         include: { provider: true },
         orderBy: { updatedAt: 'desc' },
       });
-      return reply.send(
+      const health = await assessConnectionsHealth(
+        userId,
         connections.map((c) => ({
           id: c.id,
           providerId: c.providerId,
           status: c.status,
-          scopes: c.scopes,
-          lastSyncAt: c.lastSyncAt?.toISOString() ?? null,
-          expiresAt: c.expiresAt?.toISOString() ?? null,
-          provider: c.provider,
-          aiReady: c.status === 'ACTIVE',
         }))
+      );
+      return reply.send(
+        connections.map((c) => {
+          const runtimeHealthy = health.get(c.id) === true;
+          return {
+            id: c.id,
+            providerId: c.providerId,
+            status: c.status,
+            scopes: c.scopes,
+            lastSyncAt: c.lastSyncAt?.toISOString() ?? null,
+            expiresAt: c.expiresAt?.toISOString() ?? null,
+            provider: c.provider,
+            runtimeHealthy,
+            aiReady: c.status === 'ACTIVE' && runtimeHealthy,
+          };
+        })
       );
     } catch (error) {
       return sendError(reply, error);

@@ -24,6 +24,7 @@ def classify_image_intent(
         r"\b(edit|modify|retouch|inpaint|change|alter|update)\b",
         r"\b(remove|add|replace|erase)\b.+\b(from|in|on)\b",
         r"\bmake\b.+\b(sky|background|hair|color|colou?r)\b",
+        r"\b(the|this|that|previous|last)\s+(generated\s+)?(image|picture|photo)\b",
     ]
     if has_image_attachment and any(re.search(p, q) for p in edit_signals):
         return "image_edit"
@@ -33,6 +34,8 @@ def classify_image_intent(
         r"\b(make|produce)\b.+\b(image|picture|photo|illustration|logo|poster|artwork|icon)\b",
         r"\b(image|picture|photo|illustration|logo|poster)\b.+\b(of|showing|with|featuring)\b",
         r"\bdraw\b.+\b(me|a|an)\b",
+        r"\bshow me\b.+\b(picture|image|photo|illustration)\b",
+        r"\bmake me\b.+\b(an?\s+)?(image|picture|photo|illustration)\b",
     ]
     if any(re.search(p, q) for p in generate_signals):
         return "image"

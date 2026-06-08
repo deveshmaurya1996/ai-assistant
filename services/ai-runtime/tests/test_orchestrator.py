@@ -51,7 +51,7 @@ class TestRoutingTiers(unittest.TestCase):
     def test_fast_chat_tier1_has_two_models(self) -> None:
         load_ai_models_config(reload=True)
         tiers = tiers_for_task("fast_chat")
-        self.assertIn("nvidia/mistral-nemotron", tiers["tier1"])
+        self.assertIn("nvidia/deepseek-v4-flash", tiers["tier1"])
         self.assertIn("groq/llama-3.3-70b", tiers["tier1"])
         self.assertEqual(len(tiers["tier2"]), 2)
 

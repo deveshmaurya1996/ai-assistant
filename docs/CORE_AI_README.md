@@ -327,12 +327,18 @@ Single source of truth for providers, model IDs, **task routing chains**, timeou
 | `models/task_router.py` | Query → task (`fast_chat`, `reasoning`, `coding`, …) |
 | `models/registry.py` | Thin facade |
 
-Example chains (see [build.nvidia.com/models](https://build.nvidia.com/models)):
+Primary NVIDIA models and verified API examples: **[AI_MODEL_CONFIGURATION.md](./AI_MODEL_CONFIGURATION.md)**.
 
-- `fast_chat`: `nvidia/meta/llama-3.1-8b-instruct` → `nvidia/nemotron-3-nano-30b-a3b` → `pollinations/openai`
-- `reasoning`: `nvidia/llama-3.3-nemotron-super-49b-v1.5` → `nvidia/nemotron-3-super-120b-a12b` → `nvidia/qwen/qwen3.5-122b-a10b` → …
-- `planner` / `title`: Llama 8B / Nemotron Nano only
-- `image` / `image_edit`: Pollinations Flux until NVIDIA image NIMs are on the integrate API
+Example chains (Groq/Pollinations fallbacks in YAML):
+
+- `fast_chat`: `nvidia/deepseek-v4-flash` → Groq → `pollinations/openai`
+- `reasoning`: `nvidia/glm-5.1` → Groq GPT-OSS → fallbacks
+- `coding`: `nvidia/qwen3-coder-480b` → Groq GPT-OSS → fallbacks
+- `planner`: `nvidia/nemotron-3-ultra` → `nvidia/glm-5.1` → fallbacks
+- `file_analysis`: `nvidia/kimi-k2.6` → vision models → fallbacks
+- `vision`: Llama 4 Maverick / PaliGemma → fallbacks
+- `safety`: `nvidia/nemotron-3.5-content-safety`
+- `image` / `image_edit`: Pollinations Flux
 
 `GET /v1/models` returns `{ mode: "auto", models, routing, rag, timeouts }`.
 

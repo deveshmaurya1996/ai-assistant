@@ -49,9 +49,10 @@ Run this after implementing or modifying the AI + integrations pipeline.
 
 Prerequisites: `NVIDIA_API_KEY` in repo-root `.env` (never commit keys).
 
-1. `python scripts/verify-nvidia-models.py` — lists integrate models, smoke embed + rerank + nemotron-mini chat.
-2. Short chat in app or `POST /v1/chat/stream` — logs should show `nvidia/glm-5.1` or `nvidia/mistral-nemotron` for `fast_chat`.
-3. Reasoning prompt — chain uses `nvidia/glm-5.1` → `nvidia/mistral-nemotron` when NVIDIA key is set.
+1. `python scripts/verify-nvidia-models.py` — lists integrate models, smoke embed + rerank + chat models (see [AI_MODEL_CONFIGURATION.md](./AI_MODEL_CONFIGURATION.md)).
+2. Short chat in app or `POST /v1/chat/stream` — logs should show `nvidia/deepseek-v4-flash` for `fast_chat`.
+3. Reasoning prompt — chain uses `nvidia/glm-5.1` when NVIDIA key is set.
+4. Coding prompt — chain uses `nvidia/qwen3-coder-480b`.
 4. Image attachment — vision chain uses `google/paligemma` → `nvidia/llama-4-maverick-17b-128e-instruct` (Tier C).
 5. Voice STT — upload normalized to 16 kHz mono WAV via ffmpeg (`models/voice/`), then Pollinations Whisper → `google/gemma-3n-e4b-it` fallback.
 6. Layered memory: Qdrant indexes each turn (episodic); Memory UI shows **facts/preferences only** (not chat transcripts). “what did we discuss…” → episodic search when `RAG_RETRIEVAL_MODE=smart`; “hello” → no search. **Explicit remember:** `Remember: my company is Acme` → one Fact; repeat → same Fact updated. Short “hi” → no new memory row. Optional: `MEMORY_CLEANUP_CONVERSATION_ROWS=true` once to remove legacy Postgres chat rows. Ops: `RAG_ENABLED=false`, `RAG_RETRIEVAL_MODE=always`, `MEMORY_EXTRACTION_ENABLED=false`.

@@ -3,27 +3,34 @@ import {
   View,
   StyleSheet,
   Image,
-  ScrollView,
   ActivityIndicator,
   Alert,
   Pressable,
 } from 'react-native';
+import type { CountryCode } from 'react-native-country-picker-modal';
 import * as Clipboard from 'expo-clipboard';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Check, Copy } from 'lucide-react-native';
 import { ApiError } from '@ai-assistant/sdk';
 import type { WhatsAppSessionStatus } from '@ai-assistant/types';
-import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { Input } from '@/components/ui/Input';
 import { AppHeader } from '@/components/layout/AppHeader';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { ProviderIcon } from '@/components/integrations/ProviderIcon';
+import { CountryPhoneField } from '@/components/integrations/CountryPhoneField';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing, radii } from '@/theme/tokens';
 import { apiClient } from '@/lib/api-client';
+import {
+  buildE164Phone,
+  DEFAULT_CALLING_CODE,
+  DEFAULT_COUNTRY_CODE,
+  validateLocalPhone,
+} from '@/components/integrations/countryCodes';
 
 type LinkMode = 'qr' | 'code';
 
@@ -32,23 +39,25 @@ type Props = {
 };
 
 const STEPS_QR = [
-  'Open WhatsApp on your phone',
-  'Go to Settings → Linked devices → Link a device',
-  'Point your camera at the QR code below',
+  'Open WhatsApp → Settings → Linked devices',
+  'Tap Link a device and scan the QR below',
 ];
 
 const STEPS_CODE = [
-  'Enter your phone number with country code (no + sign)',
-  'Tap Get pairing code below',
-  'On your phone: Linked devices → Link with phone number → enter the 8-character code',
+  'Enter your mobile number and tap Get pairing code',
+  'On phone: Linked devices → Link with phone number',
+  'Enter the 8-character code shown below',
 ];
 
 export function WhatsAppLinkScreen({ connectionId }: Props) {
   const router = useRouter();
-  const { colors } = useTheme();
+  const { colors, screenStyle } = useTheme();
+  const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<LinkMode>('qr');
   const [session, setSession] = useState<WhatsAppSessionStatus | null>(null);
   const [phone, setPhone] = useState('');
+  const [countryCode, setCountryCode] = useState<CountryCode>(DEFAULT_COUNTRY_CODE);
+  const [callingCode, setCallingCode] = useState(DEFAULT_CALLING_CODE);
   const [loading, setLoading] = useState(true);
   const [pairingLoading, setPairingLoading] = useState(false);
   const [finishing, setFinishing] = useState(false);
@@ -110,11 +119,12 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
   }, []);
 
   const handleRequestPairing = async () => {
-    const digits = phone.replace(/\D/g, '');
-    if (digits.length < 10) {
-      Alert.alert('Invalid number', 'Enter your full number with country code, digits only.');
+    const validationError = validateLocalPhone(callingCode, phone);
+    if (validationError) {
+      Alert.alert('Invalid number', validationError);
       return;
     }
+    const digits = buildE164Phone(callingCode, phone);
     setPairingLoading(true);
     try {
       const data = await apiClient.requestWhatsAppPairing(connectionId, digits);
@@ -138,195 +148,229 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
     { value: 'code' as const, label: 'Pairing code' },
   ];
 
+  const footer = finishing ? (
+    <View style={styles.linkedRow}>
+      <ActivityIndicator color="#25D366" />
+      <Text variant="bodyMedium" style={{ color: '#25D366' }}>
+        WhatsApp linked — finishing setup…
+      </Text>
+    </View>
+  ) : (
+    <Button label="Cancel" variant="ghost" onPress={() => router.back()} />
+  );
+
   return (
-    <Screen padded={false}>
+    <View style={[screenStyle, styles.root]}>
       <AppHeader title="Link WhatsApp" />
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={styles.hero}>
+      <View style={styles.body}>
+        <View style={styles.heroCompact}>
           <View style={[styles.heroIcon, { backgroundColor: '#25D36622' }]}>
-            <ProviderIcon providerId="whatsapp" size="md" />
+            <ProviderIcon providerId="whatsapp" size="sm" />
           </View>
-          <Text variant="h2" style={styles.heroTitle}>
-            Connect WhatsApp
-          </Text>
-          <Text variant="caption" muted style={styles.heroSub}>
-            Link this device so your assistant can read and send messages securely.
-          </Text>
+          <View style={styles.heroText}>
+            <Text variant="bodyMedium" style={styles.heroTitle}>
+              Connect WhatsApp
+            </Text>
+            <Text variant="caption" muted numberOfLines={2}>
+              Link securely so your assistant can read and send messages.
+            </Text>
+          </View>
         </View>
 
         <SegmentedControl options={modeOptions} value={mode} onChange={setMode} />
 
-        {loading && !session?.qrData ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color="#25D366" />
-            <Text variant="caption" muted style={{ marginTop: spacing.sm }}>
-              Generating secure link…
-            </Text>
-          </View>
-        ) : null}
-
         {mode === 'qr' ? (
-          <Card style={styles.card}>
-            <Text variant="label" muted style={styles.sectionLabel}>
-              Scan QR code
-            </Text>
-            {STEPS_QR.map((step, i) => (
-              <View key={step} style={styles.stepRow}>
-                <View style={[styles.stepNum, { backgroundColor: '#25D366' }]}>
-                  <Text variant="label" style={{ color: '#fff' }}>
-                    {i + 1}
+          <View style={styles.qrPane}>
+            <Card style={styles.cardCompact}>
+              {loading && !session?.qrData ? (
+                <View style={styles.loadingBox}>
+                  <ActivityIndicator size="large" color="#25D366" />
+                  <Text variant="caption" muted>
+                    Generating secure link…
                   </Text>
                 </View>
-                <Text variant="caption" style={styles.stepText}>
-                  {step}
-                </Text>
-              </View>
-            ))}
-            <View style={[styles.qrFrame, { borderColor: colors.border }]}>
-              {session?.qrData ? (
-                <Image source={{ uri: session.qrData }} style={styles.qr} resizeMode="contain" />
               ) : (
-                <ActivityIndicator color="#25D366" />
+                <>
+                  {STEPS_QR.map((step, i) => (
+                    <View key={step} style={styles.stepRow}>
+                      <View style={[styles.stepNum, { backgroundColor: '#25D366' }]}>
+                        <Text variant="label" style={{ color: '#fff', fontSize: 11 }}>
+                          {i + 1}
+                        </Text>
+                      </View>
+                      <Text variant="caption" style={styles.stepText}>
+                        {step}
+                      </Text>
+                    </View>
+                  ))}
+                  <View style={[styles.qrFrame, { borderColor: colors.border }]}>
+                    {session?.qrData ? (
+                      <Image source={{ uri: session.qrData }} style={styles.qr} resizeMode="contain" />
+                    ) : (
+                      <ActivityIndicator color="#25D366" />
+                    )}
+                  </View>
+                  <Text variant="caption" muted style={styles.qrHint}>
+                    QR refreshes automatically. Keep this screen open while you scan.
+                  </Text>
+                </>
               )}
-            </View>
-            <Text variant="caption" muted style={styles.qrHint}>
-              QR refreshes automatically. Keep this screen open while you scan.
-            </Text>
-          </Card>
-        ) : (
-          <Card style={styles.card}>
-            <Text variant="label" muted style={styles.sectionLabel}>
-              Pair with phone number
-            </Text>
-            {STEPS_CODE.map((step, i) => (
-              <View key={step} style={styles.stepRow}>
-                <View style={[styles.stepNum, { backgroundColor: '#25D366' }]}>
-                  <Text variant="label" style={{ color: '#fff' }}>
-                    {i + 1}
-                  </Text>
-                </View>
-                <Text variant="caption" style={styles.stepText}>
-                  {step}
-                </Text>
-              </View>
-            ))}
-            <Text variant="caption" muted>
-              Example: US 15551234567 · India 919876543210
-            </Text>
-            <Input
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="Country code + number"
-              keyboardType="phone-pad"
-              autoComplete="tel"
-            />
-            <Button
-              label={pairingLoading ? 'Getting code…' : 'Get pairing code'}
-              variant="primary"
-              loading={pairingLoading}
-              disabled={pairingLoading}
-              style={{ backgroundColor: '#25D366' }}
-              onPress={() => void handleRequestPairing()}
-            />
-            {session?.pairingCode ? (
-              <View style={[styles.codeBox, { borderColor: '#25D366', backgroundColor: '#25D36611' }]}>
-                <Text variant="caption" muted>
-                  Enter this code on your phone
-                </Text>
-                <Text variant="h1" style={styles.codeDigits}>
-                  {session.pairingCode}
-                </Text>
-                <Pressable
-                  onPress={() => void handleCopyPairingCode()}
-                  style={({ pressed }) => [
-                    styles.copyBtn,
-                    { backgroundColor: pressed ? '#25D36633' : '#25D36622' },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Copy pairing code"
-                >
-                  {copied ? (
-                    <Check size={18} color="#128C7E" />
-                  ) : (
-                    <Copy size={18} color="#128C7E" />
-                  )}
-                  <Text variant="bodyMedium" style={styles.copyBtnLabel}>
-                    {copied ? 'Copied' : 'Copy code'}
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
-          </Card>
-        )}
-
-        {finishing ? (
-          <View style={styles.linkedRow}>
-            <ActivityIndicator color="#25D366" />
-            <Text variant="bodyMedium" style={{ color: '#25D366' }}>
-              WhatsApp linked — finishing setup…
-            </Text>
+            </Card>
+            {footer}
           </View>
         ) : (
-          <Button
-            label="Cancel"
-            variant="ghost"
-            onPress={() => router.back()}
-          />
+          <KeyboardAwareScrollView
+            style={styles.codeScroll}
+            contentContainerStyle={[
+              styles.codeScrollContent,
+              { paddingBottom: insets.bottom + spacing.xxl * 2 },
+            ]}
+            keyboardShouldPersistTaps="handled"
+            bottomOffset={spacing.lg}
+            extraKeyboardSpace={spacing.lg}>
+            <Card style={styles.card}>
+              <Text variant="label" muted style={styles.sectionLabel}>
+                Pair with phone number
+              </Text>
+              {STEPS_CODE.map((step, i) => (
+                <View key={step} style={styles.stepRow}>
+                  <View style={[styles.stepNum, { backgroundColor: '#25D366' }]}>
+                    <Text variant="label" style={{ color: '#fff' }}>
+                      {i + 1}
+                    </Text>
+                  </View>
+                  <Text variant="caption" style={styles.stepText}>
+                    {step}
+                  </Text>
+                </View>
+              ))}
+              <Text variant="caption" muted>
+                Enter your mobile number without the country code.
+              </Text>
+              <CountryPhoneField
+                countryCode={countryCode}
+                callingCode={callingCode}
+                phone={phone}
+                onCountryChange={(code, dial) => {
+                  setCountryCode(code);
+                  setCallingCode(dial);
+                }}
+                onPhoneChange={setPhone}
+              />
+              <Button
+                label={pairingLoading ? 'Getting code…' : 'Get pairing code'}
+                variant="primary"
+                loading={pairingLoading}
+                disabled={pairingLoading}
+                style={{ backgroundColor: '#25D366' }}
+                onPress={() => void handleRequestPairing()}
+              />
+              {session?.pairingCode ? (
+                <View style={[styles.codeBox, { borderColor: '#25D366', backgroundColor: '#25D36611' }]}>
+                  <Text variant="caption" muted>
+                    Enter this code on your phone
+                  </Text>
+                  <Text variant="h1" style={styles.codeDigits}>
+                    {session.pairingCode}
+                  </Text>
+                  <Pressable
+                    onPress={() => void handleCopyPairingCode()}
+                    style={({ pressed }) => [
+                      styles.copyBtn,
+                      { backgroundColor: pressed ? '#25D36633' : '#25D36622' },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Copy pairing code">
+                    {copied ? (
+                      <Check size={18} color="#128C7E" />
+                    ) : (
+                      <Copy size={18} color="#128C7E" />
+                    )}
+                    <Text variant="bodyMedium" style={styles.copyBtnLabel}>
+                      {copied ? 'Copied' : 'Copy code'}
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </Card>
+            {footer}
+          </KeyboardAwareScrollView>
         )}
-      </ScrollView>
-    </Screen>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: {
-    padding: spacing.md,
-    paddingBottom: 140,
-    gap: spacing.md,
+  root: {
+    flex: 1,
   },
-  hero: {
+  body: {
+    flex: 1,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+    gap: spacing.sm,
+  },
+  heroCompact: {
+    flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    marginBottom: spacing.xs,
+    paddingVertical: spacing.xs,
   },
   heroIcon: {
-    padding: spacing.sm,
+    padding: spacing.xs,
     borderRadius: radii.full,
   },
-  heroTitle: { textAlign: 'center' },
-  heroSub: { textAlign: 'center', paddingHorizontal: spacing.md },
+  heroText: {
+    flex: 1,
+    gap: 2,
+  },
+  heroTitle: { fontWeight: '600' },
+  qrPane: {
+    flex: 1,
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  codeScroll: { flex: 1 },
+  codeScrollContent: {
+    gap: spacing.md,
+    paddingBottom: spacing.lg,
+  },
   loadingBox: {
     alignItems: 'center',
-    paddingVertical: spacing.xl,
+    paddingVertical: spacing.lg,
+    gap: spacing.sm,
   },
   card: { gap: spacing.md },
+  cardCompact: { gap: spacing.sm, flex: 1 },
   sectionLabel: { textTransform: 'uppercase', letterSpacing: 0.6 },
   stepRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
   stepNum: {
-    width: 22,
-    height: 22,
+    width: 20,
+    height: 20,
     borderRadius: radii.full,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepText: { flex: 1, lineHeight: 20 },
+  stepText: { flex: 1, lineHeight: 18, fontSize: 12 },
   qrFrame: {
     alignSelf: 'center',
-    padding: spacing.md,
+    padding: spacing.sm,
     borderRadius: radii.lg,
     borderWidth: 1,
     backgroundColor: '#FFFFFF',
-    minHeight: 280,
-    minWidth: 280,
+    width: 196,
+    height: 196,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: spacing.xs,
   },
-  qr: { width: 256, height: 256 },
-  qrHint: { textAlign: 'center' },
+  qr: { width: 172, height: 172 },
+  qrHint: { textAlign: 'center', fontSize: 11 },
   codeBox: {
     borderWidth: 2,
     borderRadius: radii.lg,
@@ -357,6 +401,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
   },
 });

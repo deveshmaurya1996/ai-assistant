@@ -1,9 +1,17 @@
 import { useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+} from 'react-native';
 import { router } from 'expo-router';
-import { Button } from '@/components/ui/Button';
 import { Text } from '@/components/ui/Text';
-import { spacing } from '@/theme/tokens';
+import { ProviderIcon } from '@/components/integrations/ProviderIcon';
+import { spacing, radii } from '@/theme/tokens';
+import { useTheme } from '@/theme/ThemeProvider';
 import { useAuthStore } from '@/stores/auth';
 import { GOOGLE_AUTH_ENABLED } from '@/lib/config';
 import { Routes } from '@/lib/routes';
@@ -11,6 +19,7 @@ import { Routes } from '@/lib/routes';
 export function GoogleSignInButton() {
   const signInWithGoogle = useAuthStore((s) => s.signInWithGoogle);
   const ensureAuthenticated = useAuthStore((s) => s.ensureAuthenticated);
+  const { colors } = useTheme();
   const [loading, setLoading] = useState(false);
 
   if (!GOOGLE_AUTH_ENABLED) return null;
@@ -18,35 +27,64 @@ export function GoogleSignInButton() {
   return (
     <View style={styles.wrap}>
       <View style={styles.dividerRow}>
-        <View style={styles.dividerLine} />
+        <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
         <Text variant="caption" muted>
           or
         </Text>
-        <View style={styles.dividerLine} />
+        <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
       </View>
-      <Button
-        label={loading ? 'Connecting…' : 'Continue with Google'}
-        variant="secondary"
-        loading={loading}
+      <Pressable
+        disabled={loading}
         onPress={async () => {
           setLoading(true);
           try {
             await signInWithGoogle();
-            const ok = await ensureAuthenticated();
-            if (!ok) {
-              throw new Error('Could not verify your session. Try again.');
+            let session = useAuthStore.getState().session;
+            if (!session && Platform.OS === 'android') {
+              session = await ensureAuthenticated()
+                .then((ok) => (ok ? useAuthStore.getState().session : null))
+                .catch(() => null);
             }
-            router.replace(Routes.chatCompose);
+            if (session) {
+              router.replace(Routes.chatCompose);
+              return;
+            }
+            if (Platform.OS === 'web') {
+              const ok = await ensureAuthenticated();
+              if (!ok) {
+                throw new Error('Could not verify your session. Try again.');
+              }
+              router.replace(Routes.chatCompose);
+            }
           } catch (e) {
-            Alert.alert(
-              'Google sign-in failed',
-              e instanceof Error ? e.message : 'Unknown error'
-            );
+            const message = e instanceof Error ? e.message : 'Unknown error';
+            const cancelled =
+              message.toLowerCase().includes('cancel') ||
+              message.toLowerCase().includes('dismiss');
+            if (!cancelled) {
+              Alert.alert('Google sign-in failed', message);
+            }
           } finally {
             setLoading(false);
           }
         }}
-      />
+        style={({ pressed }) => [
+          styles.button,
+          {
+            backgroundColor: colors.surfaceElevated,
+            borderColor: colors.border,
+            opacity: loading ? 0.6 : pressed ? 0.85 : 1,
+          },
+        ]}>
+        {loading ? (
+          <ActivityIndicator color={colors.text} />
+        ) : (
+          <>
+            <ProviderIcon providerId="google" size="xs" />
+            <Text variant="bodyMedium">Continue with Google</Text>
+          </>
+        )}
+      </Pressable>
     </View>
   );
 }
@@ -61,6 +99,16 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: StyleSheet.hairlineWidth,
-    backgroundColor: '#9CA3AF',
+  },
+  button: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    minHeight: 48,
   },
 });

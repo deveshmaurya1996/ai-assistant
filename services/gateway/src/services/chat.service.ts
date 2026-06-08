@@ -26,6 +26,7 @@ import { badRequest, forbidden, notFound } from '../lib/errors';
 import { EventNames, publishEvent } from '@ai-assistant/events';
 import { runAgentTurn, type AgentSource } from './agent-turn.service';
 import { ChatTurnAbortedError } from './chat-turn-errors';
+import { classifyImageIntent } from './image-intent.service';
 import {
   buildConfirmText,
   clearPendingConfirm,
@@ -238,6 +239,23 @@ function attachmentsFromMetadata(metadata: unknown): ChatAttachmentRef[] | undef
   const raw = (metadata as { attachments?: unknown }).attachments;
   if (!Array.isArray(raw) || raw.length === 0) return undefined;
   return raw as ChatAttachmentRef[];
+}
+
+async function findLatestAssistantImageAttachment(
+  sessionId: string
+): Promise<ChatAttachmentRef | null> {
+  const rows = await prisma.message.findMany({
+    where: { chatSessionId: sessionId, role: 'ASSISTANT' },
+    orderBy: { createdAt: 'desc' },
+    take: 20,
+    select: { metadata: true },
+  });
+  for (const row of rows) {
+    const atts = attachmentsFromMetadata(row.metadata ?? null);
+    const image = atts?.find((a) => a.kind === 'image');
+    if (image) return image;
+  }
+  return null;
 }
 
 function personalityFieldsFromMetadata(metadata: unknown): {
@@ -563,6 +581,24 @@ export async function processChatMessage(params: {
     });
   }
 
+  let effectiveAttachments = attachments;
+  let effectiveResolved = resolvedAttachments;
+  const hasUserImage = attachments.some((a) => a.kind === 'image');
+  const hasResolvedImage = resolvedAttachments.some((r) => r.imageDataUrl);
+  const imageIntent = classifyImageIntent(text, hasUserImage || hasResolvedImage);
+
+  if (imageIntent === 'image_edit' && !hasUserImage && !hasResolvedImage) {
+    const priorImage = await findLatestAssistantImageAttachment(sessionId);
+    if (priorImage) {
+      effectiveAttachments = [priorImage];
+      effectiveResolved = await resolveAttachments(userId, effectiveAttachments, {
+        query: text,
+        sessionId,
+        forceInline: true,
+      });
+    }
+  }
+
   let turn;
   try {
     turn = await runAgentTurn(
@@ -575,8 +611,8 @@ export async function processChatMessage(params: {
           role: toAiRole(m.role),
           content: m.content,
         })),
-        attachments,
-        resolvedAttachments,
+        attachments: effectiveAttachments,
+        resolvedAttachments: effectiveResolved,
         ragEnabled,
         confirmed: params.confirmed ?? false,
         source: agentSource,

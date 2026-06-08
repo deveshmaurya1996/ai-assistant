@@ -6,7 +6,7 @@ import {
   View,
   type ViewStyle,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '@/theme/ThemeProvider';
 import { useResponsive } from '@/theme/useResponsive';
 
@@ -21,6 +21,7 @@ type Props = {
 export function Screen({ children, scroll, padded = true, safeTop = false, style }: Props) {
   const { screenStyle } = useTheme();
   const { horizontalPadding, contentMaxWidth } = useResponsive();
+  const insets = useSafeAreaInsets();
 
   const content = (
     <View
@@ -39,7 +40,7 @@ export function Screen({ children, scroll, padded = true, safeTop = false, style
   );
 
   return (
-    <SafeAreaView style={screenStyle} edges={safeTop ? ['top'] : []}>
+    <View style={[screenStyle, safeTop ? { paddingTop: insets.top } : null]}>
       <KeyboardAvoidingView
         style={screenStyle}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -55,6 +56,6 @@ export function Screen({ children, scroll, padded = true, safeTop = false, style
           content
         )}
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }

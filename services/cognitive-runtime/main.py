@@ -86,6 +86,30 @@ def health():
     return {"status": "ok", "service": "cognitive-runtime"}
 
 
+@app.middleware("http")
+async def internal_auth_middleware(request: Request, call_next):
+    if "/internal/" in request.url.path:
+        header = request.headers.get("x-internal-token")
+        if header != INTERNAL_SERVICE_TOKEN:
+            return JSONResponse(status_code=403, content={"error": "Forbidden"})
+    return await call_next(request)
+
+
+class ManifestInvalidateRequest(BaseModel):
+    userId: str
+
+
+@app.post("/internal/integrations/manifest/invalidate")
+async def invalidate_manifest(body: ManifestInvalidateRequest):
+    from orchestration.context import invalidate_integration_manifest
+
+    user_id = body.userId.strip()
+    if not user_id:
+        return JSONResponse(status_code=400, content={"error": "userId is required"})
+    invalidate_integration_manifest(user_id)
+    return {"ok": True}
+
+
 @app.get("/v1/tools/available")
 async def tools_available(user_id: str | None = None):
     async with httpx.AsyncClient() as client:
@@ -309,15 +333,12 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
     from orchestration.image_intent import classify_image_intent
 
     image_intent = None
-    if (
-        not payload.confirmed
-        and route.intent == TurnIntent.KNOWLEDGE
-        and has_attachments
-        and has_images
-    ):
+    if not payload.confirmed:
         image_intent = classify_image_intent(
             payload.query, has_image_attachment=has_images
         )
+        if image_intent == "image_edit" and not has_images:
+            image_intent = None
 
     if image_intent:
 
@@ -373,7 +394,7 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
     chat_history = payload.chat_history[: route.history_limit]
 
     async def stream_response():
-        nonlocal plan, tool_results
+        nonlocal plan, tool_results, manifest_text
         t_stream = time.perf_counter()
         rag_block = ""
 
@@ -491,6 +512,14 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
             memory_block=memory_block or None,
             cap_file_context=cap_file,
         ) or prebuilt_context
+
+        if manifest_text and manifest_text.strip():
+            manifest_block = manifest_text.strip()
+            context_for_stream = (
+                f"{manifest_block}\n\n{context_for_stream}"
+                if context_for_stream
+                else manifest_block
+            )
 
         async with httpx.AsyncClient(timeout=ORCHESTRATOR_STREAM_TIMEOUT) as client:
             tool_context = ""

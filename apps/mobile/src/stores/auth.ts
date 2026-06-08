@@ -3,8 +3,11 @@ import type { SessionInfo } from '@ai-assistant/sdk';
 import {
   authClient,
   fetchSession,
-  fetchVerifiedSession,
 } from '@/lib/auth-client';
+import {
+  fetchVerifiedSession,
+  fetchVerifiedSessionWithRetry,
+} from '@/lib/auth-session';
 import { getOAuthCallbackURL } from '@/lib/oauth-callback';
 import { hydrateAuthStorage } from '@/lib/secure-storage';
 import { writeWebSessionCache } from '@/lib/web-session-cache';
@@ -59,7 +62,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   ensureAuthenticated: async () => {
     await hydrateAuthStorage();
-    const session = await fetchVerifiedSession();
+    const session = await fetchVerifiedSessionWithRetry(6, 300);
     if (!session) {
       set({ session: null, loading: false, hydrated: true });
       return false;
@@ -77,7 +80,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (error) {
       throw new Error(error.message ?? 'Sign in failed');
     }
-    const session = await fetchVerifiedSession();
+    const session = await fetchVerifiedSessionWithRetry();
     if (!session) {
       throw new Error('Sign in succeeded but session could not be verified');
     }
@@ -94,9 +97,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (error) {
       throw new Error(error.message ?? 'Google sign-in failed');
     }
-    if (Platform.OS === 'web') return;
+    if (Platform.OS !== 'web') {
+      const session = await fetchVerifiedSessionWithRetry(
+        Platform.OS === 'android' ? 8 : 4,
+        300
+      );
+      if (session) {
+        await applySession(session);
+      }
+      return;
+    }
 
-    const session = await fetchVerifiedSession();
+    const session = await fetchVerifiedSessionWithRetry();
     if (!session) {
       throw new Error('Google sign-in did not return a session');
     }
@@ -113,7 +125,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (error) {
       throw new Error(error.message ?? 'Sign up failed');
     }
-    const session = await fetchVerifiedSession();
+    const session = await fetchVerifiedSessionWithRetry();
     if (!session) {
       throw new Error('Sign up did not return a session');
     }

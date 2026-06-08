@@ -1,8 +1,19 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+  xmlns:tools="http://schemas.android.com/tools">
   <application>
+    <service
+      android:name="expo.modules.notifications.service.ExpoFirebaseMessagingService"
+      tools:node="remove" />
     <service
       android:name="expo.modules.assistantoverlay.VoiceAssistantForegroundService"
       android:exported="false"
       android:foregroundServiceType="microphone" />
+    <service
+      android:name="expo.modules.assistantoverlay.ReminderOverlayMessagingService"
+      android:exported="false">
+      <intent-filter>
+        <action android:name="com.google.firebase.MESSAGING_EVENT" />
+      </intent-filter>
+    </service>
   </application>
 </manifest>

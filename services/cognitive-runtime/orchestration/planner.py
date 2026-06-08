@@ -51,6 +51,9 @@ def is_likely_tool_query(query: str) -> bool:
         "connected apps",
         "what is connected",
         "what's connected",
+        "what apps are connected",
+        "which apps are connected",
+        "apps are connected",
     ]
     file_signals = [
         "uploaded",
@@ -72,6 +75,7 @@ def is_likely_tool_query(query: str) -> bool:
         "message to",
         "check my",
         "check the",
+        "check everything",
         "list my",
         "list unread",
         "show my",
@@ -80,6 +84,9 @@ def is_likely_tool_query(query: str) -> bool:
         "summarize",
         "summary",
         "catch up",
+        "catch me up",
+        "anything new",
+        "what did i miss",
         "remember this",
         "save this",
         "write down",
@@ -93,24 +100,49 @@ def is_likely_tool_query(query: str) -> bool:
     )
 
 
+def _healthy_provider_ids(connections: List[Dict[str, Any]]) -> Set[str]:
+    return {str(c.get("providerId", "")) for c in connections if c.get("providerId")}
+
+
+def _filter_caps_for_providers(
+    cap_ids: Set[str], healthy_providers: Set[str]
+) -> Set[str]:
+    if not healthy_providers:
+        return set()
+    out: Set[str] = set()
+    for cap_id in cap_ids:
+        if cap_id not in CAPABILITY_TO_TOOL:
+            continue
+        expected_prov, _ = CAPABILITY_TO_TOOL[cap_id]
+        if expected_prov in healthy_providers or expected_prov == "platform":
+            out.add(cap_id)
+        elif cap_id == "files.search_documents":
+            if "google" in healthy_providers or "files" in healthy_providers:
+                out.add(cap_id)
+        elif cap_id == "resources.search":
+            out.add(cap_id)
+    return out
+
+
 async def _available_tools(
     user_id: str,
     manifest_caps: Optional[Set[str]] = None,
     manifest_connections: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[Set[str], List[Dict[str, Any]], List[Dict[str, Any]], Set[str], List[str]]:
-    """Merge gateway manifest, tool-runtime, and skill-runtime — never fail silently."""
+    """Gateway health-filtered manifest is the source of truth for capabilities."""
     tools: Set[str] = set()
     connections: List[Dict[str, Any]] = list(manifest_connections or [])
     tool_schemas: List[Dict[str, Any]] = []
     available_caps: Set[str] = set(manifest_caps or set())
     warnings: List[str] = []
+    using_manifest = manifest_caps is not None and manifest_connections is not None
 
-    if manifest_caps is None or manifest_connections is None:
+    if not using_manifest:
         _, fetched_caps, fetched_connections = await fetch_integration_manifest(user_id)
-        if manifest_caps is None:
-            available_caps |= fetched_caps
-        if manifest_connections is None:
-            connections = list(fetched_connections)
+        available_caps |= fetched_caps
+        connections = list(fetched_connections)
+
+    healthy_providers = _healthy_provider_ids(connections)
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
@@ -121,46 +153,27 @@ async def _available_tools(
             if res.status_code == 200:
                 data = res.json()
                 tool_schemas = data.get("tools", [])
-                tools = {t["function"]["name"] for t in tool_schemas if t.get("function")}
-                if not connections:
-                    connections = data.get("connections", [])
+                all_tools = {t["function"]["name"] for t in tool_schemas if t.get("function")}
+                if healthy_providers:
+                    tools = {
+                        name
+                        for name in all_tools
+                        if name.split(".")[0] in healthy_providers
+                        or name.split(".")[0] in ("resources", "contacts", "reminder", "automation")
+                    }
+                else:
+                    tools = set()
             else:
                 warnings.append(f"tool-runtime tools/available: HTTP {res.status_code}")
         except Exception as exc:
             warnings.append(f"tool-runtime unreachable: {exc}")
 
-        try:
-            res = await client.get(
-                f"{SKILL_RUNTIME_URL}/v1/tools/available",
-                params={"userId": user_id},
-            )
-            if res.status_code == 200:
-                data = res.json()
-                for t in data.get("tools", []):
-                    if t.get("function", {}).get("name"):
-                        tools.add(t["function"]["name"])
-                if not connections:
-                    connections = data.get("connections", [])
-            else:
-                warnings.append(f"skill-runtime tools/available: HTTP {res.status_code}")
-        except Exception as exc:
-            warnings.append(f"skill-runtime unreachable: {exc}")
-
-        try:
-            cap_res = await client.get(
-                f"{SKILL_RUNTIME_URL}/v1/capabilities",
-                params={"userId": user_id},
-            )
-            if cap_res.status_code == 200:
-                caps = cap_res.json().get("capabilities", [])
-                available_caps |= {c["id"] for c in caps if c.get("id")}
-        except Exception:
-            pass
-
-    if not available_caps:
+    if not available_caps and healthy_providers:
         for cap_id, (_, tool) in CAPABILITY_TO_TOOL.items():
             if tool in tools:
                 available_caps.add(cap_id)
+
+    available_caps = _filter_caps_for_providers(available_caps, healthy_providers)
 
     return tools, connections, tool_schemas, available_caps, warnings
 
@@ -227,13 +240,8 @@ def _capability_allowed(
     available_caps: Set[str],
     connected: Set[str],
 ) -> bool:
-    if cap_id in available_caps:
-        return True
-    if cap_id not in CAPABILITY_TO_TOOL:
-        return False
-    expected_prov, _ = CAPABILITY_TO_TOOL[cap_id]
-    prov = provider or expected_prov
-    return prov in connected or expected_prov in connected
+    del provider, connected
+    return cap_id in available_caps
 
 
 def _heuristic_whatsapp_read(query: str, available_caps: Set[str]) -> List[Dict[str, Any]]:
@@ -372,6 +380,68 @@ def _heuristic_email(query: str, available_caps: Set[str]) -> List[Dict[str, Any
     return out
 
 
+_CONNECTED_APPS_SIGNALS = (
+    "connected apps",
+    "what is connected",
+    "what's connected",
+    "what apps are connected",
+    "which apps are connected",
+    "apps are connected",
+    "what integrations",
+    "which integrations",
+)
+
+
+def _is_connected_apps_query(query: str) -> bool:
+    q = query.lower()
+    return any(signal in q for signal in _CONNECTED_APPS_SIGNALS)
+
+
+def _heuristic_connected_apps_query(query: str) -> bool:
+    return _is_connected_apps_query(query)
+
+
+def _heuristic_file_search(
+    query: str, available_caps: Set[str], connected: Set[str]
+) -> List[Dict[str, Any]]:
+    q = query.lower()
+    if not any(
+        w in q
+        for w in [
+            "search my files",
+            "search my documents",
+            "find my file",
+            "find my document",
+            "uploaded file",
+            "uploaded pdf",
+            "my pdf",
+            "my document",
+            "file search",
+            "drive",
+        ]
+    ):
+        return []
+    out: List[Dict[str, Any]] = []
+    search_q = query
+    if "files.search_documents" in available_caps and "google" in connected:
+        out.append(
+            {
+                "capability": "files.search_documents",
+                "provider": "google",
+                "args": {"query": search_q, "maxResults": 10},
+            }
+        )
+    if "files.search_documents" in available_caps and "files" in connected:
+        out.append(
+            {
+                "capability": "files.search_documents",
+                "provider": "files",
+                "args": {"query": search_q, "maxResults": 10},
+            }
+        )
+    return out
+
+
 def _heuristic_calendar(query: str, available_caps: Set[str]) -> List[Dict[str, Any]]:
     q = query.lower()
     if re.search(r"\b(remind|reminder|notify me)\b", q):
@@ -421,6 +491,7 @@ def _heuristic_capabilities(
     out.extend(_heuristic_whatsapp_read(query, available_caps))
     out.extend(_heuristic_email(query, available_caps))
     out.extend(_heuristic_calendar(query, available_caps))
+    out.extend(_heuristic_file_search(query, available_caps, connected))
     out = _dedupe_cap_items(out)
 
     send_intent = bool(
@@ -681,6 +752,18 @@ async def plan_tools(
             tools,
             [],
             "llm-scheduling-empty",
+            warnings,
+        )
+
+    if _heuristic_connected_apps_query(query):
+        return _build_plan_result(
+            query,
+            context,
+            user_id,
+            connections,
+            tools,
+            [],
+            "connected-apps-info",
             warnings,
         )
 

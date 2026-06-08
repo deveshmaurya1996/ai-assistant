@@ -25,6 +25,7 @@ def classify_image_intent(
         r"\b(edit|modify|retouch|inpaint|change|alter|update)\b",
         r"\b(remove|add|replace|erase)\b.+\b(from|in|on)\b",
         r"\bmake\b.+\b(sky|background|hair|color|colou?r)\b",
+        r"\b(the|this|that|previous|last)\s+(generated\s+)?(image|picture|photo)\b",
     ]
     if has_image_attachment and any(re.search(p, q) for p in edit_signals):
         return "image_edit"
@@ -34,6 +35,8 @@ def classify_image_intent(
         r"\b(make|produce)\b.+\b(image|picture|photo|illustration|logo|poster|artwork|icon)\b",
         r"\b(image|picture|photo|illustration|logo|poster)\b.+\b(of|showing|with|featuring)\b",
         r"\bdraw\b.+\b(me|a|an)\b",
+        r"\bshow me\b.+\b(picture|image|photo|illustration)\b",
+        r"\bmake me\b.+\b(an?\s+)?(image|picture|photo|illustration)\b",
     ]
     if any(re.search(p, q) for p in generate_signals):
         return "image"
@@ -42,16 +45,16 @@ def classify_image_intent(
 
 
 def classify_task(query: str, explicit_task: Optional[str] = None) -> str:
+    image_intent = classify_image_intent(query)
+    if image_intent == "image":
+        return "image"
+
     if explicit_task and explicit_task.strip() and explicit_task.strip() != "auto":
         return explicit_task.strip()
 
     q = query.lower().strip()
     if not q:
         return "fast_chat"
-
-    image_intent = classify_image_intent(query)
-    if image_intent == "image":
-        return "image"
 
     if re.search(
         r"\b(analyze|describe|read|ocr|extract text|what(?:'s| is) in (?:this|the)"

@@ -133,7 +133,9 @@ class AssistantOverlayModule : Module() {
     }
 
     AsyncFunction("showReminderOverlay") { displayTitle: String, userPrompt: String ->
-      val context = appContext.reactContext ?: return@AsyncFunction null
+      val context = appContext.reactContext?.applicationContext
+        ?: appContext.currentActivity?.applicationContext
+        ?: return@AsyncFunction null
       if (!OverlayWindowManager.canDrawOverlays(context)) return@AsyncFunction null
       val prefs =
         context.getSharedPreferences("reminder_overlay_prefs", android.content.Context.MODE_PRIVATE)

@@ -373,6 +373,10 @@ async def _fetch_manifest_endpoint(
         return None
 
 
+def invalidate_integration_manifest(user_id: str) -> None:
+    _manifest_cache.pop(user_id, None)
+
+
 async def fetch_integration_manifest(
     user_id: str,
 ) -> Tuple[str, Set[str], List[Dict]]:
@@ -382,20 +386,25 @@ async def fetch_integration_manifest(
         return cached[1], cached[2], cached[3]
 
     headers = {"X-Internal-Token": INTERNAL_SERVICE_TOKEN}
-    gateway_coro = _fetch_manifest_endpoint(
+    gateway_result = await _fetch_manifest_endpoint(
         GATEWAY_URL, "/internal/integrations/manifest", user_id, headers
     )
-    skill_coro = _fetch_manifest_endpoint(
+
+    if gateway_result is not None:
+        text, caps, connections = gateway_result
+        _manifest_cache[user_id] = (
+            now + MANIFEST_CACHE_TTL_SECONDS,
+            text,
+            caps,
+            connections,
+        )
+        return text, caps, connections
+
+    skill_result = await _fetch_manifest_endpoint(
         SKILL_RUNTIME_URL, "/v1/integrations/manifest", user_id, {}
     )
-    gateway_result, skill_result = await asyncio.gather(
-        gateway_coro, skill_coro, return_exceptions=True
-    )
-
-    for result in (gateway_result, skill_result):
-        if isinstance(result, Exception) or result is None:
-            continue
-        text, caps, connections = result
+    if skill_result is not None:
+        text, caps, connections = skill_result
         _manifest_cache[user_id] = (
             now + MANIFEST_CACHE_TTL_SECONDS,
             text,

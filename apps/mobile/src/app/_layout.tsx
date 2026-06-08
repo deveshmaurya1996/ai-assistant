@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import {
   useFonts,
@@ -69,15 +70,17 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <KeyboardProvider>
-        <ThemeProvider>
-          <BottomSheetModalProvider>
-            <UpdateGate>
-              <RootStack />
-            </UpdateGate>
-          </BottomSheetModalProvider>
-        </ThemeProvider>
-      </KeyboardProvider>
+      <SafeAreaProvider>
+        <KeyboardProvider>
+          <ThemeProvider>
+            <BottomSheetModalProvider>
+              <UpdateGate>
+                <RootStack />
+              </UpdateGate>
+            </BottomSheetModalProvider>
+          </ThemeProvider>
+        </KeyboardProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

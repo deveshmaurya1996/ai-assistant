@@ -2,6 +2,7 @@ import { memo, useState } from 'react';
 import { View, StyleSheet, ActivityIndicator, Pressable, useWindowDimensions } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Bookmark, Check, Copy } from 'lucide-react-native';
+import type { ChatAttachmentRef } from '@ai-assistant/sdk';
 import type { ChatMessage } from '@ai-assistant/types/chat';
 import { LEGACY_ASSISTANT_LABEL } from '@/features/chat/chatRoutes';
 import { Text } from '@/components/ui/Text';
@@ -12,6 +13,9 @@ import { ChatThinkingIndicator } from './ChatThinkingIndicator';
 import { ChatMarkdown } from './ChatMarkdown';
 import { ChatMessageAttachments } from './ChatMessageAttachments';
 import { ChatStreamingText } from './ChatStreamingText';
+import { fitChatImageDimensions } from './fitChatImageDimensions';
+import { ChatImageSkeleton } from './ChatImageSkeleton';
+import { GENERATED_IMAGE_SIZE } from '@/features/chat/isImageGenerationTurn';
 
 type Props = {
   message: ChatMessage;
@@ -22,8 +26,10 @@ type Props = {
   streamTurnKey?: number;
   thinkingUserMessage?: string;
   streamStatusMessage?: string | null;
+  showImageSkeleton?: boolean;
   isSaved?: boolean;
   onSaveNote?: (content: string, messageId: string) => Promise<void>;
+  onEditImage?: (attachment: ChatAttachmentRef) => void;
 };
 
 function isUserMessage(message: ChatMessage): boolean {
@@ -38,29 +44,45 @@ function ChatMessageBubbleInner({
   streamActive = false,
   thinkingUserMessage,
   streamStatusMessage,
+  showImageSkeleton = false,
   isSaved = false,
   onSaveNote,
+  onEditImage,
 }: Props) {
   const { colors } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
   const isUser = isUserMessage(message);
-  const assistantWrapWidth = windowWidth * 0.85;
+  const bubbleMaxWidth = Math.round(windowWidth * 0.85);
+  const assistantBorder = isUser ? 0 : 1;
+  const imageMaxWidth = bubbleMaxWidth - assistantBorder * 2;
+  const hasAttachments = Boolean(message.attachments?.length);
+  const hasText = Boolean(message.content?.trim());
+  const imageBubbleFullWidth = hasAttachments || showImageSkeleton;
+  const imageSkeletonSize = fitChatImageDimensions(
+    GENERATED_IMAGE_SIZE.width,
+    GENERATED_IMAGE_SIZE.height,
+    imageMaxWidth,
+    320,
+    true
+  );
+  const assistantWrapWidth = bubbleMaxWidth;
   const isStreamingBubble = message.id === STREAMING_MESSAGE_ID;
   const hasStreamContent = Boolean(message.content?.trim());
   const showThinking =
     isStreamingBubble &&
     !hasStreamContent &&
+    !showImageSkeleton &&
     (showGeneratingSpinner || streamActive);
   const streamLive =
     isStreamingBubble &&
     hasStreamContent &&
     (streamActive || showStreamCursor);
-  const canActOnAssistant =
-    !isUser &&
-    !isStreamingBubble &&
+  const canCopy =
     Boolean(message.content.trim()) &&
-    Boolean(onSaveNote) &&
+    !isStreamingBubble &&
     !message.id.startsWith('local-');
+  const canSave =
+    !isUser && canCopy && Boolean(onSaveNote);
 
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -87,7 +109,8 @@ function ChatMessageBubbleInner({
       style={[
         styles.wrap,
         { alignSelf: isUser ? 'flex-end' : 'flex-start' },
-        !isUser && { width: assistantWrapWidth, maxWidth: assistantWrapWidth },
+        imageBubbleFullWidth && { width: bubbleMaxWidth, maxWidth: bubbleMaxWidth },
+        !isUser && !imageBubbleFullWidth && { width: assistantWrapWidth, maxWidth: assistantWrapWidth },
       ]}>
       {!isUser && assistantLabel ? (
         <Text variant="caption" muted style={styles.assistantLabel}>
@@ -100,11 +123,11 @@ function ChatMessageBubbleInner({
           statusOverride={streamStatusMessage}
         />
       ) : null}
-      {isUser || !isStreamingBubble || hasStreamContent ? (
+      {isUser || !isStreamingBubble || hasStreamContent || showImageSkeleton ? (
         <View
           style={[
             styles.bubble,
-            !isUser && styles.assistantBubble,
+            imageBubbleFullWidth && styles.imageBubble,
             {
               backgroundColor: isUser ? colors.primary : colors.surfaceElevated,
               borderColor: colors.border,
@@ -113,60 +136,107 @@ function ChatMessageBubbleInner({
           ]}>
           {isUser ? (
             <>
-              {message.attachments?.length ? (
-                <ChatMessageAttachments attachments={message.attachments} />
+              {hasAttachments ? (
+                <ChatMessageAttachments
+                  attachments={message.attachments!}
+                  maxImageWidth={imageMaxWidth}
+                  fillWidth
+                />
               ) : null}
-              {message.content ? (
-                <Text style={{ color: colors.onPrimary }}>{message.content}</Text>
+              {hasText ? (
+                <View
+                  style={[
+                    styles.bubbleText,
+                    hasAttachments ? styles.bubbleTextAfterImage : null,
+                  ]}>
+                  <Text style={{ color: colors.onPrimary }}>{message.content}</Text>
+                </View>
               ) : null}
             </>
           ) : isStreamingBubble ? (
-            <View style={styles.streamBody}>
-              <ChatStreamingText
-                content={message.content}
-                color={colors.text}
-                accentColor={colors.primary}
-                showCursor={streamLive}
-                cursorColor={colors.primary}
-                revealActive={streamActive}
-              />
-            </View>
+            <>
+              {showImageSkeleton ? (
+                <ChatImageSkeleton
+                  width={imageSkeletonSize.width}
+                  height={imageSkeletonSize.height}
+                  fillWidth
+                />
+              ) : null}
+              {hasStreamContent ? (
+                <View
+                  style={[
+                    styles.bubbleText,
+                    showImageSkeleton ? styles.bubbleTextAfterImage : null,
+                  ]}>
+                  <ChatStreamingText
+                    content={message.content}
+                    color={colors.text}
+                    accentColor={colors.primary}
+                    showCursor={streamLive}
+                    cursorColor={colors.primary}
+                    revealActive={streamActive}
+                  />
+                </View>
+              ) : null}
+            </>
           ) : (
-            <ChatMarkdown
-              content={message.content}
-              color={colors.text}
-              accentColor={colors.primary}
-            />
+            <>
+              {hasAttachments ? (
+                <ChatMessageAttachments
+                  attachments={message.attachments!}
+                  onEditImage={onEditImage}
+                  maxImageWidth={imageMaxWidth}
+                  fillWidth
+                />
+              ) : null}
+              {hasText ? (
+                <View
+                  style={[
+                    styles.bubbleText,
+                    hasAttachments ? styles.bubbleTextAfterImage : null,
+                  ]}>
+                  <ChatMarkdown
+                    content={message.content}
+                    color={colors.text}
+                    accentColor={colors.primary}
+                  />
+                </View>
+              ) : null}
+            </>
           )}
         </View>
       ) : null}
-      {canActOnAssistant ? (
-        <View style={styles.actions}>
-          <Pressable
-            onPress={() => void handleCopy()}
-            style={[styles.actionBtn, { backgroundColor: colors.surfaceElevated }]}
-            accessibilityLabel="Copy message">
-            {copied ? (
-              <Check color={colors.success} size={16} />
-            ) : (
-              <Copy color={colors.textMuted} size={16} />
-            )}
-          </Pressable>
-          <Pressable
-            onPress={() => void handleToggleSave()}
-            disabled={saving}
-            style={[styles.actionBtn, { backgroundColor: colors.surfaceElevated }]}
-            accessibilityLabel={isSaved ? 'Remove from notes' : 'Save to notes'}>
-            {saving ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <Bookmark
-                color={isSaved ? colors.primary : colors.textMuted}
-                fill={isSaved ? colors.primary : 'transparent'}
-                size={16}
-              />
-            )}
-          </Pressable>
+      {canCopy || canSave ? (
+        <View style={[styles.actions, isUser && styles.actionsUser]}>
+          {canCopy ? (
+            <Pressable
+              onPress={() => void handleCopy()}
+              style={[styles.actionBtn, { backgroundColor: colors.surfaceElevated }]}
+              accessibilityLabel="Copy message">
+              {copied ? (
+                <Check color={colors.success} size={16} />
+              ) : (
+                <Copy color={colors.textMuted} size={16} />
+              )}
+            </Pressable>
+          ) : null}
+          {canSave ? (
+            <Pressable
+              onPress={() => void handleToggleSave()}
+              disabled={saving}
+              style={[styles.actionBtn, { backgroundColor: colors.surfaceElevated }]}
+              accessibilityLabel={isSaved ? 'Remove from notes' : 'Save to notes'}>
+              {saving ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Bookmark
+                  color={isSaved ? colors.primary : colors.textMuted}
+                  fill={isSaved ? colors.primary : 'transparent'}
+                  size={16}
+                />
+              )}
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
     </View>
@@ -182,6 +252,7 @@ function bubblePropsEqual(prev: Props, next: Props): boolean {
       prev.showStreamCursor === next.showStreamCursor &&
       prev.streamActive === next.streamActive &&
       prev.streamStatusMessage === next.streamStatusMessage &&
+      prev.showImageSkeleton === next.showImageSkeleton &&
       prev.thinkingUserMessage === next.thinkingUserMessage &&
       prev.assistantLabel === next.assistantLabel
     );
@@ -189,11 +260,13 @@ function bubblePropsEqual(prev: Props, next: Props): boolean {
   return (
     prev.message.id === next.message.id &&
     prev.message.content === next.message.content &&
+    prev.message.attachments?.length === next.message.attachments?.length &&
     (prev.message.assistantDisplayName ?? LEGACY_ASSISTANT_LABEL) ===
       (next.message.assistantDisplayName ?? LEGACY_ASSISTANT_LABEL) &&
     prev.isSaved === next.isSaved &&
     prev.assistantLabel === next.assistantLabel &&
-    prev.onSaveNote === next.onSaveNote
+    prev.onSaveNote === next.onSaveNote &&
+    prev.onEditImage === next.onEditImage
   );
 }
 
@@ -211,24 +284,34 @@ const styles = StyleSheet.create({
     marginLeft: spacing.xs,
   },
   bubble: {
-    padding: spacing.md,
     borderRadius: radii.lg,
     flexGrow: 0,
-    flexShrink: 0,
+    flexShrink: 1,
+    overflow: 'hidden',
+    justifyContent: 'flex-start',
   },
-  assistantBubble: {
+  bubbleText: {
+    padding: spacing.md,
+  },
+  bubbleTextAfterImage: {
+    paddingTop: spacing.sm,
+    alignSelf: 'stretch',
+  },
+  imageBubble: {
     width: '100%',
     minWidth: 0,
-  },
-  streamBody: {
-    gap: spacing.sm,
-    width: '100%',
+    alignItems: 'stretch',
   },
   actions: {
     flexDirection: 'row',
     gap: spacing.xs,
     marginTop: spacing.xs,
     marginLeft: spacing.xs,
+  },
+  actionsUser: {
+    alignSelf: 'flex-end',
+    marginLeft: 0,
+    marginRight: spacing.xs,
   },
   actionBtn: {
     width: 32,

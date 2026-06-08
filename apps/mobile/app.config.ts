@@ -75,6 +75,7 @@ const config: ExpoConfig = {
     ],
     'expo-image',
     'expo-video',
+    '@react-native-community/datetimepicker',
     [
       'expo-splash-screen',
       {

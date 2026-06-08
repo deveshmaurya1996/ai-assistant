@@ -39,6 +39,28 @@ function decodeGmailBody(part: Record<string, unknown>): string {
   return '';
 }
 
+function formatGoogleApiError(status: number, body: string): string {
+  try {
+    const parsed = JSON.parse(body) as {
+      error?: { message?: string; status?: string; errors?: Array<{ reason?: string }> };
+    };
+    const msg = parsed.error?.message ?? body;
+    const reason = parsed.error?.errors?.[0]?.reason ?? '';
+    if (status === 401 || reason === 'authError') {
+      return 'Google sign-in expired — open Connect Apps and reconnect Google.';
+    }
+    if (status === 403 && /gmail api has not been used|accessNotConfigured|SERVICE_DISABLED/i.test(msg)) {
+      return 'Gmail API is not enabled for this app in Google Cloud Console. Enable Gmail API for your OAuth project, then reconnect Google in Connect Apps.';
+    }
+    if (status === 403) {
+      return `Google denied access: ${msg}`;
+    }
+    return msg.slice(0, 400);
+  } catch {
+    return body.slice(0, 400);
+  }
+}
+
 export class GoogleConnector implements IntegrationConnector {
   providerId = 'google';
   capabilities: Capability[] = ['search', 'read', 'write', 'schedule'];
@@ -138,21 +160,77 @@ export class GoogleConnector implements IntegrationConnector {
     };
   }
 
-  async healthCheck(_connectionId: string, credentials: JsonObject): Promise<HealthStatus> {
-    if (!credentials.access_token) {
-      return { healthy: false, message: 'Missing access token' };
+  private async ensureAccessToken(
+    connectionId: string,
+    credentials: JsonObject
+  ): Promise<{ creds: JsonObject; refreshed: boolean }> {
+    const refreshToken = credentials.refresh_token as string | undefined;
+    if (refreshToken) {
+      try {
+        const creds = await this.refreshTokens(connectionId, credentials);
+        return { creds, refreshed: true };
+      } catch (err) {
+        if (!credentials.access_token) {
+          throw err;
+        }
+      }
     }
-    return { healthy: true };
+    if (!credentials.access_token) {
+      throw new Error('No Google refresh token — reconnect Google in Connect Apps');
+    }
+    return { creds: credentials, refreshed: false };
+  }
+
+  async healthCheck(connectionId: string, credentials: JsonObject): Promise<HealthStatus> {
+    try {
+      const { creds, refreshed } = await this.ensureAccessToken(connectionId, credentials);
+      const token = creds.access_token as string | undefined;
+      if (!token) {
+        return { healthy: false, message: 'Missing access token — reconnect Google in Connect Apps' };
+      }
+
+      const res = await fetch(
+        `https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${encodeURIComponent(token)}`
+      );
+      if (!res.ok) {
+        return {
+          healthy: false,
+          message: 'Google access expired — reconnect in Connect Apps',
+        };
+      }
+      return {
+        healthy: true,
+        ...(refreshed ? { refreshedCredentials: creds } : {}),
+      };
+    } catch (err) {
+      return {
+        healthy: false,
+        message:
+          err instanceof Error
+            ? err.message
+            : 'Google token refresh failed — reconnect in Connect Apps',
+      };
+    }
   }
 
   async executeTool(
-    _connectionId: string,
+    connectionId: string,
     tool: string,
     args: JsonObject,
     _ctx: ExecutionContext,
     credentials: JsonObject
   ): Promise<ToolResult> {
-    const token = credentials.access_token as string | undefined;
+    let creds: JsonObject;
+    try {
+      ({ creds } = await this.ensureAccessToken(connectionId, credentials));
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : 'Not authenticated with Google',
+      };
+    }
+
+    const token = creds.access_token as string | undefined;
     if (!token) return { success: false, error: 'Not authenticated with Google' };
 
     switch (tool) {
@@ -162,7 +240,10 @@ export class GoogleConnector implements IntegrationConnector {
           `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent('is:unread in:inbox')}&maxResults=${maxResults}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        if (!res.ok) return { success: false, error: await res.text() };
+        if (!res.ok) {
+          const errText = await res.text();
+          return { success: false, error: formatGoogleApiError(res.status, errText) };
+        }
         const list = (await res.json()) as { messages?: { id: string }[] };
         const items: Array<{
           id: string;
