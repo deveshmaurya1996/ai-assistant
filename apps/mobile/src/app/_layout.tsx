@@ -63,7 +63,7 @@ export default function RootLayout() {
   if (!appReady) {
     return (
       <ThemeProvider>
-        <AppSplash playVideo onComplete={() => setSplashDone(true)} />
+        <AppSplash onComplete={() => setSplashDone(true)} />
       </ThemeProvider>
     );
   }

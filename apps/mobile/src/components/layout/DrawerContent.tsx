@@ -478,7 +478,7 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
       <View style={[styles.divider, { backgroundColor: colors.border }]} />
       <View style={styles.navSection}>
         <NavRow
-          icon={<AssistantIcon drawer size={26} />}
+          icon={<AssistantIcon drawer size={24} inset={4} />}
           label={assistantDisplayName}
           active={isAssistantActive}
           onPress={() =>

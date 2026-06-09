@@ -1,4 +1,5 @@
 import { ArrowUp, Plus, Square } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import { useCallback, useRef, useState } from 'react';
 import {
   Alert,
@@ -131,6 +132,7 @@ export function ChatComposer({
   );
 
   const handleMicPress = useCallback(async () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const result = await toggleRecording();
     if (result.kind === 'text') {
       if (autoSendAfterTranscribe && !sendDisabled && !isGenerating) {
@@ -142,6 +144,7 @@ export function ChatComposer({
   }, [autoSendAfterTranscribe, isGenerating, sendDisabled, sendMessage, toggleRecording]);
 
   const openAssistant = useCallback(() => {
+    void Haptics.selectionAsync();
     router.push(Routes.assistant);
   }, []);
 
@@ -150,6 +153,7 @@ export function ChatComposer({
       Alert.alert('Limit reached', 'You can attach up to 4 files per message.');
       return;
     }
+    void Haptics.selectionAsync();
     inputRef.current?.blur();
     Keyboard.dismiss();
     requestAnimationFrame(() => {
@@ -281,17 +285,9 @@ export function ChatComposer({
                   onPress={openAssistant}
                   disabled={isGenerating}
                   accessibilityLabel={`Open ${assistantDisplayName}`}
-                  accessibilityRole="button">
-                  <View
-                    style={[
-                      styles.actionBtn,
-                      {
-                        backgroundColor: colors.primaryMuted,
-                        opacity: isGenerating ? 0.45 : 1,
-                      },
-                    ]}>
-                    <AssistantIcon size={18} />
-                  </View>
+                  accessibilityRole="button"
+                  style={{ opacity: isGenerating ? 0.45 : 1 }}>
+                  <AssistantIcon size={36} inset={8} />
                 </PressableScale>
               </View>
             )}

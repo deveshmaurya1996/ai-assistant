@@ -1,11 +1,11 @@
-import { forwardRef, type ReactNode } from 'react';
+import { forwardRef } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import {
   BottomSheetModal,
   BottomSheetView,
   type BottomSheetModal as BottomSheetModalType,
 } from '@gorhom/bottom-sheet';
-import { Camera, FileText, Image as ImageIcon } from 'lucide-react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Text } from '@/components/ui/Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing, radii } from '@/theme/tokens';
@@ -17,27 +17,21 @@ type Props = {
   onFiles: () => void | Promise<void>;
 };
 
+const ATTACHMENT_ICONS = {
+  camera: { name: 'camera', color: '#3B82F6' },
+  photos: { name: 'image-multiple', color: '#EC4899' },
+  files: { name: 'file-document-outline', color: '#F97316' },
+} as const;
+
 export const ChatAttachmentPickerSheet = forwardRef<BottomSheetModalType, Props>(
   function ChatAttachmentPickerSheet({ onCamera, onPhotos, onFiles }, ref) {
     const { colors } = useTheme();
 
-    const row = (
-      label: string,
-      icon: ReactNode,
-      action: () => void | Promise<void>
-    ) => (
-      <Pressable
-        onPress={() => {
-          void action();
-          dismissBottomSheet(ref);
-        }}
-        style={[styles.row, { borderBottomColor: colors.border }]}>
-        <View style={[styles.iconWrap, { backgroundColor: colors.surfaceElevated }]}>
-          {icon}
-        </View>
-        <Text variant="body">{label}</Text>
-      </Pressable>
-    );
+    const options = [
+      { key: 'camera' as const, label: 'Camera', action: onCamera },
+      { key: 'photos' as const, label: 'Photos', action: onPhotos },
+      { key: 'files' as const, label: 'Files', action: onFiles },
+    ];
 
     return (
       <BottomSheetModal
@@ -52,13 +46,31 @@ export const ChatAttachmentPickerSheet = forwardRef<BottomSheetModalType, Props>
           <Text variant="h2" style={styles.title}>
             Add to message
           </Text>
-          {row('Camera', <Camera color={colors.text} size={22} />, onCamera)}
-          {row('Photos', <ImageIcon color={colors.text} size={22} />, onPhotos)}
-          {row(
-            'Files',
-            <FileText color={colors.text} size={22} />,
-            onFiles
-          )}
+          {options.map((option) => {
+            const icon = ATTACHMENT_ICONS[option.key];
+            return (
+              <Pressable
+                key={option.key}
+                onPress={() => {
+                  void option.action();
+                  dismissBottomSheet(ref);
+                }}
+                style={[styles.row, { borderBottomColor: colors.border }]}>
+                <View
+                  style={[
+                    styles.iconWrap,
+                    { backgroundColor: `${icon.color}18` },
+                  ]}>
+                  <MaterialCommunityIcons
+                    name={icon.name}
+                    size={22}
+                    color={icon.color}
+                  />
+                </View>
+                <Text variant="body">{option.label}</Text>
+              </Pressable>
+            );
+          })}
         </BottomSheetView>
       </BottomSheetModal>
     );

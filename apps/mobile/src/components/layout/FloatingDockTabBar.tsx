@@ -9,7 +9,8 @@ import {
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { MessageSquare, Settings, Sparkles } from 'lucide-react-native';
+import { MessageSquare, Settings } from 'lucide-react-native';
+import { AssistantIcon } from '@/components/assistant/AssistantIcon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
@@ -31,7 +32,7 @@ import { useSettingsStore } from '@/stores/settings';
 
 const TABS = [
   { name: 'chats', label: 'Chats', Icon: MessageSquare },
-  { name: 'assistant', label: 'Assistant', Icon: Sparkles },
+  { name: 'assistant', label: 'Assistant' },
   { name: 'settings', label: 'Settings', Icon: Settings },
 ] as const;
 
@@ -192,7 +193,6 @@ function DockInner({
       />
       {TABS.map((tab, index) => {
         const focused = activeIndex === index;
-        const Icon = tab.Icon;
         const label = tab.name === 'assistant' ? assistantLabel : tab.label;
         return (
           <PressableScale
@@ -202,7 +202,16 @@ function DockInner({
               void Haptics.selectionAsync();
               navigate(tab.name);
             }}>
-            <Icon color={focused ? colors.primary : colors.textMuted} size={20} />
+            {tab.name === 'assistant' ? (
+              <View style={{ opacity: focused ? 1 : 0.55 }}>
+                <AssistantIcon size={22} inset={2} />
+              </View>
+            ) : (
+              <tab.Icon
+                color={focused ? colors.primary : colors.textMuted}
+                size={20}
+              />
+            )}
             <Text
               variant="caption"
               numberOfLines={1}

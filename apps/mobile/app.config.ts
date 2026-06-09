@@ -1,5 +1,9 @@
 import type { ExpoConfig } from 'expo/config';
 
+const { splashBackground } = require('./src/theme/brand.constants.js') as {
+  splashBackground: string;
+};
+
 const EAS_PROJECT_ID = 'e571137a-6ce6-4d5f-bba1-ee812975eb4a';
 const APP_VERSION = '1.0.0';
 
@@ -10,6 +14,7 @@ const config: ExpoConfig = {
   scheme: 'ai-assistant',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
+  icon: './assets/images/app-icon.png',
   runtimeVersion: APP_VERSION,
   updates: {
     url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
@@ -31,6 +36,11 @@ const config: ExpoConfig = {
     package: 'com.aiassistant.app',
     googleServicesFile: './google-services.json',
     versionCode: 1,
+    adaptiveIcon: {
+      foregroundImage: './assets/images/android-icon-foreground.png',
+      backgroundColor: splashBackground,
+      monochromeImage: './assets/images/android-icon-monochrome.png',
+    },
     softwareKeyboardLayoutMode: 'resize',
     permissions: [
       'android.permission.RECORD_AUDIO',
@@ -67,8 +77,8 @@ const config: ExpoConfig = {
     [
       'expo-notifications',
       {
-        icon: './assets/images/splash-icon.png',
-        color: '#4F46E5',
+        icon: './assets/images/notification-icon.png',
+        color: splashBackground,
         defaultChannel: 'reminders',
         sounds: [],
       },
@@ -87,11 +97,11 @@ const config: ExpoConfig = {
     [
       'expo-splash-screen',
       {
-        backgroundColor: '#F4F5F7',
+        backgroundColor: splashBackground,
         image: './assets/images/splash-icon.png',
-        imageWidth: 120,
+        imageWidth: 300,
         dark: {
-          backgroundColor: '#0B0D10',
+          backgroundColor: splashBackground,
           image: './assets/images/splash-icon.png',
         },
       },

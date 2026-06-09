@@ -54,8 +54,7 @@ class OverlayBubbleService : Service() {
     val container = FrameLayout(this)
     val size = (56 * resources.displayMetrics.density).toInt()
     val icon = ImageView(this)
-    icon.setImageResource(android.R.drawable.ic_btn_speak_now)
-    icon.setColorFilter(Color.WHITE)
+    icon.setImageResource(R.drawable.ic_assistant_logo)
     val bg = GradientDrawable()
     bg.shape = GradientDrawable.OVAL
     bg.setColor(Color.parseColor("#4F46E5"))
@@ -177,7 +176,7 @@ class OverlayBubbleService : Service() {
     return NotificationCompat.Builder(this, CHANNEL_ID)
       .setContentTitle("AI Assistant")
       .setContentText("Floating assistant active")
-      .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+      .setSmallIcon(R.drawable.ic_assistant_logo)
       .setContentIntent(pending)
       .setOngoing(true)
       .build()

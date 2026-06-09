@@ -36,7 +36,7 @@ class VoiceAssistantForegroundService : Service() {
     val notification: Notification = NotificationCompat.Builder(this, channelId)
       .setContentTitle("Voice assistant active")
       .setContentText("Tap to return to the app")
-      .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+      .setSmallIcon(R.drawable.ic_assistant_logo)
       .setContentIntent(pendingIntent)
       .setOngoing(true)
       .build()

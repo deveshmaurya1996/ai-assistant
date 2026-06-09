@@ -1,3 +1,5 @@
+import { splashBackground } from './brand.constants.js';
+
 export type ThemeMode = 'light' | 'dark' | 'system';
 
 export type ColorScheme = 'light' | 'dark';
@@ -69,7 +71,7 @@ export const palettes: Record<ColorScheme, ThemeColors> = {
     overlay: 'rgba(0,0,0,0.4)',
   },
   dark: {
-    background: '#0B0D10',
+    background: splashBackground,
     surface: '#151820',
     surfaceElevated: '#1C2030',
     border: '#2A3040',
@@ -77,10 +79,12 @@ export const palettes: Record<ColorScheme, ThemeColors> = {
     textMuted: '#9CA3AF',
     primary: '#818CF8',
     primaryMuted: '#1E1B4B',
-    onPrimary: '#0B0D10',
+    onPrimary: splashBackground,
     danger: '#F87171',
     success: '#4ADE80',
     dockBlur: 'dark',
     overlay: 'rgba(0,0,0,0.6)',
   },
 };
+
+export { splashBackground };

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { Image, Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useTheme } from '@/theme/ThemeProvider';
+import { SplashLogo } from '@/components/assistant/AssistantIcon';
+import { splashBackground } from '@/theme/tokens';
 
-const SPLASH_LOGO = require('../../../assets/images/splash-icon.png');
 const SPLASH_VIDEO = require('../../../assets/images/splash-video.mp4');
 
 const SPLASH_MAX_MS = 8000;
@@ -17,7 +17,6 @@ type Props = {
 let introVideoPlayed = false;
 
 export function AppSplash({ onComplete, playVideo = false }: Props) {
-  const { colors } = useTheme();
   const finishedRef = useRef(false);
   const shouldPlayVideo =
     playVideo && !introVideoPlayed && Platform.OS !== 'web';
@@ -36,17 +35,12 @@ export function AppSplash({ onComplete, playVideo = false }: Props) {
   }, [shouldPlayVideo, finish]);
 
   if (shouldPlayVideo) {
-    return <SplashVideo onComplete={finish} backgroundColor={colors.background} />;
+    return <SplashVideo onComplete={finish} backgroundColor={splashBackground} />;
   }
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <Image
-        source={SPLASH_LOGO}
-        style={styles.logo}
-        resizeMode="contain"
-        accessibilityLabel="AI Assistant"
-      />
+    <View style={[styles.root, { backgroundColor: splashBackground }]}>
+      <SplashLogo size={180} />
     </View>
   );
 }
@@ -106,11 +100,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   video: {
-    width: 160,
-    height: 160,
-  },
-  logo: {
-    width: 160,
-    height: 160,
+    width: 240,
+    height: 240,
   },
 });
