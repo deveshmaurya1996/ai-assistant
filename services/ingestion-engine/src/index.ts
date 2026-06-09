@@ -54,7 +54,11 @@ async function main() {
       const { connectionId } = job.data as { connectionId: string };
       await syncConnection(connectionId);
     },
-    { connection: getConnection() }
+    {
+      connection: getConnection(),
+      concurrency: 2,
+      limiter: { max: 5, duration: 1000 },
+    }
   );
 
   worker.on('error', (err) => console.error('[ingestion] worker error:', err.message));

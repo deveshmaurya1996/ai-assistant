@@ -20,6 +20,12 @@ import { sessionManager } from '../whatsapp/session-manager';
 import { markConnectionActive } from '../whatsapp/connection-lifecycle';
 import { assessConnectionsHealth } from '../services/integration-health.service';
 import { ensureIntegrationProvider } from '../services/ensure-integration-provider.service';
+import {
+  checkDeviceFiles,
+  completeDeviceSync,
+  getDeviceFilesStatus,
+  updateDeviceFilesConfig,
+} from '../services/device-files.service';
 import { randomBytes } from 'crypto';
 
 function resolveWhatsAppBridgeSessionId(metadata: unknown): string | null {
@@ -187,6 +193,74 @@ export async function integrationRoutes(fastify: FastifyInstance) {
     }
   });
 
+  authenticated.get('/files/device-status', async (request, reply) => {
+    try {
+      const userId = requireUserId(request);
+      return reply.send(await getDeviceFilesStatus(userId));
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  authenticated.put('/files/device-config', async (request, reply) => {
+    try {
+      const userId = requireUserId(request);
+      const body = request.body as {
+        enabledSources?: Array<'documents' | 'photos'>;
+        syncEnabled?: boolean;
+      };
+      const config = await updateDeviceFilesConfig(userId, body);
+      return reply.send({ config });
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  authenticated.post('/files/device-check', async (request, reply) => {
+    try {
+      const userId = requireUserId(request);
+      const body = request.body as {
+        items?: Array<{
+          devicePath: string;
+          deviceModifiedAt?: string;
+          sizeBytes?: number;
+        }>;
+      };
+      return reply.send(
+        await checkDeviceFiles(
+          userId,
+          (body.items ?? []).map((item) => ({
+            devicePath: item.devicePath,
+            deviceModifiedAt: item.deviceModifiedAt,
+            sizeBytes:
+              typeof item.sizeBytes === 'number' ? item.sizeBytes : undefined,
+          }))
+        )
+      );
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  authenticated.post('/files/sync-complete', async (request, reply) => {
+    try {
+      const userId = requireUserId(request);
+      const body = request.body as {
+        uploaded?: number;
+        skipped?: number;
+        failed?: number;
+      };
+      const config = await completeDeviceSync(userId, {
+        uploaded: Number(body.uploaded ?? 0),
+        skipped: Number(body.skipped ?? 0),
+        failed: Number(body.failed ?? 0),
+      });
+      return reply.send({ config });
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
   authenticated.get('/connections/:id/capabilities', async (request, reply) => {
     try {
       const userId = requireUserId(request);
@@ -263,6 +337,36 @@ export async function integrationRoutes(fastify: FastifyInstance) {
       const connector = getConnector(provider);
 
       if (!connector?.getConnectUrl) {
+        if (provider === 'files') {
+          const connection = await prisma.userConnection.upsert({
+            where: { id: connectionId },
+            create: {
+              id: connectionId,
+              userId,
+              providerId: provider,
+              status: 'PENDING',
+              scopes: ['read'],
+              metadata: {
+                deviceSync: {
+                  enabledSources: ['documents', 'photos'],
+                  syncEnabled: true,
+                  lastSyncAt: null,
+                  lastSyncStats: null,
+                },
+              } as Prisma.InputJsonValue,
+            },
+            update: {
+              status: 'PENDING',
+            },
+          });
+
+          return reply.send({
+            connectionId: connection.id,
+            type: 'local',
+            state: 'pending_setup',
+          });
+        }
+
         const connection = await prisma.userConnection.upsert({
           where: { id: connectionId },
           create: {

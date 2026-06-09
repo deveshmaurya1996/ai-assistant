@@ -17,6 +17,7 @@ const PORT_ENV = {
   'skill-runtime': 'SKILL_RUNTIME_PORT',
   'ai-orchestrator': 'AI_ORCHESTRATOR_PORT',
   'cognitive-runtime': 'AI_ORCHESTRATOR_PORT',
+  'ingestion-engine': 'INGESTION_ENGINE_PORT',
   studio: 'PRISMA_STUDIO_PORT',
   mobile: 'EXPO_DEV_PORT',
 };
@@ -192,6 +193,10 @@ const HANDLERS = {
   'ai-runtime': { serve: serveAi },
   'ai-orchestrator': { serve: serveCognitiveRuntime },
   'cognitive-runtime': { serve: serveCognitiveRuntime },
+  'ingestion-engine': {
+    build: ['pnpm', '--filter', '@ai-assistant/ingestion-engine', 'build'],
+    serve: () => runWithEnv(['pnpm', '--filter', '@ai-assistant/ingestion-engine', 'start']),
+  },
   studio: { serve: serveStudio },
   mobile: { serve: serveMobile },
 };

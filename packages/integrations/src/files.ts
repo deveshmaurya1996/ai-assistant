@@ -25,6 +25,7 @@ async function searchUserFiles(userId: string, query: string, limit = 8) {
         status: true,
         chunkCount: true,
         indexedAt: true,
+        source: true,
       },
     });
     return recent.map((f) => ({
@@ -34,6 +35,7 @@ async function searchUserFiles(userId: string, query: string, limit = 8) {
       summary: f.summary,
       status: f.status,
       chunkCount: f.chunkCount,
+      source: f.source ?? 'upload',
       excerpt: null,
     }));
   }
@@ -55,6 +57,7 @@ async function searchUserFiles(userId: string, query: string, limit = 8) {
       summary: true,
       status: true,
       chunkCount: true,
+      source: true,
     },
   });
 
@@ -72,6 +75,7 @@ async function searchUserFiles(userId: string, query: string, limit = 8) {
           mimeType: true,
           summary: true,
           status: true,
+          source: true,
         },
       },
     },
@@ -87,6 +91,7 @@ async function searchUserFiles(userId: string, query: string, limit = 8) {
       status: string;
       excerpt: string | null;
       chunkCount?: number;
+      source?: string;
     }
   >();
 
@@ -99,6 +104,7 @@ async function searchUserFiles(userId: string, query: string, limit = 8) {
       status: a.status,
       excerpt: null,
       chunkCount: a.chunkCount,
+      source: a.source ?? 'upload',
     });
   }
 

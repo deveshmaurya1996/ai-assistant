@@ -124,5 +124,36 @@ def cognitive_runtime_service():
     )
 
 
+def ingestion_engine_service():
+    enabled = enabled_services()
+    if not is_enabled('ingestion-engine', enabled):
+        return
+
+    local_resource(
+        'ingestion-engine',
+        'node ' + DEV_SCRIPT + ' build ingestion-engine',
+        serve_cmd='node ' + DEV_SCRIPT + ' serve ingestion-engine',
+        deps=[
+            DEV_SCRIPT,
+            'tilt_config.json',
+            'scripts/with-env.mjs',
+            '.env',
+            'services/ingestion-engine',
+            'packages/database',
+            'packages/config',
+            'packages/events',
+            'packages/integrations',
+            'packages/storage',
+            'packages/file-processing',
+        ],
+        env=port_env(),
+        ignore=SERVICE_BUILD_IGNORE,
+        allow_parallel=True,
+        labels=SERVICE_LABELS,
+        resource_deps=['db-setup', 'redis'],
+        links=[link(port_url('ingestion-engine'), 'Ingestion :' + str(PORTS['ingestion-engine']))],
+    )
+
+
 def ai_orchestrator_service():
     cognitive_runtime_service()

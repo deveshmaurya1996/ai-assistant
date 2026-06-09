@@ -365,11 +365,13 @@ def _heuristic_inbox_check(
         return []
 
     out: List[Dict[str, Any]] = []
-    wants_email = any(w in q for w in ["email", "gmail", "inbox", "mail"]) or (
-        generic and "google" in connected
+    explicit_email = any(w in q for w in ["email", "gmail", "mail"])
+    explicit_whatsapp = any(w in q for w in ["whatsapp", "wa ", "texts", "chats"])
+    wants_email = explicit_email or (
+        generic and "google" in connected and not explicit_whatsapp
     )
-    wants_whatsapp = any(w in q for w in ["whatsapp", "wa ", "texts", "chats"]) or (
-        generic and "whatsapp" in connected
+    wants_whatsapp = explicit_whatsapp or (
+        generic and "whatsapp" in connected and not explicit_email
     )
 
     if wants_email and "email.list_unread" in available_caps:
@@ -730,6 +732,20 @@ async def plan_tools(
 
     from orchestration.scheduling_planner import plan_scheduling_actions
 
+    connection_states = list(manifest_connection_states or [])
+    if not connection_states:
+        _, _, fetched_connections, fetched_states = await fetch_integration_manifest(
+            user_id
+        )
+        if fetched_states:
+            connection_states = fetched_states
+        elif fetched_connections:
+            connection_states = [
+                {"providerId": c.get("providerId"), "state": "ready"}
+                for c in fetched_connections
+                if c.get("providerId")
+            ]
+
     tools, connections, _, available_caps, warnings = await _available_tools(
         user_id,
         manifest_caps=manifest_caps,
@@ -803,9 +819,7 @@ async def plan_tools(
             warnings,
         )
 
-    integration_intent = resolve_integration_intent(
-        query, manifest_connection_states or []
-    )
+    integration_intent = resolve_integration_intent(query, connection_states)
     if integration_intent.user_guidance and integration_intent.action == "execute":
         warnings.append(integration_intent.user_guidance)
 

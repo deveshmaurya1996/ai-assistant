@@ -8,6 +8,11 @@ export interface BaileysSocket {
     content: { text: string }
   ) => Promise<{ key?: { id?: string } } | undefined>;
   onWhatsApp: (jid: string) => Promise<Array<{ exists?: boolean; jid?: string }> | undefined>;
+  fetchMessageHistory?: (
+    count: number,
+    oldestMsgKey: unknown,
+    oldestMsgTimestamp: number
+  ) => Promise<unknown>;
   end: (err?: Error) => void;
   ev: {
     on: (event: string, listener: (...args: any[]) => void) => void;

@@ -108,5 +108,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   setupSocketIO(app);
   startAllWorkers();
 
+  void import('./whatsapp/session-bootstrap.js').then(({ bootstrapWhatsAppSessions }) =>
+    bootstrapWhatsAppSessions()
+  );
+
   return app;
 }

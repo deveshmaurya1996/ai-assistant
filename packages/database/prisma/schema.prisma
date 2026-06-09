@@ -307,26 +307,33 @@ model IndexedResource {
 }
 
 model FileAsset {
-  id              String    @id @default(uuid())
-  userId          String
-  filename        String
-  mimeType        String
-  sizeBytes       Int
-  storageKey      String
-  storageBackend  String    @default("local")
-  checksum        String?
-  status          String    @default("pending")
-  summary         String?
-  analysis        Json?
-  chunkCount      Int       @default(0)
-  indexedAt       DateTime?
-  createdAt       DateTime  @default(now())
+  id                String    @id @default(uuid())
+  userId            String
+  filename          String
+  mimeType          String
+  sizeBytes         Int
+  storageKey        String
+  storageBackend    String    @default("local")
+  checksum          String?
+  /// upload | device | chat
+  source            String    @default("upload")
+  /// Stable device identifier (media asset id, document uri hash, etc.)
+  devicePath        String?
+  deviceModifiedAt  DateTime?
+  status            String    @default("pending")
+  summary           String?
+  analysis          Json?
+  chunkCount        Int       @default(0)
+  indexedAt         DateTime?
+  createdAt         DateTime  @default(now())
 
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   chunks          FileChunk[]
 
+  @@unique([userId, devicePath])
   @@index([userId])
   @@index([userId, status])
+  @@index([userId, source])
 }
 
 model FileChunk {

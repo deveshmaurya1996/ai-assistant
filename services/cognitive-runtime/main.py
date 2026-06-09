@@ -626,16 +626,27 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
 @app.post("/v1/agent/plan")
 async def agent_plan(payload: AgentTurnRequest):
     from orchestration.planner import plan_tools
-    from orchestration.context import build_context, is_rag_globally_enabled
+    from orchestration.context import (
+        build_context,
+        fetch_integration_manifest,
+        is_rag_globally_enabled,
+    )
 
     effective_rag = is_rag_globally_enabled() and payload.rag_enabled
     context_str = await build_context(
         payload.query, payload.user_id, payload.chat_history, effective_rag
     )
+    manifest_text, manifest_caps, manifest_connections, manifest_connection_states = (
+        await fetch_integration_manifest(payload.user_id)
+    )
+    del manifest_text
     return await plan_tools(
         payload.query,
         context_str,
         payload.user_id,
+        manifest_caps=manifest_caps,
+        manifest_connections=manifest_connections,
+        manifest_connection_states=manifest_connection_states,
         routing_query=payload.routing_query,
         timezone=payload.timezone,
         chat_history=payload.chat_history,

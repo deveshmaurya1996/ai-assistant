@@ -63,6 +63,9 @@ export async function uploadUserFile(params: {
   filename: string;
   mimeType: string;
   buffer: Buffer;
+  source?: 'upload' | 'device' | 'chat';
+  devicePath?: string;
+  deviceModifiedAt?: Date;
 }): Promise<{
   id: string;
   userId: string;
@@ -74,7 +77,8 @@ export async function uploadUserFile(params: {
   indexedAt: Date | null;
   status: string;
 }> {
-  const { userId, filename, mimeType, buffer } = params;
+  const { userId, filename, mimeType, buffer, source = 'upload', devicePath, deviceModifiedAt } =
+    params;
   const isImage = mimeType.startsWith('image/');
   const maxBytes = isImage ? FILE_LIMITS.maxImageBytes : FILE_LIMITS.maxFileBytes;
   if (buffer.length > maxBytes) {
@@ -83,16 +87,65 @@ export async function uploadUserFile(params: {
     );
   }
 
-  const asset = await prisma.fileAsset.create({
-    data: {
-      userId,
-      filename,
-      mimeType,
-      sizeBytes: buffer.length,
-      storageKey: 'pending',
-      status: 'pending',
-    },
-  });
+  if (devicePath) {
+    const existing = await prisma.fileAsset.findFirst({
+      where: { userId, devicePath },
+    });
+    if (existing) {
+      const sameVersion =
+        deviceModifiedAt &&
+        existing.deviceModifiedAt &&
+        existing.deviceModifiedAt.getTime() === deviceModifiedAt.getTime() &&
+        existing.sizeBytes === buffer.length;
+      if (sameVersion && existing.status === 'ready') {
+        return existing;
+      }
+      if (sameVersion && existing.status !== 'failed') {
+        return existing;
+      }
+    }
+  }
+
+  const asset = devicePath
+    ? await prisma.fileAsset.upsert({
+        where: {
+          userId_devicePath: { userId, devicePath },
+        },
+        create: {
+          userId,
+          filename,
+          mimeType,
+          sizeBytes: buffer.length,
+          storageKey: 'pending',
+          status: 'pending',
+          source,
+          devicePath,
+          deviceModifiedAt: deviceModifiedAt ?? null,
+        },
+        update: {
+          filename,
+          mimeType,
+          sizeBytes: buffer.length,
+          storageKey: 'pending',
+          status: 'pending',
+          source,
+          deviceModifiedAt: deviceModifiedAt ?? null,
+          summary: null,
+          chunkCount: 0,
+          indexedAt: null,
+        },
+      })
+    : await prisma.fileAsset.create({
+        data: {
+          userId,
+          filename,
+          mimeType,
+          sizeBytes: buffer.length,
+          storageKey: 'pending',
+          status: 'pending',
+          source,
+        },
+      });
 
   const storageKey = buildUserFileKey(userId, asset.id, filename);
   const storage = getFileStorage();

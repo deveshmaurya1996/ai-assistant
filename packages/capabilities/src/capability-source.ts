@@ -141,7 +141,7 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
   {
     id: 'files.search_documents',
     domain: 'files',
-    description: 'Search documents in Drive and uploaded files',
+    description: 'Search documents in Drive, phone files, and uploads',
     risk: 'low',
     requiresConfirmation: false,
     plannerVisible: true,

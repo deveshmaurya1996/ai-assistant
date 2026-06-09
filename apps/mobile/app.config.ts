@@ -30,6 +30,8 @@ const config: ExpoConfig = {
       UIBackgroundModes: ['audio', 'remote-notification'],
       NSMicrophoneUsageDescription:
         'AI Assistant needs microphone access for voice commands and transcription.',
+      NSPhotoLibraryUsageDescription:
+        'AI Assistant needs access to your photo library to sync images for document search.',
     },
   },
   android: {
@@ -49,6 +51,8 @@ const config: ExpoConfig = {
       'android.permission.FOREGROUND_SERVICE_MICROPHONE',
       'android.permission.SYSTEM_ALERT_WINDOW',
       'android.permission.WAKE_LOCK',
+      'android.permission.READ_MEDIA_IMAGES',
+      'android.permission.READ_EXTERNAL_STORAGE',
     ],
   },
   plugins: [
@@ -87,7 +91,8 @@ const config: ExpoConfig = {
     [
       'expo-media-library',
       {
-        photosPermission: 'Allow AI Assistant to save images to your gallery.',
+        photosPermission:
+          'Allow AI Assistant to read photos from your library so the AI can search them.',
         savePhotosPermission: 'Allow AI Assistant to save images to your gallery.',
         isAccessMediaLocationEnabled: false,
       },

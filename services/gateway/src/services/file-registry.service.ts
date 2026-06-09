@@ -27,6 +27,30 @@ export async function getFileRegistryRecord(
   return asset;
 }
 
+const BULK_STATUS_MAX_IDS = 50;
+
+export async function getFileBulkStatus(
+  userId: string,
+  ids: string[]
+): Promise<Array<{ id: string; status: string; indexedAt: string | null }>> {
+  const unique = [...new Set(ids.filter((id) => typeof id === 'string' && id.length > 0))].slice(
+    0,
+    BULK_STATUS_MAX_IDS
+  );
+  if (unique.length === 0) return [];
+
+  const rows = await prisma.fileAsset.findMany({
+    where: { userId, id: { in: unique } },
+    select: { id: true, status: true, indexedAt: true },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    status: row.status,
+    indexedAt: row.indexedAt?.toISOString() ?? null,
+  }));
+}
+
 export async function listUserFileRegistry(
   userId: string,
   options?: { status?: string; limit?: number }

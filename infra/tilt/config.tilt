@@ -13,6 +13,7 @@ config.define_string('qdrant-port')
 config.define_string('tool-runtime-port')
 config.define_string('ai-orchestrator-port')
 config.define_string('skill-runtime-port')
+config.define_string('ingestion-engine-port')
 
 # Single config.parse() for the whole run (https://docs.tilt.dev/tiltfile_config.html).
 TILT_CFG = config.parse()
@@ -58,6 +59,7 @@ PROFILE_SERVICES = [
     'skill-runtime',
     'cognitive-runtime',
     'ai-orchestrator',
+    'ingestion-engine',
 ]
 
 # Default tilt up: core infra + api + ai + mobile (Expo web, fresh cache).
@@ -179,6 +181,7 @@ PORTS = {
     'tool-runtime': _port_int('tool-runtime-port', 3011),
     'ai-orchestrator': _port_int('ai-orchestrator-port', 3013),
     'skill-runtime': _port_int('skill-runtime-port', 3014),
+    'ingestion-engine': _port_int('ingestion-engine-port', 3012),
 }
 
 def port_url(key, path=''):
@@ -191,6 +194,7 @@ def port_env():
     toolrt = str(PORTS['tool-runtime'])
     orch = str(PORTS['ai-orchestrator'])
     skillrt = str(PORTS['skill-runtime'])
+    ingestion = str(PORTS['ingestion-engine'])
     return {
         'API_PORT': api,
         'AI_PORT': ai,
@@ -212,6 +216,8 @@ def port_env():
         'COGNITIVE_RUNTIME_URL': 'http://localhost:' + orch,
         'SKILL_RUNTIME_PORT': skillrt,
         'SKILL_RUNTIME_URL': 'http://localhost:' + skillrt,
+        'INGESTION_ENGINE_PORT': ingestion,
+        'INGESTION_ENGINE_URL': 'http://localhost:' + ingestion,
         'SKILLS_ROOT': 'skills',
         'WHATSAPP_BRIDGE_URL': 'http://localhost:' + api + '/internal/whatsapp',
         'WHATSAPP_AUTH_DIR': 'data/wa-auth',

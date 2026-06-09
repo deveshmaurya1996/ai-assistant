@@ -15,6 +15,7 @@ import { assertGoogleIntegrationConfigured } from './google-config';
 const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/gmail.compose',
   'https://www.googleapis.com/auth/calendar',
   'https://www.googleapis.com/auth/drive.readonly',
 ].join(' ');
@@ -39,7 +40,11 @@ function decodeGmailBody(part: Record<string, unknown>): string {
   return '';
 }
 
-function formatGoogleApiError(status: number, body: string): string {
+function formatGoogleApiError(
+  status: number,
+  body: string,
+  service: 'gmail' | 'calendar' | 'drive' = 'gmail'
+): string {
   try {
     const parsed = JSON.parse(body) as {
       error?: { message?: string; status?: string; errors?: Array<{ reason?: string }> };
@@ -49,8 +54,14 @@ function formatGoogleApiError(status: number, body: string): string {
     if (status === 401 || reason === 'authError') {
       return 'Google sign-in expired — open Connect Apps and reconnect Google.';
     }
-    if (status === 403 && /gmail api has not been used|accessNotConfigured|SERVICE_DISABLED/i.test(msg)) {
-      return 'Gmail API is not enabled for this app in Google Cloud Console. Enable Gmail API for your OAuth project, then reconnect Google in Connect Apps.';
+    if (status === 403 && /has not been used|accessNotConfigured|SERVICE_DISABLED/i.test(msg)) {
+      const apiName =
+        service === 'calendar'
+          ? 'Google Calendar API'
+          : service === 'drive'
+            ? 'Google Drive API'
+            : 'Gmail API';
+      return `${apiName} is not enabled for this app in Google Cloud Console. Enable it for your OAuth project, then reconnect Google in Connect Apps.`;
     }
     if (status === 403) {
       return `Google denied access: ${msg}`;
@@ -59,6 +70,17 @@ function formatGoogleApiError(status: number, body: string): string {
   } catch {
     return body.slice(0, 400);
   }
+}
+
+async function probeGoogleApi(
+  token: string,
+  url: string,
+  service: 'gmail' | 'calendar' | 'drive'
+): Promise<{ ok: true } | { ok: false; message: string }> {
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (res.ok) return { ok: true };
+  const body = await res.text();
+  return { ok: false, message: formatGoogleApiError(res.status, body, service) };
 }
 
 export class GoogleConnector implements IntegrationConnector {
@@ -189,15 +211,39 @@ export class GoogleConnector implements IntegrationConnector {
         return { healthy: false, message: 'Missing access token — reconnect Google in Connect Apps' };
       }
 
-      const res = await fetch(
+      const tokenRes = await fetch(
         `https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=${encodeURIComponent(token)}`
       );
-      if (!res.ok) {
+      if (!tokenRes.ok) {
         return {
           healthy: false,
           message: 'Google access expired — reconnect in Connect Apps',
         };
       }
+
+      const probes = await Promise.all([
+        probeGoogleApi(
+          token,
+          'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=1',
+          'gmail'
+        ),
+        probeGoogleApi(
+          token,
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=1&timeMin=${encodeURIComponent(new Date().toISOString())}`,
+          'calendar'
+        ),
+        probeGoogleApi(
+          token,
+          'https://www.googleapis.com/drive/v3/files?pageSize=1&fields=files(id)',
+          'drive'
+        ),
+      ]);
+
+      const failed = probes.find((p) => !p.ok);
+      if (failed && !failed.ok) {
+        return { healthy: false, message: failed.message };
+      }
+
       return {
         healthy: true,
         ...(refreshed ? { refreshedCredentials: creds } : {}),
@@ -359,7 +405,10 @@ export class GoogleConnector implements IntegrationConnector {
           `https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=${maxResults}&singleEvents=true&orderBy=startTime&timeMin=${new Date().toISOString()}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        if (!res.ok) return { success: false, error: await res.text() };
+        if (!res.ok) {
+          const errText = await res.text();
+          return { success: false, error: formatGoogleApiError(res.status, errText, 'calendar') };
+        }
         const data = (await res.json()) as {
           items?: Array<{
             id: string;
@@ -385,7 +434,10 @@ export class GoogleConnector implements IntegrationConnector {
           `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`fullText contains '${query.replace(/'/g, "\\'")}'`)}&pageSize=${args.maxResults ?? 10}&fields=files(id,name,mimeType,modifiedTime)`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
-        if (!res.ok) return { success: false, error: await res.text() };
+        if (!res.ok) {
+          const errText = await res.text();
+          return { success: false, error: formatGoogleApiError(res.status, errText, 'drive') };
+        }
         const data = (await res.json()) as {
           files?: Array<{ id: string; name: string; mimeType?: string; modifiedTime?: string }>;
         };

@@ -3,9 +3,20 @@ import path from 'node:path';
 import pino from 'pino';
 import QRCode from 'qrcode';
 import { getBaileys, type BaileysSocket } from './baileys-loader';
-import { syncWhatsAppMessage } from './message-sync';
+import {
+  countSyncedThreads,
+  loadChatsFromDb,
+  loadMessagesFromDb,
+  loadUnreadFromDb,
+  preloadRecentMessages,
+  syncWhatsAppChatsBatch,
+  syncWhatsAppHistoryMessages,
+  syncWhatsAppMessage,
+} from './message-sync';
 import { getWhatsAppAuthRoot } from './auth-paths';
-import { markWhatsAppDisconnectedForUser } from './connection-lifecycle';
+import { markConnectionActive, markWhatsAppDisconnectedForUser } from './connection-lifecycle';
+import { repairWhatsAppConnectionMetadata } from './session-resolve';
+import { prisma } from '@ai-assistant/database';
 
 export type SessionStatus = 'pending' | 'active' | 'disconnected';
 
@@ -17,6 +28,8 @@ export interface SessionState {
   qrData?: string;
   pairingCode?: string;
   pairingPhone?: string;
+  /** Set after Baileys messaging-history.set completes (isLatest). */
+  historySyncComplete?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -91,6 +104,8 @@ export class SessionManager {
   private chatCache = new Map<string, ChatEntry[]>();
   private messageCache = new Map<string, Map<string, CachedMessage[]>>();
   private unreadCounts = new Map<string, Map<string, number>>();
+  /** Raw Baileys messages for getMessage retry/decrypt (per Baileys docs). */
+  private rawMessageCache = new Map<string, Map<string, unknown>>();
 
   getSession(sessionId: string): SessionState | undefined {
     return this.sessions.get(sessionId);
@@ -206,11 +221,13 @@ export class SessionManager {
     const { jidNormalizedUser } = await getBaileys();
     const q = query.trim().toLowerCase();
 
-    let cached = this.chatCache.get(sessionId) ?? [];
-    if (cached.length === 0) {
-      await this.waitForChatCache(sessionId, sock, 8_000);
-      cached = this.chatCache.get(sessionId) ?? [];
+    await this.waitForChatCache(sessionId, sock, 15_000);
+    const fromDb = await loadChatsFromDb(sessionId);
+    const merged = this.mergeChatLists(this.chatCache.get(sessionId) ?? [], fromDb);
+    if (merged.length > 0) {
+      this.chatCache.set(sessionId, merged);
     }
+    let cached = merged;
 
     if (!q) {
       return { chats: cached };
@@ -247,26 +264,66 @@ export class SessionManager {
     if ((this.chatCache.get(sessionId)?.length ?? 0) > 0) return;
 
     await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
+      const cleanup = () => {
+        sock.ev.off('chats.set', onChats);
         sock.ev.off('chats.upsert', onChats);
+        sock.ev.off('messaging-history.set', onHistory);
         sock.ev.off('contacts.upsert', onContacts);
+      };
+
+      const timer = setTimeout(() => {
+        cleanup();
         resolve();
       }, timeoutMs);
 
       const done = () => {
         if ((this.chatCache.get(sessionId)?.length ?? 0) > 0) {
           clearTimeout(timer);
-          sock.ev.off('chats.upsert', onChats);
-          sock.ev.off('contacts.upsert', onContacts);
+          cleanup();
           resolve();
         }
       };
 
       const onChats = () => done();
       const onContacts = () => done();
+      const onHistory = () => done();
+      sock.ev.on('chats.set', onChats);
       sock.ev.on('chats.upsert', onChats);
+      sock.ev.on('messaging-history.set', onHistory);
       sock.ev.on('contacts.upsert', onContacts);
     });
+  }
+
+  /** Rehydrate in-memory caches from Postgres after gateway restart (Baileys data store pattern). */
+  private async hydrateFromDatabase(sessionId: string): Promise<void> {
+    const chats = await loadChatsFromDb(sessionId);
+    if (chats.length === 0) return;
+
+    const existing = this.chatCache.get(sessionId) ?? [];
+    const byJid = new Map(existing.map((c) => [c.jid, c]));
+    for (const chat of chats) {
+      const prev = byJid.get(chat.jid);
+      byJid.set(chat.jid, prev ? { ...prev, ...chat } : chat);
+    }
+    this.chatCache.set(sessionId, [...byJid.values()]);
+
+    if (!this.unreadCounts.has(sessionId)) {
+      this.unreadCounts.set(sessionId, new Map());
+    }
+    const unreadMap = this.unreadCounts.get(sessionId)!;
+    for (const chat of chats) {
+      if (chat.unreadCount && chat.unreadCount > 0) {
+        unreadMap.set(chat.jid, chat.unreadCount);
+      }
+    }
+
+    const preloaded = await preloadRecentMessages(
+      sessionId,
+      chats.map((c) => c.jid)
+    );
+    for (const [jid, msgs] of preloaded) {
+      this.storeMessages(sessionId, jid, msgs);
+    }
   }
 
   async listUnread(
@@ -283,10 +340,11 @@ export class SessionManager {
     }
 
     const sock = await this.ensureSocket(sessionId);
-    let chats = this.chatCache.get(sessionId) ?? [];
-    if (chats.length === 0) {
-      await this.waitForChatCache(sessionId, sock, 8_000);
-      chats = this.chatCache.get(sessionId) ?? [];
+    await this.waitForChatCache(sessionId, sock, 30_000);
+    const fromDbChats = await loadChatsFromDb(sessionId);
+    const chats = this.mergeChatLists(this.chatCache.get(sessionId) ?? [], fromDbChats);
+    if (chats.length > 0) {
+      this.chatCache.set(sessionId, chats);
     }
     const msgByJid = this.messageCache.get(sessionId) ?? new Map();
     const unreadMap = this.unreadCounts.get(sessionId) ?? new Map();
@@ -295,54 +353,36 @@ export class SessionManager {
 
     for (const chat of chats) {
       const unread = unreadMap.get(chat.jid) ?? chat.unreadCount ?? 0;
+      if (unread <= 0) continue;
       const messages = msgByJid.get(chat.jid) ?? [];
       const last = messages[messages.length - 1];
-      if (unread > 0 || last) {
-        items.push({
-          chatId: chat.jid,
-          sender: chat.name || chat.jid.split('@')[0] || 'Unknown',
-          preview: last?.body?.slice(0, 500) ?? '(no preview yet)',
-          timestamp: last?.timestamp ?? new Date().toISOString(),
-          unreadCount: unread > 0 ? unread : 1,
-        });
-      }
+      items.push({
+        chatId: chat.jid,
+        sender: chat.name || chat.jid.split('@')[0] || 'Unknown',
+        preview: last?.body?.slice(0, 500) ?? '(no preview yet)',
+        timestamp: last?.timestamp ?? new Date().toISOString(),
+        unreadCount: unread,
+      });
     }
 
     items.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
-    const socket = sock as BaileysSocket & {
-      fetchMessagesFromWA?: (jid: string, count: number) => Promise<unknown[]>;
-    };
+    let sliced = items.slice(0, limit);
 
-    if (items.length < limit && typeof socket.fetchMessagesFromWA === 'function') {
-      for (const chat of chats.slice(0, Math.min(limit, 10))) {
-        if (items.some((i) => i.chatId === chat.jid && i.preview !== '(no preview yet)')) {
-          continue;
-        }
-        try {
-          const raw = await socket.fetchMessagesFromWA(chat.jid, 5);
-          const parsed = this.parseBaileysMessages(chat.jid, raw);
-          if (parsed.length > 0) {
-            this.storeMessages(sessionId, chat.jid, parsed);
-            const last = parsed[parsed.length - 1]!;
-            const existing = items.findIndex((i) => i.chatId === chat.jid);
-            const row: UnreadChatItem = {
-              chatId: chat.jid,
-              sender: chat.name || last.pushName || chat.jid.split('@')[0] || 'Unknown',
-              preview: last.body.slice(0, 500),
-              timestamp: last.timestamp,
-              unreadCount: unreadMap.get(chat.jid) ?? 1,
-            };
-            if (existing >= 0) items[existing] = row;
-            else items.push(row);
-          }
-        } catch (err) {
-          logger.warn({ err, sessionId, jid: chat.jid }, 'fetchMessagesFromWA failed');
+    if (sliced.length === 0) {
+      const dbItems = await loadUnreadFromDb(sessionId, limit);
+      if (dbItems.length > 0) {
+        sliced = dbItems;
+      } else if (chats.length === 0) {
+        const syncedThreads = await countSyncedThreads(sessionId);
+        if (syncedThreads === 0) {
+          throw new Error(
+            'WhatsApp is linked but chats have not synced yet. Keep your phone online, open WhatsApp, wait a few seconds, and try again.'
+          );
         }
       }
     }
 
-    const sliced = items.slice(0, limit);
     return {
       type: 'messaging.unread_list',
       items: sliced,
@@ -375,19 +415,33 @@ export class SessionManager {
 
     if (cached.length < limit) {
       const sock = (await this.ensureSocket(sessionId)) as BaileysSocket & {
-        fetchMessagesFromWA?: (jid: string, count: number) => Promise<unknown[]>;
+        fetchMessageHistory?: (
+          count: number,
+          oldestMsgKey: unknown,
+          oldestMsgTimestamp: number
+        ) => Promise<unknown>;
       };
-      if (typeof sock.fetchMessagesFromWA === 'function') {
+      if (typeof sock.fetchMessageHistory === 'function' && cached.length > 0) {
         try {
-          const raw = await sock.fetchMessagesFromWA(jid, limit);
+          const oldest = cached[0]!;
+          const result = await sock.fetchMessageHistory(limit, { remoteJid: jid, id: oldest.id }, 0);
+          const raw = (result as { messages?: unknown[] })?.messages ?? [];
           const parsed = this.parseBaileysMessages(jid, raw);
           if (parsed.length > 0) {
             this.storeMessages(sessionId, jid, parsed);
             cached = this.messageCache.get(sessionId)?.get(jid) ?? parsed;
           }
         } catch (err) {
-          logger.warn({ err, sessionId, jid }, 'readChat fetch failed');
+          logger.warn({ err, sessionId, jid }, 'fetchMessageHistory failed');
         }
+      }
+    }
+
+    if (cached.length < limit) {
+      const fromDb = await loadMessagesFromDb(sessionId, jid, limit);
+      if (fromDb.length > 0) {
+        this.storeMessages(sessionId, jid, fromDb);
+        cached = this.messageCache.get(sessionId)?.get(jid) ?? fromDb;
       }
     }
 
@@ -449,7 +503,19 @@ export class SessionManager {
     return out.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   }
 
-  private storeMessages(sessionId: string, jid: string, messages: CachedMessage[]): void {
+  private storeRawMessage(sessionId: string, jid: string, id: string, raw: unknown): void {
+    if (!this.rawMessageCache.has(sessionId)) {
+      this.rawMessageCache.set(sessionId, new Map());
+    }
+    this.rawMessageCache.get(sessionId)!.set(`${jid}:${id}`, raw);
+  }
+
+  private storeMessages(
+    sessionId: string,
+    jid: string,
+    messages: CachedMessage[],
+    rawItems?: unknown[]
+  ): void {
     if (!this.messageCache.has(sessionId)) {
       this.messageCache.set(sessionId, new Map());
     }
@@ -461,6 +527,15 @@ export class SessionManager {
     }
     const merged = [...byId.values()].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
     byJid.set(jid, merged.slice(-200));
+
+    if (rawItems?.length) {
+      for (const item of rawItems) {
+        const msg = item as { key?: { id?: string; remoteJid?: string } };
+        const id = msg.key?.id;
+        const itemJid = msg.key?.remoteJid ?? jid;
+        if (id) this.storeRawMessage(sessionId, itemJid, id, item);
+      }
+    }
   }
 
   private bumpUnread(sessionId: string, jid: string): void {
@@ -473,9 +548,80 @@ export class SessionManager {
 
   private upsertChatCache(sessionId: string, entry: ChatEntry): void {
     const list = this.chatCache.get(sessionId) ?? [];
-    if (!list.some((c) => c.jid === entry.jid)) {
+    const idx = list.findIndex((c) => c.jid === entry.jid);
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...entry };
+    } else {
       list.push(entry);
-      this.chatCache.set(sessionId, list);
+    }
+    this.chatCache.set(sessionId, list);
+  }
+
+  private mergeChatLists(a: ChatEntry[], b: ChatEntry[]): ChatEntry[] {
+    const byJid = new Map<string, ChatEntry>();
+    for (const chat of [...a, ...b]) {
+      const prev = byJid.get(chat.jid);
+      byJid.set(chat.jid, prev ? { ...prev, ...chat } : chat);
+    }
+    return [...byJid.values()].sort((x, y) => {
+      const ux = x.unreadCount ?? 0;
+      const uy = y.unreadCount ?? 0;
+      if (ux !== uy) return uy - ux;
+      return x.name.localeCompare(y.name);
+    });
+  }
+
+  private mapChatRows(chats: unknown[]): Array<{ jid: string; name: string; unreadCount?: number }> {
+    const rows: Array<{ jid: string; name: string; unreadCount?: number }> = [];
+    for (const chat of chats) {
+      const c = chat as { id?: string; name?: string; unreadCount?: number };
+      const jid = c.id ?? '';
+      const name = c.name ?? jid.split('@')[0] ?? jid;
+      if (jid) rows.push({ jid, name, unreadCount: c.unreadCount });
+    }
+    return rows;
+  }
+
+  private ingestChats(sessionId: string, chats: unknown[]): void {
+    for (const chat of chats) {
+      const c = chat as { id?: string; name?: string; unreadCount?: number };
+      const jid = c.id ?? '';
+      const name = c.name ?? jid.split('@')[0] ?? jid;
+      if (!jid) continue;
+      this.upsertChatCache(sessionId, {
+        jid,
+        name,
+        unreadCount: c.unreadCount,
+      });
+      if (c.unreadCount && c.unreadCount > 0) {
+        if (!this.unreadCounts.has(sessionId)) {
+          this.unreadCounts.set(sessionId, new Map());
+        }
+        this.unreadCounts.get(sessionId)!.set(jid, c.unreadCount);
+      }
+    }
+  }
+
+  private ingestChatUpdates(sessionId: string, updates: unknown[]): void {
+    for (const update of updates) {
+      const u = update as { id?: string; name?: string; unreadCount?: number };
+      const jid = u.id ?? '';
+      if (!jid) continue;
+      const existing = this.chatCache.get(sessionId)?.find((c) => c.jid === jid);
+      const name = u.name ?? existing?.name ?? jid.split('@')[0] ?? jid;
+      this.upsertChatCache(sessionId, {
+        jid,
+        name,
+        unreadCount: u.unreadCount ?? existing?.unreadCount,
+      });
+      if (typeof u.unreadCount === 'number') {
+        if (!this.unreadCounts.has(sessionId)) {
+          this.unreadCounts.set(sessionId, new Map());
+        }
+        const map = this.unreadCounts.get(sessionId)!;
+        if (u.unreadCount > 0) map.set(jid, u.unreadCount);
+        else map.delete(jid);
+      }
     }
   }
 
@@ -562,6 +708,8 @@ export class SessionManager {
         if (!this.chatCache.has(sessionId)) {
           this.chatCache.set(sessionId, []);
         }
+        void repairWhatsAppConnectionMetadata(saved.userId, sessionId);
+        void this.hydrateFromDatabase(sessionId);
       } catch {
         throw new Error('Session not found');
       }
@@ -611,23 +759,38 @@ export class SessionManager {
     const authDir = authDirFor(sessionId);
     await mkdir(authDir, { recursive: true });
 
+    await repairWhatsAppConnectionMetadata(session.userId, sessionId);
+    await this.hydrateFromDatabase(sessionId);
+
     const baileys = await getBaileys();
     const { state: authState, saveCreds } = await baileys.useMultiFileAuthState(authDir);
     const { version } = await baileys.fetchLatestBaileysVersion();
+
+    const syncedThreads = await countSyncedThreads(sessionId);
+    const wantsFullHistory = !session.historySyncComplete || syncedThreads < 25;
 
     const sock = baileys.default({
       version,
       logger,
       printQRInTerminal: false,
-      browser: baileys.Browsers.macOS('Chrome'),
+      // Baileys docs: Desktop browser + syncFullHistory receives more message history.
+      browser: baileys.Browsers.macOS('Desktop'),
       auth: {
         creds: authState.creds,
         keys: baileys.makeCacheableSignalKeyStore(authState.keys, logger),
       },
       markOnlineOnConnect: false,
-      syncFullHistory: false,
-      connectTimeoutMs: 30_000,
-      defaultQueryTimeoutMs: 20_000,
+      syncFullHistory: wantsFullHistory,
+      shouldSyncHistoryMessage: () => true,
+      getMessage: async (key: { remoteJid?: string | null; id?: string | null }) => {
+        const jid = key.remoteJid;
+        const id = key.id;
+        if (!jid || !id) return undefined;
+        return this.rawMessageCache.get(sessionId)?.get(`${jid}:${id}`);
+      },
+      connectTimeoutMs: 90_000,
+      defaultQueryTimeoutMs: 120_000,
+      keepAliveIntervalMs: 25_000,
     });
 
     this.sockets.set(sessionId, sock);
@@ -638,23 +801,70 @@ export class SessionManager {
       void this.persistSessionMeta(session);
     });
 
+    sock.ev.on('chats.set', (chats) => {
+      this.ingestChats(sessionId, chats);
+      void syncWhatsAppChatsBatch(sessionId, this.mapChatRows(chats));
+    });
+
     sock.ev.on('chats.upsert', (chats) => {
-      for (const chat of chats) {
-        const c = chat as { id?: string; name?: string; unreadCount?: number };
-        const jid = c.id ?? '';
-        const name = c.name ?? jid.split('@')[0] ?? jid;
-        if (jid) {
-          this.upsertChatCache(sessionId, {
-            jid,
-            name,
-            unreadCount: c.unreadCount,
-          });
-          if (c.unreadCount && c.unreadCount > 0) {
-            if (!this.unreadCounts.has(sessionId)) {
-              this.unreadCounts.set(sessionId, new Map());
+      this.ingestChats(sessionId, chats);
+      void syncWhatsAppChatsBatch(sessionId, this.mapChatRows(chats));
+    });
+
+    sock.ev.on('chats.update', (updates: unknown[]) => {
+      this.ingestChatUpdates(sessionId, updates);
+      const rows: Array<{ jid: string; name: string; unreadCount?: number }> = [];
+      for (const update of updates) {
+        const u = update as { id?: string; name?: string; unreadCount?: number };
+        const jid = u.id ?? '';
+        if (!jid) continue;
+        const existing = this.chatCache.get(sessionId)?.find((c) => c.jid === jid);
+        rows.push({
+          jid,
+          name: u.name ?? existing?.name ?? jid.split('@')[0] ?? jid,
+          unreadCount: u.unreadCount ?? existing?.unreadCount,
+        });
+      }
+      void syncWhatsAppChatsBatch(sessionId, rows);
+    });
+
+    sock.ev.on('messaging-history.set', (event) => {
+      const payload = event as {
+        chats?: unknown[];
+        messages?: unknown[];
+        isLatest?: boolean;
+      };
+      if (payload.chats?.length) {
+        this.ingestChats(sessionId, payload.chats);
+        void syncWhatsAppChatsBatch(sessionId, this.mapChatRows(payload.chats));
+      }
+      if (payload.messages?.length) {
+        const batch: Array<{ jid: string; message: CachedMessage; displayName?: string }> = [];
+        for (const item of payload.messages) {
+          const msg = item as { key?: { remoteJid?: string } };
+          const jid = msg.key?.remoteJid;
+          if (!jid) continue;
+          const parsed = this.parseBaileysMessages(jid, [item]);
+          if (parsed.length > 0) {
+            this.storeMessages(sessionId, jid, parsed, [item]);
+            const chatName = this.chatCache.get(sessionId)?.find((c) => c.jid === jid)?.name;
+            for (const m of parsed) {
+              batch.push({ jid, message: m, displayName: chatName });
             }
-            this.unreadCounts.get(sessionId)!.set(jid, c.unreadCount);
           }
+        }
+        void syncWhatsAppHistoryMessages(sessionId, batch);
+      }
+      if (payload.isLatest) {
+        const current = this.sessions.get(sessionId);
+        if (current) {
+          void countSyncedThreads(sessionId).then((threadCount) => {
+            if (threadCount >= 25) {
+              current.historySyncComplete = true;
+            }
+            current.updatedAt = new Date().toISOString();
+            void this.persistSessionMeta(current, true);
+          });
         }
       }
     });
@@ -672,7 +882,7 @@ export class SessionManager {
         const parsed = this.parseBaileysMessages(jid, [item]);
         if (parsed.length === 0) continue;
         const m = parsed[0]!;
-        this.storeMessages(sessionId, jid, [m]);
+        this.storeMessages(sessionId, jid, [m], [item]);
         const chatName = this.chatCache.get(sessionId)?.find((c) => c.jid === jid)?.name;
         void syncWhatsAppMessage(sessionId, jid, m, chatName);
         if (!m.fromMe && type === 'notify') {
@@ -684,10 +894,17 @@ export class SessionManager {
     });
 
     sock.ev.on('contacts.upsert', (contacts) => {
+      const rows: Array<{ jid: string; name: string }> = [];
       for (const contact of contacts) {
         const jid = contact.id ?? '';
         const name = contact.name ?? contact.notify ?? jid.split('@')[0] ?? jid;
-        if (jid) this.upsertChatCache(sessionId, { jid, name });
+        if (jid) {
+          this.upsertChatCache(sessionId, { jid, name });
+          rows.push({ jid, name });
+        }
+      }
+      if (rows.length > 0) {
+        void syncWhatsAppChatsBatch(sessionId, rows);
       }
     });
 
@@ -717,12 +934,43 @@ export class SessionManager {
         current.status = 'active';
         current.updatedAt = new Date().toISOString();
         void this.persistSessionMeta(current, true);
+        void this.hydrateFromDatabase(sessionId);
+        void repairWhatsAppConnectionMetadata(current.userId, sessionId);
+        void prisma.userConnection
+          .findFirst({
+            where: { userId: current.userId, providerId: 'whatsapp' },
+            select: { id: true, status: true },
+          })
+          .then((connection) => {
+            if (connection && connection.status !== 'ACTIVE') {
+              return markConnectionActive({
+                userId: current.userId,
+                connectionId: connection.id,
+                providerId: 'whatsapp',
+              });
+            }
+            return undefined;
+          })
+          .catch((err) => {
+            logger.warn({ err, sessionId }, 'WhatsApp auto-activate failed');
+          });
         logger.info({ sessionId }, 'WhatsApp linked');
       }
 
       if (update.connection === 'close') {
         const statusCode = (update.lastDisconnect?.error as { output?: { statusCode?: number } })
           ?.output?.statusCode;
+        const conflictReplaced = statusCode === 440;
+        if (conflictReplaced) {
+          current.status = 'disconnected';
+          current.updatedAt = new Date().toISOString();
+          this.sockets.delete(sessionId);
+          this.connectionPhases.delete(sessionId);
+          void this.hydrateFromDatabase(sessionId);
+          void this.persistSessionMeta(current, true);
+          logger.warn({ sessionId }, 'WhatsApp session replaced by another linked device');
+          return;
+        }
         if (statusCode === baileys.DisconnectReason.loggedOut) {
           current.status = 'disconnected';
           current.updatedAt = new Date().toISOString();

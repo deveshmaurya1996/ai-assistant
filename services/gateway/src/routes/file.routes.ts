@@ -5,7 +5,7 @@ import { getFileStorage, getLocalDiskStorage } from '@ai-assistant/storage';
 import { authenticateRequest } from '../utils/auth.middleware';
 import { requireUserId } from '../lib/auth';
 import { sendError } from '../lib/errors';
-import { getFileRegistryRecord } from '../services/file-registry.service';
+import { getFileBulkStatus, getFileRegistryRecord } from '../services/file-registry.service';
 import {
   enqueueFileIndex,
   getUserFileForDownload,
@@ -19,15 +19,38 @@ export async function fileRoutes(fastify: FastifyInstance) {
   fastify.post('/upload', async (request, reply) => {
     try {
       const userId = requireUserId(request);
-      const data = await request.file();
-      if (!data) return reply.code(400).send({ error: 'No file' });
+      const parts = request.parts();
+      let buffer: Buffer | null = null;
+      let filename = 'upload';
+      let mimeFromPart = 'application/octet-stream';
+      let source: 'upload' | 'device' | 'chat' = 'upload';
+      let devicePath: string | undefined;
+      let deviceModifiedAt: Date | undefined;
 
-      const buffer = await data.toBuffer();
-      const filename = data.filename || 'upload';
+      for await (const part of parts) {
+        if (part.type === 'file') {
+          buffer = await part.toBuffer();
+          filename = part.filename || filename;
+          mimeFromPart = part.mimetype || mimeFromPart;
+        } else if (part.type === 'field') {
+          const value = String(part.value ?? '');
+          if (part.fieldname === 'source' && (value === 'device' || value === 'chat')) {
+            source = value;
+          } else if (part.fieldname === 'devicePath' && value) {
+            devicePath = value.slice(0, 512);
+          } else if (part.fieldname === 'deviceModifiedAt' && value) {
+            const parsed = new Date(value);
+            if (!Number.isNaN(parsed.getTime())) deviceModifiedAt = parsed;
+          }
+        }
+      }
+
+      if (!buffer) return reply.code(400).send({ error: 'No file' });
+
       const { fileTypeFromBuffer } = await import('file-type');
       const sniffed = await fileTypeFromBuffer(buffer);
       const mimeType = normalizeMimeType(
-        sniffed?.mime ?? data.mimetype ?? 'application/octet-stream',
+        sniffed?.mime ?? mimeFromPart ?? 'application/octet-stream',
         filename
       );
 
@@ -38,6 +61,9 @@ export async function fileRoutes(fastify: FastifyInstance) {
           filename,
           mimeType,
           buffer,
+          source: devicePath ? 'device' : source,
+          devicePath,
+          deviceModifiedAt,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Upload failed';
@@ -47,7 +73,9 @@ export async function fileRoutes(fastify: FastifyInstance) {
         throw err;
       }
 
-      enqueueFileIndex(userId, updated.id);
+      if (updated.status === 'pending') {
+        enqueueFileIndex(userId, updated.id);
+      }
 
       return reply.code(201).send({
         ...toChatAttachmentRef(updated),
@@ -57,6 +85,17 @@ export async function fileRoutes(fastify: FastifyInstance) {
         createdAt: updated.createdAt.toISOString(),
         indexedAt: updated.indexedAt?.toISOString() ?? null,
       });
+    } catch (error) {
+      return sendError(reply, error);
+    }
+  });
+
+  fastify.post('/bulk-status', async (request, reply) => {
+    try {
+      const userId = requireUserId(request);
+      const body = request.body as { ids?: string[] };
+      const items = await getFileBulkStatus(userId, body.ids ?? []);
+      return { items };
     } catch (error) {
       return sendError(reply, error);
     }

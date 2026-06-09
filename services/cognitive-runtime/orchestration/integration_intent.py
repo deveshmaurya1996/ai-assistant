@@ -154,9 +154,9 @@ def _provider_state(
 
 def _unsupported_guidance(apps: List[str]) -> str:
     names = ", ".join(apps[:3])
-    suffix = f" ({names})" if names else ""
+    subject = names if names else "that app"
     return (
-        f"We don't support{suffix} in the assistant yet, but we're actively working on adding it. "
+        f"We don't support {subject} in the assistant yet, but we're actively working on adding it. "
         "Today you can connect Google Workspace, WhatsApp, or Files in Connect Apps."
     )
 
@@ -172,8 +172,8 @@ def _connect_guidance(provider_id: str) -> str:
 def _offline_guidance(provider_id: str) -> str:
     display = str(SUPPORTED_PROVIDERS.get(provider_id, {}).get("display", provider_id))
     return (
-        f"{display} is linked but offline. Open Connect Apps and reconnect {display} "
-        "so I can access it."
+        f"{display} is linked but offline or was disconnected (for example if WhatsApp "
+        "opened on another device). Open Connect Apps and reconnect so I can access it."
     )
 
 

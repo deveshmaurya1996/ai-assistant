@@ -15,10 +15,10 @@ const PROVIDER_DEFS: Record<
     scopes: ['messages'],
   },
   files: {
-    name: 'Files',
+    name: 'Phone files',
     authType: 'local',
-    scopes: ['read'],
-  }
+    scopes: ['read', 'device_sync'],
+  },
 };
 
 export async function ensureIntegrationProvider(providerId: string): Promise<void> {

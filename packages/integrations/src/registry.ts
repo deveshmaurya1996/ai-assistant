@@ -1,3 +1,4 @@
+import { getToolDefinition } from '@ai-assistant/tool-schema';
 import type { IntegrationConnector } from './types';
 import { GoogleConnector, GOOGLE_TOOL_NAMESPACES } from './google';
 import { WhatsAppConnector, WHATSAPP_TOOL_NAMESPACES } from './whatsapp';
@@ -29,6 +30,10 @@ export function listConnectors(): IntegrationConnector[] {
 }
 
 export function getConnectorForTool(toolName: string): IntegrationConnector | undefined {
+  const schemaConnector = getToolDefinition(toolName)?.connector;
+  if (schemaConnector && schemaConnector !== 'platform' && schemaConnector !== 'notes') {
+    return connectors.get(schemaConnector);
+  }
   const namespace = toolName.split('.')[0];
   const providerId = toolNamespaceToProvider.get(namespace);
   return providerId ? connectors.get(providerId) : undefined;

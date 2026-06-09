@@ -14,6 +14,7 @@ import { useAuthStore } from '@/stores/auth';
 import { AppSplash } from '@/components/boot/AppSplash';
 import { Routes } from '@/lib/routes';
 import { ActiveChatSessionTracker } from '@/features/chat/ActiveChatSessionTracker';
+import { DeviceFilesSyncHost } from '@/features/local-files/DeviceFilesSyncHost';
 
 function AppDrawerLayoutContent() {
   const { colors } = useTheme();
@@ -130,6 +131,7 @@ export default function AppDrawerLayout() {
   return (
     <ChatImagePreviewHost>
       <VoiceSessionHost>
+        <DeviceFilesSyncHost />
         <AppDrawerLayoutContent />
       </VoiceSessionHost>
     </ChatImagePreviewHost>

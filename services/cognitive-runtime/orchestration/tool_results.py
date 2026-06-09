@@ -66,7 +66,17 @@ def _classify_integration_error(error: str) -> str:
         for phrase in ("could not find", "not found", "no match", "unknown contact")
     ):
         return f"Lookup issue: {error}"
-    if any(phrase in lower for phrase in ("timed out", "timeout", "temporary")):
+    if any(
+        phrase in lower
+        for phrase in (
+            "timed out",
+            "timeout",
+            "temporary",
+            "have not synced",
+            "not synced yet",
+            "syncing",
+        )
+    ):
         return f"Temporary issue: {error}"
     return f"Could not complete the request: {error}"
 

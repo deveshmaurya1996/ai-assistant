@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Pressable,
 } from 'react-native';
 import { ApiError } from '@ai-assistant/sdk';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -40,7 +41,11 @@ const PROVIDERS = [
     description: 'Grant Gmail, Calendar & Drive access',
   },
   { id: 'whatsapp', name: 'WhatsApp', description: 'Linked device messages' },
-  { id: 'files', name: 'Files', description: 'Upload & search files' },
+  {
+    id: 'files',
+    name: 'Phone files',
+    description: 'Sync documents & photos from your phone for AI search',
+  },
 ] as const;
 
 export default function IntegrationsScreen() {
@@ -130,6 +135,12 @@ export default function IntegrationsScreen() {
           await Linking.openURL(challenge.url);
         }
       } else if (providerId === 'whatsapp' && challenge.connectionId) {
+        router.push(
+          integrationProviderRoute(providerId, {
+            connectionId: challenge.connectionId,
+          })
+        );
+      } else if (providerId === 'files' && challenge.connectionId) {
         router.push(
           integrationProviderRoute(providerId, {
             connectionId: challenge.connectionId,
@@ -246,6 +257,17 @@ export default function IntegrationsScreen() {
 
           return (
             <FadeIn delay={index * 40} style={styles.cardWrap}>
+              <Pressable
+                disabled={item.id !== 'files' || !getConnection(item.id)}
+                onPress={() => {
+                  const c = getConnection(item.id);
+                  if (item.id === 'files' && c) {
+                    router.push(
+                      integrationProviderRoute(item.id, { connectionId: c.id })
+                    );
+                  }
+                }}
+              >
               <Card style={styles.card}>
                 <ProviderIcon providerId={item.id} size="sm" />
                 <View style={styles.cardBody}>
@@ -278,6 +300,7 @@ export default function IntegrationsScreen() {
                   }}
                 />
               </Card>
+              </Pressable>
             </FadeIn>
           );
         }}
