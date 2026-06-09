@@ -30,5 +30,7 @@ export {
   capabilityIdsFromManifest,
   formatManifestForPlanner,
   type ConnectedProviderInfo,
+  type ConnectionStateKind,
   type IntegrationManifest,
+  type ProviderConnectionState,
 } from './manifest';

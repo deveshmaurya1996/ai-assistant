@@ -12,8 +12,15 @@ export async function internalIntegrationRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'userId is required' });
     }
 
-    const { manifest, plannerText, connections } = await buildUserIntegrationManifest(userId);
-    return reply.send({ manifest, plannerText, connections });
+    const { manifest, plannerText, connections, connectionStates, supportedProviders } =
+      await buildUserIntegrationManifest(userId);
+    return reply.send({
+      manifest,
+      plannerText,
+      connections,
+      connectionStates,
+      supportedProviders,
+    });
   });
 
   fastify.post('/integrations/whatsapp/execute', async (request, reply) => {

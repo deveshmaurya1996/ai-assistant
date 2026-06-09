@@ -2,7 +2,9 @@ import { prisma } from '@ai-assistant/database';
 import {
   buildIntegrationManifest,
   formatManifestForPlanner,
+  type ConnectionStateKind,
   type IntegrationManifest,
+  type ProviderConnectionState,
 } from '@ai-assistant/capabilities';
 import { assessConnectionsHealth } from './integration-health.service';
 
@@ -27,29 +29,60 @@ async function ensureFilesConnectionForUploads(userId: string): Promise<void> {
   });
 }
 
+function resolveProviderState(
+  providerId: string,
+  connections: Array<{ id: string; providerId: string; status: string }>,
+  health: Map<string, boolean>
+): ConnectionStateKind {
+  const row = connections.find((c) => c.providerId === providerId);
+  if (!row || row.status !== 'ACTIVE') return 'not_connected';
+  return health.get(row.id) === true ? 'ready' : 'offline';
+}
+
 export async function buildUserIntegrationManifest(userId: string): Promise<{
   manifest: IntegrationManifest;
   plannerText: string;
   connections: Array<{ id: string; providerId: string; status: string }>;
+  connectionStates: ProviderConnectionState[];
+  supportedProviders: string[];
   unhealthyNotes: string[];
 }> {
   await ensureFilesConnectionForUploads(userId);
 
-  const rows = await prisma.userConnection.findMany({
-    where: { userId, status: 'ACTIVE' },
+  const enabledProviders = await prisma.integrationProvider.findMany({
+    where: { isEnabled: true },
+    select: { id: true },
+    orderBy: { id: 'asc' },
+  });
+  const supportedProviders = enabledProviders.map((p) => p.id);
+
+  const allConnections = await prisma.userConnection.findMany({
+    where: { userId },
     select: { id: true, providerId: true, status: true },
+    orderBy: { updatedAt: 'desc' },
   });
 
-  const health = await assessConnectionsHealth(userId, rows);
-  const healthyRows = rows.filter((row) => health.get(row.id) === true);
+  const activeRows = allConnections.filter((c) => c.status === 'ACTIVE');
+  const health = await assessConnectionsHealth(userId, activeRows);
+  const healthyRows = activeRows.filter((row) => health.get(row.id) === true);
   const unhealthyNotes: string[] = [];
 
-  for (const row of rows) {
+  for (const row of activeRows) {
     if (health.get(row.id) === true) continue;
     unhealthyNotes.push(
       `${row.providerId} is linked in the app but offline — reconnect in Connect Apps.`
     );
   }
+
+  const connectionStates: ProviderConnectionState[] = supportedProviders.map((providerId) => {
+    const row = allConnections.find((c) => c.providerId === providerId);
+    const state = resolveProviderState(providerId, allConnections, health);
+    return {
+      providerId,
+      state,
+      connectionId: row?.id,
+    };
+  });
 
   const connections = healthyRows.map((c) => ({
     id: c.id,
@@ -61,15 +94,17 @@ export async function buildUserIntegrationManifest(userId: string): Promise<{
     connections.map((c) => ({ id: c.id, providerId: c.providerId }))
   );
 
-  let plannerText = formatManifestForPlanner(manifest);
-  if (unhealthyNotes.length > 0) {
-    plannerText += `\n\nOffline integrations (do not use until reconnected):\n${unhealthyNotes.map((n) => `- ${n}`).join('\n')}`;
-  }
+  const plannerText = formatManifestForPlanner(manifest, {
+    supportedProviders,
+    connectionStates,
+  });
 
   return {
     manifest,
     plannerText,
     connections,
+    connectionStates,
+    supportedProviders,
     unhealthyNotes,
   };
 }

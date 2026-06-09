@@ -179,6 +179,23 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     ],
   },
   {
+    id: 'messaging.search_chats',
+    domain: 'messaging',
+    description: 'Search WhatsApp chats by contact name or phone number',
+    risk: 'low',
+    requiresConfirmation: false,
+    plannerVisible: true,
+    resultSchema: 'MessagingChatSearchResult',
+    providers: [
+      {
+        providerId: 'whatsapp',
+        adapterAction: 'search_chats',
+        executionTool: 'whatsapp.search_chats',
+        permissions: ['whatsapp.read'],
+      },
+    ],
+  },
+  {
     id: 'resources.search',
     domain: 'files',
     description: 'Search across WhatsApp, email index, Drive, and uploaded files',
@@ -269,7 +286,7 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     description: 'Search chats (legacy)',
     risk: 'low',
     requiresConfirmation: false,
-    plannerVisible: false,
+    plannerVisible: true,
     resultSchema: 'Legacy',
     providers: [
       {

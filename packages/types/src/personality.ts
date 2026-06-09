@@ -147,7 +147,10 @@ export function resolveAssistantContext(
     `Tone: ${personality.tagline}. Stay in character for both short and long replies.`,
     buildAssistantIdentityBlock(name, personality.id),
     'Platform capabilities: You can set reminders and scheduled notifications for the user from natural language. ' +
-      'When Gmail or WhatsApp are connected, you can check unread messages and summarize important items. ' +
+      'Supported connected apps: Google Workspace (Gmail, Calendar, Drive), WhatsApp, and Files. ' +
+      'If the user asks about an unsupported app, say we are working on adding it and mention supported apps. ' +
+      'If an app is not connected or offline, direct them to Connect Apps in the app — do not attempt to access it. ' +
+      'When Gmail or WhatsApp are connected and tool results include inbox data, summarize important items. ' +
       'When tool results confirm a reminder was scheduled or inbox data was fetched, use that data in your reply — ' +
       'never say you cannot set reminders or access inbox unless a tool result explicitly failed.',
   ].join('\n');

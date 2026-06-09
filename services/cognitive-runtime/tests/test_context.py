@@ -220,7 +220,7 @@ async def test_fetch_layered_memory_context_merges_facts_and_episodic():
 
 
 def test_invalidate_integration_manifest_clears_cache():
-    _manifest_cache["user-x"] = (time.monotonic() + 60, "cached", {"cap"}, [])
+    _manifest_cache["user-x"] = (time.monotonic() + 60, "cached", {"cap"}, [], [])
     invalidate_integration_manifest("user-x")
     assert "user-x" not in _manifest_cache
 
@@ -228,14 +228,16 @@ def test_invalidate_integration_manifest_clears_cache():
 @pytest.mark.asyncio
 async def test_fetch_integration_manifest_prefers_gateway_over_skill():
     gateway_payload = (
-        "Connected apps (ACTIVE): google.",
+        "Ready for AI: google.",
         {"email.list_unread"},
         [{"id": "google_u1", "providerId": "google"}],
+        [{"providerId": "google", "state": "ready"}],
     )
     skill_payload = (
-        "Connected apps (ACTIVE): google, whatsapp.",
+        "Ready for AI: google, whatsapp.",
         {"email.list_unread", "messaging.list_unread"},
         [{"id": "whatsapp_u1", "providerId": "whatsapp"}],
+        [{"providerId": "whatsapp", "state": "ready"}],
     )
 
     with (
@@ -245,9 +247,10 @@ async def test_fetch_integration_manifest_prefers_gateway_over_skill():
         ),
         patch.dict("orchestration.context._manifest_cache", {}, clear=True),
     ):
-        text, caps, connections = await fetch_integration_manifest("user-1")
+        text, caps, connections, states = await fetch_integration_manifest("user-1")
 
     assert "google" in text
     assert "whatsapp" not in text
     assert caps == {"email.list_unread"}
     assert len(connections) == 1
+    assert states[0]["providerId"] == "google"

@@ -123,7 +123,7 @@ async def tools_available(user_id: str | None = None):
 async def agent_diagnostics(user_id: str):
     from orchestration.context import fetch_integration_manifest
 
-    manifest_text, manifest_caps, connections = await fetch_integration_manifest(user_id)
+    manifest_text, manifest_caps, connections, _ = await fetch_integration_manifest(user_id)
     headers = {"X-Internal-Token": INTERNAL_SERVICE_TOKEN}
 
     gateway_manifest = await _probe(
@@ -174,7 +174,7 @@ async def agent_diagnostics_timing(user_id: str, query: str = "hello"):
     timings: Dict[str, float] = {}
 
     t0 = time.perf_counter()
-    manifest_text, _, _ = await fetch_integration_manifest(user_id)
+    manifest_text, _, _, _ = await fetch_integration_manifest(user_id)
     timings["manifest_ms"] = (time.perf_counter() - t0) * 1000
 
     t1 = time.perf_counter()
@@ -402,7 +402,7 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
         if route.run_planner:
             yield _sse_frame("status", {"message": "Checking integrations…"})
             t_manifest = time.perf_counter()
-            manifest_text, manifest_caps, manifest_connections = (
+            manifest_text, manifest_caps, manifest_connections, manifest_connection_states = (
                 await fetch_integration_manifest(payload.user_id)
             )
             timings["manifest_ms"] = (time.perf_counter() - t_manifest) * 1000
@@ -434,6 +434,7 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
                     payload.user_id,
                     manifest_caps=manifest_caps,
                     manifest_connections=manifest_connections,
+                    manifest_connection_states=manifest_connection_states,
                     routing_query=payload.routing_query,
                     timezone=payload.timezone,
                     chat_history=chat_history,
@@ -539,6 +540,15 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
 
                 tool_context = format_scheduling_plan_failure(
                     plan.get("warnings") or []
+                )
+            elif plan.get("planner") in (
+                "integration-blocked",
+                "integration-unsupported",
+            ):
+                from orchestration.tool_results import format_integration_guidance
+
+                tool_context = format_integration_guidance(
+                    plan.get("user_guidance") or ""
                 )
             stream_query = payload.query + tool_context
             if has_attachments and not stream_query.strip():

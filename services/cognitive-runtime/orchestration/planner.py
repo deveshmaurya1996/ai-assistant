@@ -11,6 +11,12 @@ from orchestration.capability_map import (
     normalize_planned_item,
 )
 from orchestration.context import fetch_integration_manifest
+from orchestration.integration_intent import (
+    is_connected_apps_query,
+    is_read_intent,
+    is_send_intent,
+    resolve_integration_intent,
+)
 
 SKILL_RUNTIME_URL = os.getenv("SKILL_RUNTIME_URL", "http://localhost:3014")
 TOOL_RUNTIME_URL = os.getenv("TOOL_RUNTIME_URL", "http://localhost:3011")
@@ -138,7 +144,7 @@ async def _available_tools(
     using_manifest = manifest_caps is not None and manifest_connections is not None
 
     if not using_manifest:
-        _, fetched_caps, fetched_connections = await fetch_integration_manifest(user_id)
+        _, fetched_caps, fetched_connections, _ = await fetch_integration_manifest(user_id)
         available_caps |= fetched_caps
         connections = list(fetched_connections)
 
@@ -200,19 +206,44 @@ def _parse_llm_json(raw: str) -> Dict[str, Any]:
         return {"capabilities": [], "tools": []}
 
 
+_CONTACT_STOP_WORDS = frozenset(
+    {
+        "a",
+        "the",
+        "my",
+        "on",
+        "via",
+        "whatsapp",
+        "him",
+        "her",
+        "unread",
+        "check",
+        "list",
+        "show",
+        "new",
+        "recent",
+        "messages",
+        "message",
+        "inbox",
+        "chats",
+    }
+)
+
+
 def _extract_contact_name(query: str) -> str | None:
+    if not is_send_intent(query):
+        return None
     patterns = [
         r"send(?:\s+a)?\s+message\s+to\s+([A-Za-z][\w\s'-]{0,40}?)(?:\s+[:,-]|\s+saying|\s*$)",
         r"text\s+([A-Za-z][\w'-]+)",
-        r"message\s+([A-Za-z][\w'-]+)",
-        r"whatsapp\s+([A-Za-z][\w'-]+)",
+        r"message\s+to\s+([A-Za-z][\w'-]+)",
         r"to\s+([A-Za-z][\w'-]+)\s*[:,-]",
     ]
     for pattern in patterns:
         m = re.search(pattern, query, re.IGNORECASE)
         if m:
             name = m.group(1).strip()
-            if name.lower() not in ("a", "the", "my", "on", "via", "whatsapp", "him", "her"):
+            if name.lower() not in _CONTACT_STOP_WORDS:
                 return name
     return None
 
@@ -398,7 +429,7 @@ def _is_connected_apps_query(query: str) -> bool:
 
 
 def _heuristic_connected_apps_query(query: str) -> bool:
-    return _is_connected_apps_query(query)
+    return is_connected_apps_query(query)
 
 
 def _heuristic_file_search(
@@ -494,19 +525,19 @@ def _heuristic_capabilities(
     out.extend(_heuristic_file_search(query, available_caps, connected))
     out = _dedupe_cap_items(out)
 
-    send_intent = bool(
-        re.search(r"\b(send|text)\b", q) or re.search(r"\bmessage\s+to\b", q)
-    )
-    if not send_intent and not (
-        has_whatsapp and any(w in q for w in ["whatsapp", "wa ", "text", "message"])
-    ):
+    if not is_send_intent(query) or is_read_intent(query):
         return out
 
     contact_hint = _extract_contact_name(query)
-    if contact_hint and "communication.chat.search" in available_caps:
+    search_cap = (
+        "messaging.search_chats"
+        if "messaging.search_chats" in available_caps
+        else "communication.chat.search"
+    )
+    if contact_hint and search_cap in available_caps:
         out.append(
             {
-                "capability": "communication.chat.search",
+                "capability": search_cap,
                 "provider": "whatsapp",
                 "args": {"query": contact_hint},
             }
@@ -572,8 +603,9 @@ def _build_plan_result(
     planner: str,
     warnings: List[str],
     model_used: str | None = None,
+    user_guidance: str | None = None,
 ) -> Dict[str, Any]:
-    return {
+    result: Dict[str, Any] = {
         "query": query,
         "context": context,
         "user_id": user_id,
@@ -585,6 +617,9 @@ def _build_plan_result(
         "model_used": model_used,
         "warnings": warnings,
     }
+    if user_guidance:
+        result["user_guidance"] = user_guidance
+    return result
 
 
 async def _llm_plan_capabilities(
@@ -686,6 +721,7 @@ async def plan_tools(
     preferred_model: str | None = None,
     manifest_caps: Optional[Set[str]] = None,
     manifest_connections: Optional[List[Dict[str, Any]]] = None,
+    manifest_connection_states: Optional[List[Dict[str, Any]]] = None,
     routing_query: Optional[str] = None,
     timezone: Optional[str] = None,
     chat_history: Optional[List[Dict[str, str]]] = None,
@@ -765,6 +801,38 @@ async def plan_tools(
             [],
             "connected-apps-info",
             warnings,
+        )
+
+    integration_intent = resolve_integration_intent(
+        query, manifest_connection_states or []
+    )
+    if integration_intent.user_guidance and integration_intent.action == "execute":
+        warnings.append(integration_intent.user_guidance)
+
+    if integration_intent.action == "unsupported_prompt":
+        return _build_plan_result(
+            query,
+            context,
+            user_id,
+            connections,
+            tools,
+            [],
+            "integration-unsupported",
+            warnings,
+            user_guidance=integration_intent.user_guidance,
+        )
+
+    if integration_intent.action in ("connect_prompt", "offline_prompt"):
+        return _build_plan_result(
+            query,
+            context,
+            user_id,
+            connections,
+            tools,
+            [],
+            "integration-blocked",
+            warnings,
+            user_guidance=integration_intent.user_guidance,
         )
 
     heuristic_items = _heuristic_capabilities(query, available_caps, connected)

@@ -7,6 +7,14 @@ export type ConnectedProviderInfo = {
   connectionId: string;
 };
 
+export type ConnectionStateKind = 'ready' | 'offline' | 'not_connected';
+
+export type ProviderConnectionState = {
+  providerId: string;
+  state: ConnectionStateKind;
+  connectionId?: string;
+};
+
 export type IntegrationManifest = {
   connectedProviders: ConnectedProviderInfo[];
   capabilities: Array<{
@@ -16,6 +24,13 @@ export type IntegrationManifest = {
     requiresConfirmation: boolean;
     providers: string[];
   }>;
+};
+
+const PROVIDER_DISPLAY: Record<string, string> = {
+  google: 'Google Workspace (Gmail, Calendar, Drive)',
+  whatsapp: 'WhatsApp',
+  files: 'Files',
+  notes: 'Notes',
 };
 
 export function buildIntegrationManifest(
@@ -43,20 +58,57 @@ export function buildIntegrationManifest(
   return { connectedProviders, capabilities };
 }
 
-export function formatManifestForPlanner(manifest: IntegrationManifest): string {
-  if (manifest.connectedProviders.length === 0) {
-    return (
-      'Connected apps: none. The user must open Connect Apps and link Google, WhatsApp, or Files ' +
-      'before the assistant can use those services.'
+export function formatManifestForPlanner(
+  manifest: IntegrationManifest,
+  options?: {
+    supportedProviders?: string[];
+    connectionStates?: ProviderConnectionState[];
+  }
+): string {
+  const supported = options?.supportedProviders ?? ['google', 'whatsapp', 'files'];
+  const states = options?.connectionStates ?? [];
+  const supportedLine = supported
+    .map((id) => PROVIDER_DISPLAY[id] ?? id)
+    .join(', ');
+
+  const ready = states.filter((s) => s.state === 'ready').map((s) => s.providerId);
+  const offline = states.filter((s) => s.state === 'offline').map((s) => s.providerId);
+  const notConnected = states.filter((s) => s.state === 'not_connected').map((s) => s.providerId);
+
+  const lines: string[] = [
+    `Supported integrations: ${supportedLine}.`,
+  ];
+
+  if (ready.length > 0) {
+    lines.push(`Ready for AI: ${ready.join(', ')}.`);
+  } else {
+    lines.push('Ready for AI: none.');
+  }
+
+  if (notConnected.length > 0) {
+    lines.push(
+      `Not connected: ${notConnected.join(', ')} — open Connect Apps to link.`
     );
   }
 
-  const providerNames = manifest.connectedProviders.map((p) => p.providerId).join(', ');
-  const lines: string[] = [
-    `Connected apps (ACTIVE): ${providerNames}.`,
+  if (offline.length > 0) {
+    lines.push(
+      `Linked but offline: ${offline.join(', ')} — reconnect in Connect Apps.`
+    );
+  }
+
+  if (manifest.connectedProviders.length === 0) {
+    lines.push(
+      '',
+      'No integrations are ready right now. The user must connect apps in Connect Apps before the assistant can use them.'
+    );
+    return lines.join('\n');
+  }
+
+  lines.push(
     '',
-    'Capabilities available for this user (use only these capability IDs when planning):',
-  ];
+    'Capabilities available for this user (use only these capability IDs when planning):'
+  );
 
   for (const cap of manifest.capabilities) {
     const prov = cap.providers.length ? cap.providers.join(', ') : 'notes';

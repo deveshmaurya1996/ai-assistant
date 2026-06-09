@@ -10,9 +10,16 @@ _TOOL_REPLY_INSTRUCTION = (
     "If scheduling succeeded, confirm the reminder title and time. "
     "If inbox data was fetched, summarize only important/urgent/actionable items; "
     "say clearly if nothing needs attention. "
-    "If it failed, state that briefly and ask the user to try again — do not claim "
-    "the system is broken or suggest phone alarms unless scheduling actually failed. "
+    "If a connection error occurred, tell the user to open Connect Apps and link or reconnect the app — "
+    "do not say the system is broken. "
+    "If it failed for other reasons, state that briefly and suggest a concrete next step. "
     "Never mention tool names, execution IDs, JSON, Python dicts, or raw metadata."
+)
+
+_INTEGRATION_GUIDANCE_INSTRUCTION = (
+    "Use the integration guidance below as the authoritative answer. "
+    "Do not claim you accessed the app or ran any tools. "
+    "Be friendly and direct."
 )
 
 _INBOX_TOOLS = frozenset(
@@ -25,6 +32,43 @@ _INBOX_TOOLS = frozenset(
         "messaging.read_chat",
     }
 )
+
+
+def format_integration_guidance(guidance: str) -> str:
+    text = (guidance or "").strip()
+    if not text:
+        text = "That integration is not available right now."
+    return (
+        f"\n\n[System: integration guidance]\n"
+        f"- {text}\n\n"
+        f"{_INTEGRATION_GUIDANCE_INSTRUCTION}"
+    )
+
+
+def _classify_integration_error(error: str) -> str:
+    lower = error.lower()
+    if any(
+        phrase in lower
+        for phrase in (
+            "not connected",
+            "session not active",
+            "link whatsapp",
+            "connect apps",
+            "no active",
+            "sign-in expired",
+            "reconnect",
+            "could not be restored",
+        )
+    ):
+        return f"Connection issue: {error}"
+    if any(
+        phrase in lower
+        for phrase in ("could not find", "not found", "no match", "unknown contact")
+    ):
+        return f"Lookup issue: {error}"
+    if any(phrase in lower for phrase in ("timed out", "timeout", "temporary")):
+        return f"Temporary issue: {error}"
+    return f"Could not complete the request: {error}"
 
 
 def format_scheduling_clarification(warnings: List[str]) -> str:
@@ -79,7 +123,7 @@ def _summarize_tool_entry(entry: Dict[str, Any]) -> str:
     status = str(entry.get("status") or "").lower()
 
     if entry.get("error"):
-        return f"Could not complete the request: {entry['error']}"
+        return _classify_integration_error(str(entry["error"]))
 
     if tool == "reminder.create":
         return _summarize_reminder_create(entry)

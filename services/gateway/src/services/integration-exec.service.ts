@@ -184,10 +184,21 @@ export async function resolveWhatsAppRecipient(
     connectionId,
   });
 
-  if (!outcome.success || !outcome.result) return trimmed;
+  if (!outcome.success) {
+    throw new Error(
+      outcome.error ??
+        `Could not find WhatsApp contact "${trimmed}". Try a phone number (e.g. +1…) or a name from your chats.`
+    );
+  }
 
-  const chats = (outcome.result as { chats?: Array<{ jid?: string }> }).chats ?? [];
-  return chats[0]?.jid ?? trimmed;
+  const chats = (outcome.result as { chats?: Array<{ jid?: string }> } | undefined)?.chats ?? [];
+  const jid = chats[0]?.jid;
+  if (!jid) {
+    throw new Error(
+      `Could not find WhatsApp contact "${trimmed}". Try a phone number (e.g. +1…) or a name from your chats.`
+    );
+  }
+  return jid;
 }
 
 async function executeViaSkillRuntime(params: {
@@ -246,15 +257,20 @@ export async function executeIntegrationTool(params: {
   if (params.tool === 'whatsapp.send_message' && typeof args.to === 'string') {
     const to = String(args.to);
     if (!to.includes('@')) {
-      args = {
-        ...args,
-        to: await resolveWhatsAppRecipient(
-          params.userId,
-          to,
-          params.connectionId,
-          params.chatSessionId
-        ),
-      };
+      try {
+        args = {
+          ...args,
+          to: await resolveWhatsAppRecipient(
+            params.userId,
+            to,
+            params.connectionId,
+            params.chatSessionId
+          ),
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Could not resolve WhatsApp recipient';
+        return { success: false, tool: params.tool, error: msg };
+      }
     }
   }
 

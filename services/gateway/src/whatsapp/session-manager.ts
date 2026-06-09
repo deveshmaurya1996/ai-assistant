@@ -282,7 +282,12 @@ export class SessionManager {
       throw new Error('Session not active. Link WhatsApp first.');
     }
 
-    const chats = this.chatCache.get(sessionId) ?? [];
+    const sock = await this.ensureSocket(sessionId);
+    let chats = this.chatCache.get(sessionId) ?? [];
+    if (chats.length === 0) {
+      await this.waitForChatCache(sessionId, sock, 8_000);
+      chats = this.chatCache.get(sessionId) ?? [];
+    }
     const msgByJid = this.messageCache.get(sessionId) ?? new Map();
     const unreadMap = this.unreadCounts.get(sessionId) ?? new Map();
 
@@ -305,17 +310,17 @@ export class SessionManager {
 
     items.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
-    const sock = (await this.ensureSocket(sessionId)) as BaileysSocket & {
+    const socket = sock as BaileysSocket & {
       fetchMessagesFromWA?: (jid: string, count: number) => Promise<unknown[]>;
     };
 
-    if (items.length < limit && typeof sock.fetchMessagesFromWA === 'function') {
+    if (items.length < limit && typeof socket.fetchMessagesFromWA === 'function') {
       for (const chat of chats.slice(0, Math.min(limit, 10))) {
         if (items.some((i) => i.chatId === chat.jid && i.preview !== '(no preview yet)')) {
           continue;
         }
         try {
-          const raw = await sock.fetchMessagesFromWA(chat.jid, 5);
+          const raw = await socket.fetchMessagesFromWA(chat.jid, 5);
           const parsed = this.parseBaileysMessages(chat.jid, raw);
           if (parsed.length > 0) {
             this.storeMessages(sessionId, chat.jid, parsed);

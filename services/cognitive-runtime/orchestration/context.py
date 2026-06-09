@@ -20,7 +20,7 @@ MAX_HISTORY = 20
 RAG_TIMEOUT = float(os.getenv("RAG_TIMEOUT_SECONDS", "5"))
 MEMORY_FACT_LIMIT = int(os.getenv("MEMORY_FACT_LIMIT", "5"))
 MANIFEST_CACHE_TTL_SECONDS = float(os.getenv("MANIFEST_CACHE_TTL_SECONDS", "60"))
-_manifest_cache: Dict[str, Tuple[float, str, Set[str], List[Dict]]] = {}
+_manifest_cache: Dict[str, Tuple[float, str, Set[str], List[Dict], List[Dict]]] = {}
 
 
 def is_rag_globally_enabled() -> bool:
@@ -340,7 +340,7 @@ async def fetch_layered_memory_context(
     return _dedupe_memory_blocks(facts_block, episodic_block)
 
 
-def _parse_manifest_response(data: Dict) -> Tuple[str, Set[str], List[Dict]]:
+def _parse_manifest_response(data: Dict) -> Tuple[str, Set[str], List[Dict], List[Dict]]:
     text = str(data.get("plannerText", "")).strip()
     caps = {
         c["id"]
@@ -350,7 +350,10 @@ def _parse_manifest_response(data: Dict) -> Tuple[str, Set[str], List[Dict]]:
     connections = data.get("connections") or []
     if not isinstance(connections, list):
         connections = []
-    return text, caps, connections
+    connection_states = data.get("connectionStates") or []
+    if not isinstance(connection_states, list):
+        connection_states = []
+    return text, caps, connections, connection_states
 
 
 async def _fetch_manifest_endpoint(
@@ -358,7 +361,7 @@ async def _fetch_manifest_endpoint(
     path: str,
     user_id: str,
     headers: Dict[str, str],
-) -> Optional[Tuple[str, Set[str], List[Dict]]]:
+) -> Optional[Tuple[str, Set[str], List[Dict], List[Dict]]]:
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             res = await client.get(
@@ -379,11 +382,11 @@ def invalidate_integration_manifest(user_id: str) -> None:
 
 async def fetch_integration_manifest(
     user_id: str,
-) -> Tuple[str, Set[str], List[Dict]]:
+) -> Tuple[str, Set[str], List[Dict], List[Dict]]:
     now = time.monotonic()
     cached = _manifest_cache.get(user_id)
     if cached and cached[0] > now:
-        return cached[1], cached[2], cached[3]
+        return cached[1], cached[2], cached[3], cached[4]
 
     headers = {"X-Internal-Token": INTERNAL_SERVICE_TOKEN}
     gateway_result = await _fetch_manifest_endpoint(
@@ -391,30 +394,32 @@ async def fetch_integration_manifest(
     )
 
     if gateway_result is not None:
-        text, caps, connections = gateway_result
+        text, caps, connections, connection_states = gateway_result
         _manifest_cache[user_id] = (
             now + MANIFEST_CACHE_TTL_SECONDS,
             text,
             caps,
             connections,
+            connection_states,
         )
-        return text, caps, connections
+        return text, caps, connections, connection_states
 
     skill_result = await _fetch_manifest_endpoint(
         SKILL_RUNTIME_URL, "/v1/integrations/manifest", user_id, {}
     )
     if skill_result is not None:
-        text, caps, connections = skill_result
+        text, caps, connections, connection_states = skill_result
         _manifest_cache[user_id] = (
             now + MANIFEST_CACHE_TTL_SECONDS,
             text,
             caps,
             connections,
+            connection_states,
         )
-        return text, caps, connections
+        return text, caps, connections, connection_states
 
-    empty: Tuple[str, Set[str], List[Dict]] = ("", set(), [])
-    _manifest_cache[user_id] = (now + MANIFEST_CACHE_TTL_SECONDS, "", set(), [])
+    empty: Tuple[str, Set[str], List[Dict], List[Dict]] = ("", set(), [], [])
+    _manifest_cache[user_id] = (now + MANIFEST_CACHE_TTL_SECONDS, "", set(), [], [])
     return empty
 
 
@@ -472,7 +477,7 @@ async def build_context(
 
     if include_manifest:
         if manifest_text is None:
-            manifest_text, _, _ = await fetch_integration_manifest(user_id)
+            manifest_text, _, _, _ = await fetch_integration_manifest(user_id)
         if manifest_text:
             parts.append(manifest_text)
 
