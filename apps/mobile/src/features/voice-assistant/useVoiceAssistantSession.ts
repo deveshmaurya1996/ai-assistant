@@ -440,8 +440,8 @@ export function useVoiceAssistantSession() {
   const isActive = phase !== 'idle' && phase !== 'stopping';
 
   useEffect(() => {
-    setRuntime({ phase, isActive });
-  }, [phase, isActive, setRuntime]);
+    setRuntime({ phase, isActive, chatSessionId: sessionId });
+  }, [phase, isActive, sessionId, setRuntime]);
 
   useEffect(() => {
     registerHandlers({

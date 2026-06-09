@@ -12,7 +12,7 @@ import {
   type KeyboardEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Pencil, Trash2, X } from 'lucide-react-native';
+import { Pencil, Share2, Trash2, X } from 'lucide-react-native';
 import type { ChatSession } from '@ai-assistant/sdk';
 import { Text } from '@/components/ui/Text';
 import { Input } from '@/components/ui/Input';
@@ -36,10 +36,11 @@ type Props = {
   onClose: () => void;
   onRename: (sessionId: string, title: string) => Promise<void>;
   onDelete: (sessionId: string) => Promise<void>;
+  onShare?: (sessionId: string) => void;
 };
 
 const MENU_WIDTH = 196;
-const ACTIONS_MENU_HEIGHT = 96;
+const ACTIONS_MENU_HEIGHT = 144;
 const MENU_GAP = 6;
 
 function computeMenuPosition(
@@ -161,6 +162,7 @@ export function ChatSessionActionsModal({
   onClose,
   onRename,
   onDelete,
+  onShare,
 }: Props) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -296,6 +298,22 @@ export function ChatSessionActionsModal({
                 disabled={busy}
               />
               <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              {onShare ? (
+                <>
+                  <ActionRow
+                    icon={<Share2 color={colors.text} size={18} />}
+                    label="Share chat"
+                    color={colors.text}
+                    onPress={() => {
+                      if (!session) return;
+                      handleClose();
+                      onShare(session.id);
+                    }}
+                    disabled={busy}
+                  />
+                  <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                </>
+              ) : null}
               <ActionRow
                 icon={<Trash2 color={colors.danger} size={18} />}
                 label="Delete"

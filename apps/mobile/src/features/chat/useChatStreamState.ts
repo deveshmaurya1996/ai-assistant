@@ -8,6 +8,7 @@ export type ChatStreamViewState = {
   streamKey: string;
   streamText: string;
   isGenerating: boolean;
+  isImageGenerating: boolean;
   streamStatusMessage: string | null;
   revision: number;
   showStreamBubble: boolean;
@@ -25,6 +26,7 @@ export function useChatStreamState(
 
   const streamText = stream?.streamText ?? '';
   const isGenerating = stream?.isGenerating ?? false;
+  const isImageGenerating = stream?.isImageGenerating ?? false;
   const streamStatusMessage = stream?.statusMessage ?? null;
   const revision = stream?.revision ?? 0;
   const showStreamBubble = isGenerating || Boolean(streamText.trim());
@@ -33,6 +35,7 @@ export function useChatStreamState(
     streamKey,
     streamText,
     isGenerating,
+    isImageGenerating,
     streamStatusMessage,
     revision,
     showStreamBubble,

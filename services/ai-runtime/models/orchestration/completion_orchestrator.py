@@ -65,6 +65,8 @@ async def stream_text_orchestrated(
                     )
                     first_token = False
                 yield sse_token(token)
+            if first_token:
+                raise RuntimeError(f"No tokens from {winner}")
             yield sse_done(winner, label_for(winner))
             return
         except asyncio.CancelledError:
@@ -99,8 +101,12 @@ async def stream_text_orchestrated(
                     primary_expected,
                     model_id,
                 )
+            got_token = False
             async for token in stream_winner(model_id, messages, cancel_event=cancel_event):
+                got_token = True
                 yield sse_token(token)
+            if not got_token:
+                raise RuntimeError(f"No tokens from {model_id}")
             latency_ms = (time.perf_counter() - t_attempt) * 1000
             circuit_breaker.record_success(prov)
             health_metrics.record(prov, success=True, latency_ms=latency_ms)

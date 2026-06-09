@@ -1,7 +1,5 @@
-import { memo, useState } from 'react';
-import { View, StyleSheet, ActivityIndicator, Pressable, useWindowDimensions } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
-import { Bookmark, Check, Copy } from 'lucide-react-native';
+import { memo, useMemo } from 'react';
+import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import type { ChatAttachmentRef } from '@ai-assistant/sdk';
 import type { ChatMessage } from '@ai-assistant/types/chat';
 import { LEGACY_ASSISTANT_LABEL } from '@/features/chat/chatRoutes';
@@ -16,6 +14,12 @@ import { ChatStreamingText } from './ChatStreamingText';
 import { fitChatImageDimensions } from './fitChatImageDimensions';
 import { ChatImageSkeleton } from './ChatImageSkeleton';
 import { GENERATED_IMAGE_SIZE } from '@/features/chat/isImageGenerationTurn';
+import { ShareActionsRow } from '@/components/share/ShareActionsRow';
+import {
+  downloadImageToDevice,
+  firstImageAttachment,
+  shareAssistantMessage,
+} from '@/lib/share';
 
 type Props = {
   message: ChatMessage;
@@ -58,6 +62,7 @@ function ChatMessageBubbleInner({
   const hasAttachments = Boolean(message.attachments?.length);
   const hasText = Boolean(message.content?.trim());
   const imageBubbleFullWidth = hasAttachments || showImageSkeleton;
+  const imageAttachment = useMemo(() => firstImageAttachment(message), [message]);
   const imageSkeletonSize = fitChatImageDimensions(
     GENERATED_IMAGE_SIZE.width,
     GENERATED_IMAGE_SIZE.height,
@@ -81,28 +86,16 @@ function ChatMessageBubbleInner({
     Boolean(message.content.trim()) &&
     !isStreamingBubble &&
     !message.id.startsWith('local-');
-  const canSave =
-    !isUser && canCopy && Boolean(onSaveNote);
-
-  const [copied, setCopied] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const handleCopy = async () => {
-    if (!message.content.trim()) return;
-    await Clipboard.setStringAsync(message.content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleToggleSave = async () => {
-    if (!onSaveNote || !message.content.trim() || saving) return;
-    setSaving(true);
-    try {
-      await onSaveNote(message.content, message.id);
-    } finally {
-      setSaving(false);
-    }
-  };
+  const canSave = !isUser && canCopy && Boolean(onSaveNote);
+  const showUserCopy = isUser && canCopy;
+  const showAssistantActions = !isUser && !isStreamingBubble;
+  const showImageDownload = showAssistantActions && Boolean(imageAttachment);
+  const showShare =
+    showAssistantActions &&
+    (Boolean(message.content?.trim()) || Boolean(imageAttachment));
+  const showActions =
+    showUserCopy ||
+    (showAssistantActions && (canCopy || canSave || showShare || showImageDownload));
 
   return (
     <View
@@ -141,6 +134,7 @@ function ChatMessageBubbleInner({
                   attachments={message.attachments!}
                   maxImageWidth={imageMaxWidth}
                   fillWidth
+                  allowImageExport={false}
                 />
               ) : null}
               {hasText ? (
@@ -187,6 +181,7 @@ function ChatMessageBubbleInner({
                   onEditImage={onEditImage}
                   maxImageWidth={imageMaxWidth}
                   fillWidth
+                  allowImageExport
                 />
               ) : null}
               {hasText ? (
@@ -206,38 +201,38 @@ function ChatMessageBubbleInner({
           )}
         </View>
       ) : null}
-      {canCopy || canSave ? (
-        <View style={[styles.actions, isUser && styles.actionsUser]}>
-          {canCopy ? (
-            <Pressable
-              onPress={() => void handleCopy()}
-              style={[styles.actionBtn, { backgroundColor: colors.surfaceElevated }]}
-              accessibilityLabel="Copy message">
-              {copied ? (
-                <Check color={colors.success} size={16} />
-              ) : (
-                <Copy color={colors.textMuted} size={16} />
-              )}
-            </Pressable>
-          ) : null}
-          {canSave ? (
-            <Pressable
-              onPress={() => void handleToggleSave()}
-              disabled={saving}
-              style={[styles.actionBtn, { backgroundColor: colors.surfaceElevated }]}
-              accessibilityLabel={isSaved ? 'Remove from notes' : 'Save to notes'}>
-              {saving ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <Bookmark
-                  color={isSaved ? colors.primary : colors.textMuted}
-                  fill={isSaved ? colors.primary : 'transparent'}
-                  size={16}
-                />
-              )}
-            </Pressable>
-          ) : null}
-        </View>
+      {showActions ? (
+        <ShareActionsRow
+          align={isUser ? 'right' : 'left'}
+          copy={canCopy ? { text: message.content } : undefined}
+          save={
+            canSave && onSaveNote
+              ? {
+                  isSaved,
+                  onPress: () => onSaveNote(message.content, message.id),
+                }
+              : undefined
+          }
+          download={
+            showImageDownload && imageAttachment
+              ? {
+                  onPress: () =>
+                    downloadImageToDevice(
+                      imageAttachment.id,
+                      imageAttachment.filename,
+                      imageAttachment.mimeType
+                    ),
+                }
+              : undefined
+          }
+          share={
+            showShare
+              ? {
+                  onPress: () => shareAssistantMessage(message),
+                }
+              : undefined
+          }
+        />
       ) : null}
     </View>
   );
@@ -301,23 +296,5 @@ const styles = StyleSheet.create({
     width: '100%',
     minWidth: 0,
     alignItems: 'stretch',
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-    marginLeft: spacing.xs,
-  },
-  actionsUser: {
-    alignSelf: 'flex-end',
-    marginLeft: 0,
-    marginRight: spacing.xs,
-  },
-  actionBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: radii.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

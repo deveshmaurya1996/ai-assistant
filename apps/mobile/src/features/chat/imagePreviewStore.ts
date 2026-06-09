@@ -9,6 +9,9 @@ export type ImagePreviewSource = {
   uri: string;
   headers?: Record<string, string>;
   filename?: string;
+  fileId?: string;
+  mimeType?: string;
+  allowExport?: boolean;
 };
 
 type ImagePreviewState = {
@@ -48,17 +51,34 @@ export const useImagePreviewStore = create<ImagePreviewState>((set) => ({
   setIndex: (index) => set({ index }),
 }));
 
-export function openChatLocalImagePreview(uri: string, filename?: string) {
-  useImagePreviewStore.getState().open([{ uri, filename }]);
+export function openChatLocalImagePreview(
+  uri: string,
+  filename?: string,
+  options?: { allowExport?: boolean }
+) {
+  useImagePreviewStore.getState().open([
+    { uri, filename, allowExport: options?.allowExport ?? false },
+  ]);
 }
 
-export async function openChatFileImagePreview(fileId: string) {
+export async function openChatFileImagePreview(
+  fileId: string,
+  options?: {
+    filename?: string;
+    mimeType?: string;
+    allowExport?: boolean;
+  }
+) {
   const local = useAttachmentPreviewStore.getState().byFileId[fileId];
   const uri = local ?? (await cacheAuthenticatedFile(fileId));
   useImagePreviewStore.getState().open([
     {
       uri,
       headers: previewHeadersForUri(uri),
+      fileId,
+      filename: options?.filename,
+      mimeType: options?.mimeType,
+      allowExport: options?.allowExport ?? false,
     },
   ]);
 }

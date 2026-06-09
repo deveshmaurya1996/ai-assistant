@@ -52,6 +52,7 @@ type Props = {
   visibleText: string;
   isStreaming: boolean;
   isGenerating?: boolean;
+  isImageGenerating?: boolean;
   showStreamCursor?: boolean;
   streamTurnKey?: number;
   emptyHint?: string;
@@ -73,6 +74,7 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function
   visibleText,
   isStreaming,
   isGenerating = false,
+  isImageGenerating = false,
   showStreamCursor = true,
   streamTurnKey = 0,
   emptyHint,
@@ -188,7 +190,8 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function
         isStreamRow &&
         isGenerating &&
         !item.attachments?.length &&
-        isImageGenerationTurn(thinkingUserMessage, lastUserMessage);
+        (isImageGenerating ||
+          isImageGenerationTurn(thinkingUserMessage, lastUserMessage));
       return (
         <View style={styles.row}>
           <ChatMessageBubble
@@ -210,6 +213,7 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function
     [
       streamingAssistantLabel,
       isGenerating,
+      isImageGenerating,
       isStreaming,
       streamActive,
       onSaveNote,

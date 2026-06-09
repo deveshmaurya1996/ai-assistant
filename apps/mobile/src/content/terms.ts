@@ -1,20 +1,15 @@
-export const TERMS_VERSION = '1.0.0';
+export const TERMS_VERSION = '1.2.0';
+
+export const PRIVACY_POLICY_URL =
+  'https://dartix.live/legal/ai-assistant/privacy-policy';
+
+export const TERMS_URL =
+  'https://dartix.live/legal/ai-assistant/terms-and-conditions';
 
 export const TERMS_TITLE = 'Terms of Service';
 
-export const TERMS_BODY = `By using AI Assistant you agree to:
-
-1. Use the service responsibly and comply with applicable laws.
-2. Not submit harmful, illegal, or abusive content through chat or voice.
-3. Understand that AI responses may be inaccurate and are not professional advice.
-4. Allow processing of your messages and voice recordings to provide the service.
-
-We may update these terms. Continued use after updates constitutes acceptance.`;
+export const TERMS_BODY = `Before creating an account, please read our Terms of Service. By continuing, you agree to be bound by these terms, including responsible use of the service, compliance with applicable laws, and understanding that AI responses may be inaccurate and are not professional advice.`;
 
 export const PRIVACY_TITLE = 'Privacy Policy';
 
-export const PRIVACY_BODY = `We collect account information (email, name), chat messages, and voice recordings you submit for transcription.
-
-Data is stored on servers you configure (self-hosted deployment). We do not sell your data.
-
-You may request account deletion by contacting your administrator.`;
+export const PRIVACY_BODY = `Please review our Privacy Policy to understand how we collect, use, and protect your account information, messages, voice recordings, files, and related data. We do not sell your personal data.`;

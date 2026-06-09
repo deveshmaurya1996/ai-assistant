@@ -2,16 +2,18 @@ import type { ChatMessage } from '@ai-assistant/sdk';
 
 export const GENERATED_IMAGE_SIZE = { width: 1024, height: 1024 };
 
+export const IMAGE_GENERATING_STATUS = '__image_generating__';
+
 export function isImageGenerationTurn(
   userMessage: string,
   lastUserMessage?: ChatMessage | null
 ): boolean {
-  if (lastUserMessage?.attachments?.some((a) => a.kind === 'image')) {
-    return true;
-  }
-
   const q = userMessage.toLowerCase().trim();
   if (!q) return false;
+
+  const hasImageAttachment = Boolean(
+    lastUserMessage?.attachments?.some((a) => a.kind === 'image')
+  );
 
   if (
     /\b(analyze|describe|read|ocr|extract text|what(?:'s| is) in (?:this|the) (?:image|photo|file|document|pdf|screenshot))\b/.test(
@@ -28,7 +30,7 @@ export function isImageGenerationTurn(
     /\b(the|this|that|previous|last)\s+(generated\s+)?(image|picture|photo)\b/,
   ];
 
-  if (editSignals.some((p) => p.test(q))) {
+  if (hasImageAttachment && editSignals.some((p) => p.test(q))) {
     return true;
   }
 

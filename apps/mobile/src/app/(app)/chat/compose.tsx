@@ -68,6 +68,7 @@ export default function ChatComposeScreen() {
     streamTurnKey,
     isStreaming,
     isGenerating,
+    isImageGenerating,
     streamStatusMessage,
     streamRevision,
     send: roomSend,
@@ -104,6 +105,7 @@ export default function ChatComposeScreen() {
       streamTurnKey={streamTurnKey}
       isStreaming={isStreaming}
       isGenerating={isGenerating}
+      isImageGenerating={isImageGenerating}
       streamStatusMessage={streamStatusMessage}
       streamRevision={streamRevision}
       emptyHint="Send a message to start"

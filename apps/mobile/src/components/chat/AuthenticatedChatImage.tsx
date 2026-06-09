@@ -27,6 +27,8 @@ type Props = {
   contentFit?: ImageContentFit;
   previewable?: boolean;
   filename?: string;
+  mimeType?: string;
+  allowExport?: boolean;
   onLoad?: (event: ImageLoadEventData) => void;
 };
 
@@ -36,6 +38,8 @@ export function AuthenticatedChatImage({
   contentFit = 'cover',
   previewable = true,
   filename,
+  mimeType,
+  allowExport = false,
   onLoad,
 }: Props) {
   const { colors } = useTheme();
@@ -71,17 +75,24 @@ export function AuthenticatedChatImage({
   const openPreview = useCallback(() => {
     if (!previewable) return;
     if (localPreview) {
-      openChatLocalImagePreview(localPreview, filename);
+      openChatLocalImagePreview(localPreview, filename, { allowExport });
       return;
     }
     if (uri) {
       useImagePreviewStore.getState().open([
-        { uri, headers: previewHeadersForUri(uri), filename },
+        {
+          uri,
+          headers: previewHeadersForUri(uri),
+          filename,
+          mimeType,
+          fileId,
+          allowExport,
+        },
       ]);
       return;
     }
-    void openChatFileImagePreview(fileId);
-  }, [fileId, filename, localPreview, previewable, uri]);
+    void openChatFileImagePreview(fileId, { filename, mimeType, allowExport });
+  }, [allowExport, fileId, filename, localPreview, mimeType, previewable, uri]);
 
   const source = useMemo(() => {
     if (!uri) return null;

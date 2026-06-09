@@ -4,7 +4,10 @@ import { router } from 'expo-router';
 import { useAuthStore } from '@/stores/auth';
 import { useSettingsStore } from '@/stores/settings';
 import { Routes } from '@/lib/routes';
-import { registerPushTokenIfNeeded } from './registerPushToken';
+import {
+  flushPendingPushRegistration,
+  registerPushTokenIfNeeded,
+} from './registerPushToken';
 import { emitReminderRefresh } from './reminderEvents';
 import { useChatSocket } from '@/features/chat/ChatSocketProvider';
 import {
@@ -23,7 +26,12 @@ export function ReminderNotificationsHost() {
 
   useEffect(() => {
     if (!session) return;
-    void registerPushTokenIfNeeded(reminderOverlayEnabled);
+    void (async () => {
+      const synced = await flushPendingPushRegistration();
+      if (!synced) {
+        await registerPushTokenIfNeeded(reminderOverlayEnabled);
+      }
+    })();
     void registerReminderOverlayTask().catch(() => {});
   }, [session, reminderOverlayEnabled]);
 

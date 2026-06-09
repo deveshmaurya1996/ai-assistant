@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
-import { Link, router } from 'expo-router';
+import { router } from 'expo-router';
 import { Screen } from '@/components/ui/Screen';
 import { FadeIn } from '@/components/motion/FadeIn';
 import { Text } from '@/components/ui/Text';
@@ -62,14 +62,12 @@ export default function LoginScreen() {
           style={{ marginTop: spacing.lg }}
         />
         <GoogleSignInButton />
-        <Link href="/(auth)/register" asChild>
-          <Button
-            label="Create account"
-            variant="ghost"
-            onPress={() => router.push('/(auth)/terms')}
-            style={{ marginTop: spacing.sm }}
-          />
-        </Link>
+        <Button
+          label="Create account"
+          variant="ghost"
+          onPress={() => router.push('/(auth)/terms')}
+          style={{ marginTop: spacing.sm }}
+        />
       </FadeIn>
     </Screen>
   );

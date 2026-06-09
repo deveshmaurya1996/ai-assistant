@@ -20,6 +20,7 @@ import { useChatActionConfirmBridge } from './chatActionConfirmBridge';
 import { useSettingsStore } from '@/stores/settings';
 import { useOverlaySessionStore } from '@/features/overlay/overlaySessionStore';
 import { useChatSidebarStore } from './chatSidebarStore';
+import { syncSidebarAttention } from './sidebarAttention';
 import {
   PENDING_CHAT_STREAM_KEY,
   useChatStreamStore,
@@ -234,10 +235,16 @@ export function ChatSocketProvider({
       setSocket(connected);
 
       connected.on('chat:chunk', (data) => {
+        if (data.chatSessionId) {
+          syncSidebarAttention(data.chatSessionId);
+        }
         queueChunk(data.chatSessionId, data.chunk);
       });
 
       connected.on('chat:status', (data: ChatStatusPayload) => {
+        if (data.chatSessionId) {
+          syncSidebarAttention(data.chatSessionId);
+        }
         const key = resolveChunkStreamKey(data.chatSessionId);
         setStatusMessage(key, data.message);
       });
@@ -258,18 +265,29 @@ export function ChatSocketProvider({
         }
         flushChunkBuffer();
         clearTurnTimeout();
-        activeTurnSessionRef.current = data.chatSessionId;
-        endTurn(data.chatSessionId);
-        useOverlaySessionStore
-          .getState()
-          .setLastReply(data.chatSessionId, data.message.content);
+        const sid = data.chatSessionId;
+        const hasContent = Boolean(data.message.content?.trim());
+        const hasAttachments = Boolean(data.message.attachments?.length);
+        if (!hasContent && !hasAttachments) {
+          abortTurn(sid);
+          notifySessionEvent(sid, (l) =>
+            l.onError?.('The assistant returned an empty response. Please try again.')
+          );
+          activeTurnSessionRef.current = null;
+          setBoundTurnSessionId(null);
+          return;
+        }
+        activeTurnSessionRef.current = sid;
+        endTurn(sid);
+        syncSidebarAttention(sid);
+        useOverlaySessionStore.getState().setLastReply(sid, data.message.content);
         if (data.modelLabel) {
           void useSettingsStore.getState().setLastAiModelLabel(data.modelLabel);
         }
-        notifySessionEvent(data.chatSessionId, (l) => {
+        notifySessionEvent(sid, (l) => {
           l.onStreamTargetChange?.(data.message.content);
           l.onAssistantMessage?.(data.message);
-          l.onExchangeComplete?.(data.chatSessionId);
+          l.onExchangeComplete?.(sid);
         });
         activeTurnSessionRef.current = null;
         setBoundTurnSessionId(null);
@@ -301,9 +319,18 @@ export function ChatSocketProvider({
       });
 
       connected.on('chat:title_updated', (data) => {
+        const boundId = useChatStreamStore.getState().boundTurnSessionId;
         useOverlaySessionStore.getState().setTitle(data.chatSessionId, data.title);
         useChatSidebarStore.getState().patchTitle(data.chatSessionId, data.title);
-        notifySessionEvent(data.chatSessionId, (l) => l.onTitleUpdated?.(data.title));
+        for (const entry of listenerMapRef.current.values()) {
+          const { filterSessionId, listeners } = entry;
+          if (
+            filterSessionId === data.chatSessionId ||
+            (filterSessionId === null && boundId === data.chatSessionId)
+          ) {
+            listeners.onTitleUpdated?.(data.title);
+          }
+        }
       });
 
       connected.on('chat:session_created', (data) => {
@@ -324,6 +351,7 @@ export function ChatSocketProvider({
           kind: 'text',
           messageCount: 1,
         });
+        syncSidebarAttention(data.chatSessionId);
       });
 
       connected.on('chat:action_confirm_required', (payload: ActionConfirmRequiredPayload) => {
@@ -412,6 +440,9 @@ export function ChatSocketProvider({
         });
       }
       beginTurn(sessionKey);
+      if (sessionId) {
+        syncSidebarAttention(sessionId);
+      }
       scheduleTurnTimeout();
       useChatActionConfirmBridge.getState().setPending(null);
 

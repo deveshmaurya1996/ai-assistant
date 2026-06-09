@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { ScrollView, View, StyleSheet, Pressable } from 'react-native';
+import { Alert, ScrollView, View, StyleSheet, Pressable, Linking } from 'react-native';
 import { router } from 'expo-router';
-import { Check } from 'lucide-react-native';
+import { Check, ExternalLink } from 'lucide-react-native';
 import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
@@ -12,18 +12,71 @@ import {
   TERMS_TITLE,
   PRIVACY_BODY,
   PRIVACY_TITLE,
+  PRIVACY_POLICY_URL,
+  TERMS_URL,
 } from '@/content/terms';
 import { useSettingsStore } from '@/stores/settings';
+
+function openLegalUrl(url: string) {
+  void Linking.openURL(url).catch(() => {
+    Alert.alert('Could not open link', 'Please try again in your browser.');
+  });
+}
+
+function LegalLinkCard({
+  title,
+  body,
+  url,
+  linkLabel,
+}: {
+  title: string;
+  body: string;
+  url: string;
+  linkLabel: string;
+}) {
+  const { colors } = useTheme();
+
+  return (
+    <Pressable
+      onPress={() => openLegalUrl(url)}
+      style={[styles.legalCard, { borderColor: colors.border, backgroundColor: colors.surfaceElevated }]}>
+      <View style={styles.legalCardHeader}>
+        <Text variant="h2">{title}</Text>
+        <ExternalLink color={colors.primary} size={18} />
+      </View>
+      <Text variant="body" muted style={styles.legalBody}>
+        {body}
+      </Text>
+      <Text variant="caption" style={{ color: colors.primary, marginTop: spacing.sm }}>
+        {linkLabel}
+      </Text>
+      <Text variant="caption" muted style={styles.legalUrl} numberOfLines={2}>
+        {url}
+      </Text>
+    </Pressable>
+  );
+}
 
 export default function TermsScreen() {
   const { colors } = useTheme();
   const acceptTerms = useSettingsStore((s) => s.acceptTerms);
   const [checked, setChecked] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const onContinue = async () => {
-    if (!checked) return;
-    await acceptTerms();
-    router.push('/(auth)/register');
+    if (!checked || loading) return;
+    setLoading(true);
+    try {
+      await acceptTerms();
+      router.replace('/(auth)/register');
+    } catch (e) {
+      Alert.alert(
+        'Could not continue',
+        e instanceof Error ? e.message : 'Please try again.'
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -32,18 +85,22 @@ export default function TermsScreen() {
         <Text variant="h1" style={styles.heading}>
           Before you join
         </Text>
-        <Text variant="h2" style={{ marginTop: spacing.lg }}>
-          {TERMS_TITLE}
+        <Text variant="body" muted style={styles.intro}>
+          Review our legal documents below. You must accept both before creating an account.
         </Text>
-        <Text variant="body" muted style={styles.body}>
-          {TERMS_BODY}
-        </Text>
-        <Text variant="h2" style={{ marginTop: spacing.lg }}>
-          {PRIVACY_TITLE}
-        </Text>
-        <Text variant="body" muted style={styles.body}>
-          {PRIVACY_BODY}
-        </Text>
+
+        <LegalLinkCard
+          title={TERMS_TITLE}
+          body={TERMS_BODY}
+          url={TERMS_URL}
+          linkLabel="Open Terms of Service"
+        />
+        <LegalLinkCard
+          title={PRIVACY_TITLE}
+          body={PRIVACY_BODY}
+          url={PRIVACY_POLICY_URL}
+          linkLabel="Open Privacy Policy"
+        />
 
         <Pressable
           onPress={() => setChecked((c) => !c)}
@@ -58,12 +115,30 @@ export default function TermsScreen() {
             ]}>
             {checked ? <Check color={colors.onPrimary} size={16} /> : null}
           </View>
-          <Text variant="body" style={{ flex: 1 }}>
-            I agree to the Terms of Service and Privacy Policy
+          <Text variant="body" style={styles.checkText}>
+            I agree to the{' '}
+            <Text
+              variant="body"
+              style={{ color: colors.primary }}
+              onPress={() => openLegalUrl(TERMS_URL)}>
+              Terms of Service
+            </Text>{' '}
+            and{' '}
+            <Text
+              variant="body"
+              style={{ color: colors.primary }}
+              onPress={() => openLegalUrl(PRIVACY_POLICY_URL)}>
+              Privacy Policy
+            </Text>
           </Text>
         </Pressable>
 
-        <Button label="Continue" onPress={onContinue} disabled={!checked} />
+        <Button
+          label={loading ? 'Continuing…' : 'Continue'}
+          onPress={onContinue}
+          disabled={!checked || loading}
+          loading={loading}
+        />
         <Button
           label="Back"
           variant="ghost"
@@ -78,7 +153,27 @@ export default function TermsScreen() {
 const styles = StyleSheet.create({
   scroll: { padding: spacing.lg, paddingBottom: spacing.xxl },
   heading: { marginBottom: spacing.sm },
-  body: { marginTop: spacing.sm, lineHeight: 22 },
+  intro: { lineHeight: 22, marginBottom: spacing.lg },
+  legalCard: {
+    borderWidth: 1,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  legalCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  legalBody: {
+    marginTop: spacing.sm,
+    lineHeight: 22,
+  },
+  legalUrl: {
+    marginTop: spacing.xs,
+    lineHeight: 18,
+  },
   checkRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -87,6 +182,10 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderWidth: 1,
     borderRadius: radii.md,
+  },
+  checkText: {
+    flex: 1,
+    lineHeight: 22,
   },
   checkbox: {
     width: 24,

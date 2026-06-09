@@ -15,21 +15,23 @@ import { Routes } from '@/lib/routes';
 export default function RegisterScreen() {
   const signUp = useAuthStore((s) => s.signUp);
   const ensureAuthenticated = useAuthStore((s) => s.ensureAuthenticated);
-  const hasAcceptedTerms = useSettingsStore((s) => s.hasAcceptedTerms);
+  const termsAcceptedAt = useSettingsStore((s) => s.termsAcceptedAt);
+  const hydrated = useSettingsStore((s) => s.hydrated);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!hasAcceptedTerms()) {
+    if (!hydrated) return;
+    if (!termsAcceptedAt) {
       router.replace('/(auth)/terms');
     }
-  }, [hasAcceptedTerms]);
+  }, [hydrated, termsAcceptedAt]);
 
   const onSubmit = async () => {
-    if (!hasAcceptedTerms()) {
-      router.push('/(auth)/terms');
+    if (!termsAcceptedAt) {
+      router.replace('/(auth)/terms');
       return;
     }
     setLoading(true);
@@ -73,7 +75,7 @@ export default function RegisterScreen() {
           loading={loading}
           style={{ marginTop: spacing.lg }}
         />
-        <GoogleSignInButton />
+        <GoogleSignInButton requireTermsAccepted />
       </FadeIn>
     </Screen>
   );

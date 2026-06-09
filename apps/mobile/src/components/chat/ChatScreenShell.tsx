@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
@@ -19,8 +20,10 @@ import { spacing } from '@/theme/tokens';
 import { Routes } from '@/lib/routes';
 import { useChatSessions } from '@/features/chat/useChatSessions';
 import { useChatSidebarStore } from '@/features/chat/chatSidebarStore';
+import { clearSidebarAttention } from '@/features/chat/sidebarAttention';
 import { apiClient } from '@/lib/api-client';
 import { useGradualKeyboardAnimation } from '@/hooks/useGradualKeyboardAnimation';
+import { ShareChatSheet } from '@/components/share/ShareChatSheet';
 
 type ChatScreenShellProps = {
   title: string;
@@ -34,6 +37,7 @@ type ChatScreenShellProps = {
   streamTurnKey?: number;
   isStreaming: boolean;
   isGenerating: boolean;
+  isImageGenerating?: boolean;
   streamStatusMessage?: string | null;
   streamRevision?: number;
   emptyHint?: string;
@@ -56,6 +60,7 @@ export function ChatScreenShell({
   streamTurnKey,
   isStreaming,
   isGenerating,
+  isImageGenerating = false,
   streamStatusMessage,
   streamRevision = 0,
   emptyHint,
@@ -69,6 +74,7 @@ export function ChatScreenShell({
   const insets = useSafeAreaInsets();
   const { height: keyboardHeight, progress: keyboardProgress } = useGradualKeyboardAnimation();
   const messageListRef = useRef<ChatMessageListHandle>(null);
+  const shareSheetRef = useRef<BottomSheetModal>(null);
   const safeBottom = insets.bottom;
   const [actionsOpen, setActionsOpen] = useState(false);
   const [actionsAnchor, setActionsAnchor] = useState<MenuAnchorRect | null>(null);
@@ -77,6 +83,7 @@ export function ChatScreenShell({
 
   useEffect(() => {
     if (!sessionId) return;
+    clearSidebarAttention(sessionId);
     void apiClient.markSessionRead(sessionId).then(() => {
       patchUnread(sessionId, false);
     }).catch(() => {});
@@ -136,6 +143,7 @@ export function ChatScreenShell({
         streamTurnKey={streamTurnKey}
         isStreaming={isStreaming}
         isGenerating={isGenerating}
+        isImageGenerating={isImageGenerating}
         streamStatusMessage={streamStatusMessage}
         emptyHint={emptyHint}
         savedMessageIds={savedMessageIds}
@@ -165,6 +173,12 @@ export function ChatScreenShell({
         }}
         onRename={handleRename}
         onDelete={handleDelete}
+        onShare={() => shareSheetRef.current?.present()}
+      />
+      <ShareChatSheet
+        ref={shareSheetRef}
+        sessionId={sessionId ?? null}
+        title={title}
       />
     </View>
   );

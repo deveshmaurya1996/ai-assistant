@@ -13,6 +13,7 @@ import { hydrateAuthStorage } from '@/lib/secure-storage';
 import { writeWebSessionCache } from '@/lib/web-session-cache';
 import { clearAuthCookie, hasAuthCredentials } from '@/lib/auth-cookies';
 import { clearApiAuth } from '@/lib/api-client';
+import { flushPendingPushRegistration } from '@/features/reminders/registerPushToken';
 import { useChatSidebarStore } from '@/features/chat/chatSidebarStore';
 import { useChatStreamStore } from '@/features/chat/chatStreamStore';
 import { Platform } from 'react-native';
@@ -37,6 +38,9 @@ function resetClientStores(): void {
 async function applySession(session: SessionInfo | null): Promise<void> {
   if (Platform.OS === 'web') writeWebSessionCache(session);
   useAuthStore.setState({ session });
+  if (session) {
+    void flushPendingPushRegistration();
+  }
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -53,6 +57,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       await hydrateAuthStorage();
       const session = await fetchVerifiedSession();
       set({ session, loading: false, hydrated: true });
+      if (session) {
+        void flushPendingPushRegistration();
+      }
       return session;
     } catch {
       set({ session: null, loading: false, hydrated: true });

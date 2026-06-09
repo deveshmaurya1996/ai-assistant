@@ -13,6 +13,7 @@ import { useChatActionConfirmBridge } from '@/features/chat/chatActionConfirmBri
 import { useAuthStore } from '@/stores/auth';
 import { AppSplash } from '@/components/boot/AppSplash';
 import { Routes } from '@/lib/routes';
+import { ActiveChatSessionTracker } from '@/features/chat/ActiveChatSessionTracker';
 
 function AppDrawerLayoutContent() {
   const { colors } = useTheme();
@@ -26,6 +27,7 @@ function AppDrawerLayoutContent() {
 
   return (
     <>
+      <ActiveChatSessionTracker />
       <ActionConfirmSheet
         visible={showModalConfirm}
         payload={pendingAction}

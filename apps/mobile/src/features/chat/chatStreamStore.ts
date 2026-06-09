@@ -1,10 +1,12 @@
 import { create } from 'zustand';
+import { IMAGE_GENERATING_STATUS } from './isImageGenerationTurn';
 
 export const PENDING_CHAT_STREAM_KEY = '__pending__';
 
 export type SessionStreamState = {
   streamText: string;
   isGenerating: boolean;
+  isImageGenerating: boolean;
   statusMessage: string | null;
   revision: number;
 };
@@ -24,7 +26,13 @@ type ChatStreamState = {
 };
 
 function emptySession(): SessionStreamState {
-  return { streamText: '', isGenerating: false, statusMessage: null, revision: 0 };
+  return {
+    streamText: '',
+    isGenerating: false,
+    isImageGenerating: false,
+    statusMessage: null,
+    revision: 0,
+  };
 }
 
 function bump(session: SessionStreamState): SessionStreamState {
@@ -41,7 +49,13 @@ export const useChatStreamStore = create<ChatStreamState>((set, get) => ({
     set((state) => ({
       sessions: {
         ...state.sessions,
-        [sessionKey]: { streamText: '', isGenerating: true, statusMessage: null, revision: 0 },
+        [sessionKey]: {
+          streamText: '',
+          isGenerating: true,
+          isImageGenerating: false,
+          statusMessage: null,
+          revision: 0,
+        },
       },
     }));
   },
@@ -49,10 +63,15 @@ export const useChatStreamStore = create<ChatStreamState>((set, get) => ({
   setStatusMessage: (sessionKey, message) => {
     set((state) => {
       const prev = state.sessions[sessionKey] ?? emptySession();
+      const isImageGenerating = message === IMAGE_GENERATING_STATUS;
       return {
         sessions: {
           ...state.sessions,
-          [sessionKey]: bump({ ...prev, statusMessage: message }),
+          [sessionKey]: bump({
+            ...prev,
+            isImageGenerating: isImageGenerating || prev.isImageGenerating,
+            statusMessage: isImageGenerating ? null : message,
+          }),
         },
       };
     });
@@ -69,6 +88,7 @@ export const useChatStreamStore = create<ChatStreamState>((set, get) => ({
             ...prev,
             streamText: prev.streamText + chunk,
             isGenerating: true,
+            isImageGenerating: false,
             statusMessage: chunk ? null : prev.statusMessage,
           }),
         },
@@ -83,7 +103,11 @@ export const useChatStreamStore = create<ChatStreamState>((set, get) => ({
       return {
         sessions: {
           ...state.sessions,
-          [sessionKey]: bump({ ...prev, isGenerating: false }),
+          [sessionKey]: bump({
+            ...prev,
+            isGenerating: false,
+            isImageGenerating: false,
+          }),
         },
       };
     });
@@ -115,6 +139,7 @@ export const useChatStreamStore = create<ChatStreamState>((set, get) => ({
           ...existing,
           streamText: existing.streamText + pending.streamText,
           isGenerating: pending.isGenerating || existing.isGenerating,
+          isImageGenerating: pending.isImageGenerating || existing.isImageGenerating,
           statusMessage: pending.statusMessage ?? existing.statusMessage,
         });
       } else if (pending.isGenerating || pending.streamText) {

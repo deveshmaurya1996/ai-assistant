@@ -41,6 +41,7 @@ export function useChatSocketStream({
     streamKey,
     streamText,
     isGenerating,
+    isImageGenerating,
     streamStatusMessage,
     revision: streamRevision,
     showStreamBubble: isStreaming,
@@ -162,7 +163,10 @@ export function useChatSocketStream({
       useChatStreamStore.getState().boundTurnSessionId
     );
     if (prevKey !== nextKey) {
-      clearTurn(prevKey);
+      const prevStream = useChatStreamStore.getState().sessions[prevKey];
+      if (!prevStream?.isGenerating) {
+        clearTurn(prevKey);
+      }
     }
   }, [sessionId, clearTurn]);
 
@@ -210,6 +214,7 @@ export function useChatSocketStream({
     visibleText: streamText,
     isStreaming,
     isGenerating,
+    isImageGenerating,
     streamStatusMessage,
     streamRevision,
     streamTurnKey,

@@ -40,6 +40,7 @@ export default function ChatScreen() {
     streamTurnKey,
     isStreaming,
     isGenerating,
+    isImageGenerating,
     streamStatusMessage,
     streamRevision,
     send,
@@ -90,6 +91,7 @@ export default function ChatScreen() {
       streamTurnKey={streamTurnKey}
       isStreaming={isStreaming}
       isGenerating={isGenerating}
+      isImageGenerating={isImageGenerating}
       streamStatusMessage={streamStatusMessage}
       streamRevision={streamRevision}
       savedMessageIds={savedMessageIds}

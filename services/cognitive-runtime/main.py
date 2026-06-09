@@ -344,6 +344,7 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
 
         async def image_stream():
             logger.info("[agent] image fast path intent=%s", image_intent)
+            yield _sse_frame("status", {"message": "__image_generating__"})
             async with httpx.AsyncClient(timeout=300.0) as client:
                 res = await client.post(
                     f"{AI_SERVICE_URL}/v1/image/from-chat",

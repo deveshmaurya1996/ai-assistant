@@ -12,7 +12,8 @@ import {
 import { Image } from 'expo-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { X } from 'lucide-react-native';
+import { Download, Share2, X } from 'lucide-react-native';
+import { downloadImageToDevice, shareImageFromFileId, shareImageFromUri } from '@/lib/share';
 import { Text } from '@/components/ui/Text';
 import { spacing } from '@/theme/tokens';
 import {
@@ -95,14 +96,61 @@ export function ChatImagePreviewModal() {
         <View
           style={[
             styles.chrome,
-            { paddingTop: insets.top + spacing.sm, paddingRight: insets.right + spacing.md },
+            {
+              paddingTop: insets.top + spacing.sm,
+              paddingLeft: insets.left + spacing.md,
+              paddingRight: insets.right + spacing.md,
+            },
           ]}>
+          {current?.allowExport ? (
+            <View style={styles.chromeActions}>
+              <Pressable
+                onPress={() => {
+                  if (!current) return;
+                  const target = current.fileId ?? current.uri;
+                  void downloadImageToDevice(
+                    target,
+                    current.filename,
+                    current.mimeType
+                  );
+                }}
+                style={styles.chromeBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Download image">
+                <Download color="#fff" size={16} />
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  if (!current) return;
+                  if (current.fileId) {
+                    void shareImageFromFileId(
+                      current.fileId,
+                      current.filename,
+                      current.mimeType
+                    );
+                    return;
+                  }
+                  void shareImageFromUri(
+                    current.uri,
+                    current.filename,
+                    current.mimeType
+                  );
+                }}
+                style={styles.chromeBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Share image">
+                <Share2 color="#fff" size={16} />
+              </Pressable>
+            </View>
+          ) : (
+            <View />
+          )}
           <Pressable
             onPress={close}
             style={styles.closeBtn}
             accessibilityRole="button"
             accessibilityLabel="Close image preview">
-            <X color="#fff" size={22} />
+            <X color="#fff" size={18} />
           </Pressable>
         </View>
 
@@ -150,12 +198,25 @@ const styles = StyleSheet.create({
     right: 0,
     left: 0,
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  chromeActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  chromeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.14)',
   },
   closeBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.14)',

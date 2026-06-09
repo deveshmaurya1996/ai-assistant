@@ -74,6 +74,14 @@ const config: ExpoConfig = {
       },
     ],
     'expo-image',
+    [
+      'expo-media-library',
+      {
+        photosPermission: 'Allow AI Assistant to save images to your gallery.',
+        savePhotosPermission: 'Allow AI Assistant to save images to your gallery.',
+        isAccessMediaLocationEnabled: false,
+      },
+    ],
     'expo-video',
     '@react-native-community/datetimepicker',
     [

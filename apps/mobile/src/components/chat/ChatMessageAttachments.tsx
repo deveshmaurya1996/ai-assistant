@@ -17,6 +17,7 @@ type ImageAttachmentProps = {
   maxWidth: number;
   onEditImage?: (attachment: ChatAttachmentRef) => void;
   fillWidth?: boolean;
+  allowExport?: boolean;
 };
 
 function ChatImageAttachment({
@@ -24,6 +25,7 @@ function ChatImageAttachment({
   maxWidth,
   onEditImage,
   fillWidth = false,
+  allowExport = false,
 }: ImageAttachmentProps) {
   const { colors } = useTheme();
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
@@ -61,6 +63,8 @@ function ChatImageAttachment({
       <AuthenticatedChatImage
         fileId={attachment.id}
         filename={attachment.filename}
+        mimeType={attachment.mimeType}
+        allowExport={allowExport}
         style={frameStyle}
         contentFit={fillWidth ? 'cover' : 'contain'}
         onLoad={handleLoad}
@@ -89,6 +93,7 @@ type Props = {
   onEditImage?: (attachment: ChatAttachmentRef) => void;
   maxImageWidth?: number;
   fillWidth?: boolean;
+  allowImageExport?: boolean;
 };
 
 export function ChatMessageAttachments({
@@ -96,6 +101,7 @@ export function ChatMessageAttachments({
   onEditImage,
   maxImageWidth,
   fillWidth = false,
+  allowImageExport = false,
 }: Props) {
   const { colors } = useTheme();
   const { width: windowWidth } = useWindowDimensions();
@@ -116,6 +122,7 @@ export function ChatMessageAttachments({
               maxWidth={imageMaxWidth}
               onEditImage={onEditImage}
               fillWidth={fillWidth}
+              allowExport={allowImageExport}
             />
           );
         }

@@ -13,12 +13,18 @@ import { ProviderIcon } from '@/components/integrations/ProviderIcon';
 import { spacing, radii } from '@/theme/tokens';
 import { useTheme } from '@/theme/ThemeProvider';
 import { useAuthStore } from '@/stores/auth';
+import { useSettingsStore } from '@/stores/settings';
 import { GOOGLE_AUTH_ENABLED } from '@/lib/config';
 import { Routes } from '@/lib/routes';
 
-export function GoogleSignInButton() {
+type Props = {
+  requireTermsAccepted?: boolean;
+};
+
+export function GoogleSignInButton({ requireTermsAccepted = false }: Props) {
   const signInWithGoogle = useAuthStore((s) => s.signInWithGoogle);
   const ensureAuthenticated = useAuthStore((s) => s.ensureAuthenticated);
+  const termsAcceptedAt = useSettingsStore((s) => s.termsAcceptedAt);
   const { colors } = useTheme();
   const [loading, setLoading] = useState(false);
 
@@ -36,6 +42,10 @@ export function GoogleSignInButton() {
       <Pressable
         disabled={loading}
         onPress={async () => {
+          if (requireTermsAccepted && !termsAcceptedAt) {
+            router.replace('/(auth)/terms');
+            return;
+          }
           setLoading(true);
           try {
             await signInWithGoogle();

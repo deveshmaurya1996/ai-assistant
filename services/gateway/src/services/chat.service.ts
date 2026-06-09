@@ -22,7 +22,7 @@ import {
 
 type ChatSessionKind = 'text' | 'voice';
 import { fetchAi } from '../lib/http';
-import { badRequest, forbidden, notFound } from '../lib/errors';
+import { AppError, badRequest, forbidden, notFound } from '../lib/errors';
 import { EventNames, publishEvent } from '@ai-assistant/events';
 import { runAgentTurn, type AgentSource } from './agent-turn.service';
 import { ChatTurnAbortedError } from './chat-turn-errors';
@@ -392,29 +392,50 @@ function parseSsePayload<T>(data: string, fallback: T): T {
   }
 }
 
+function assistantTextForTitle(assistantMessage: string, hasImageAttachment = false): string {
+  const trimmed = assistantMessage.trim();
+  if (trimmed) return trimmed;
+  if (hasImageAttachment) {
+    return 'The assistant generated an image for the user.';
+  }
+  return trimmed;
+}
+
 export async function maybeAutoTitleSession(params: {
   userId: string;
   sessionId: string;
   userMessage: string;
   assistantMessage: string;
+  hasImageAttachment?: boolean;
   onTitleUpdated?: (sessionId: string, title: string) => void;
 }): Promise<void> {
-  const { userId, sessionId, userMessage, assistantMessage, onTitleUpdated } = params;
+  const {
+    userId,
+    sessionId,
+    userMessage,
+    assistantMessage,
+    hasImageAttachment = false,
+    onTitleUpdated,
+  } = params;
 
   try {
     const session = await assertSessionAccess(userId, sessionId);
     if (!shouldAutoTitle(session.title, userMessage)) return;
 
-    const messageCount = await prisma.message.count({
-      where: { chatSessionId: sessionId },
+    const assistantCount = await prisma.message.count({
+      where: { chatSessionId: sessionId, role: 'ASSISTANT' },
     });
-    if (messageCount !== 2) return;
+    if (assistantCount !== 1) return;
+
+    const userForTitle = userMessage.trim();
+    const assistantForTitle = assistantTextForTitle(assistantMessage, hasImageAttachment);
+    if (!userForTitle && !assistantForTitle) return;
 
     const { title } = await fetchAi<{ title: string }>('/v1/chat/title', {
       method: 'POST',
       body: JSON.stringify({
-        user_message: userMessage,
-        assistant_message: assistantMessage,
+        user_message: userForTitle || 'New conversation',
+        assistant_message: assistantForTitle || 'The assistant replied.',
       }),
       signal:
         typeof AbortSignal.timeout === 'function'
@@ -669,6 +690,14 @@ export async function processChatMessage(params: {
         data: { updatedAt: new Date() },
       });
 
+      void maybeAutoTitleSession({
+        userId,
+        sessionId,
+        userMessage: text.trim() || agentQuery,
+        assistantMessage: partial,
+        onTitleUpdated,
+      });
+
       return {
         sessionId,
         userMessage: mapApiMessage(userMessage),
@@ -734,6 +763,13 @@ export async function processChatMessage(params: {
   const accumulated = turn.fullText;
 
   const assistantAttachments = turn.generatedAttachments ?? [];
+  if (!accumulated.trim() && assistantAttachments.length === 0) {
+    throw new AppError(
+      502,
+      'The assistant returned an empty response. Please try again.'
+    );
+  }
+
   const assistantMessage = await prisma.message.create({
     data: {
       chatSessionId: sessionId,
@@ -757,6 +793,7 @@ export async function processChatMessage(params: {
     sessionId,
     userMessage: text.trim() || agentQuery,
     assistantMessage: accumulated,
+    hasImageAttachment: assistantAttachments.length > 0,
     onTitleUpdated,
   });
 

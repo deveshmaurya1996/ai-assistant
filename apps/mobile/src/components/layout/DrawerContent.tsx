@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import {
   View,
   StyleSheet,
@@ -27,6 +28,7 @@ import { UserAvatar } from '@/components/ui/UserAvatar';
 import { DrawerColorIcon } from '@/components/layout/DrawerColorIcon';
 import { AssistantIcon } from '@/components/assistant/AssistantIcon';
 import { ChatSessionActionsModal, type MenuAnchorRect } from '@/components/chat/ChatSessionActionsModal';
+import { ShareChatSheet } from '@/components/share/ShareChatSheet';
 import { PulseDot } from '@/components/motion/PulseDot';
 import { PressableScale } from '@/components/motion/PressableScale';
 import { useTheme } from '@/theme/ThemeProvider';
@@ -38,6 +40,7 @@ import { useChatSidebarSync } from '@/features/chat/chatSidebarSync';
 import { resolveActiveChatSessionId } from '@/features/chat/chatRoutes';
 import { prepareNewCompose, useComposeDraftStore } from '@/features/chat/chatSessionLifecycle';
 import { useChatStreamStore } from '@/features/chat/chatStreamStore';
+import { shouldShowSidebarAttentionDot } from '@/features/chat/sidebarAttention';
 import { useSettingsStore } from '@/stores/settings';
 import { MessageSquare, Mic, MoreVertical } from 'lucide-react-native';
 import { getVersionDisplayLines } from '@/lib/version-display';
@@ -82,6 +85,11 @@ function DrawerSessionRow({
   const isGenerating = useChatStreamStore((s) =>
     Boolean(s.sessions[item.id]?.isGenerating)
   );
+  const showAttentionDot = shouldShowSidebarAttentionDot(
+    item.hasUnread,
+    isGenerating,
+    isActive
+  );
   const isVoice = item.kind === 'voice';
 
   const handleMenuPress = () => {
@@ -116,18 +124,13 @@ function DrawerSessionRow({
           )}
         </View>
         <View style={styles.rowText}>
-          <Text variant="bodyMedium" numberOfLines={1}>
-            {item.title ?? (isVoice ? 'Voice chat' : 'Untitled')}
-          </Text>
-          {isGenerating ? (
-            <View style={styles.generatingRow}>
-              <PulseDot color={colors.primary} />
-            </View>
-          ) : item.hasUnread ? (
-            <View style={styles.generatingRow}>
-              <PulseDot color={colors.danger} />
-            </View>
-          ) : isVoice ? (
+          <View style={styles.titleRow}>
+            {showAttentionDot ? <PulseDot color={colors.danger} /> : null}
+            <Text variant="bodyMedium" numberOfLines={1} style={styles.titleText}>
+              {item.title ?? (isVoice ? 'Voice chat' : 'Untitled')}
+            </Text>
+          </View>
+          {!showAttentionDot && isVoice ? (
             <Text variant="caption" muted>
               Voice
             </Text>
@@ -209,6 +212,8 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
 
   const [actionsSession, setActionsSession] = useState<ChatSession | null>(null);
   const [actionsAnchor, setActionsAnchor] = useState<MenuAnchorRect | null>(null);
+  const [shareTarget, setShareTarget] = useState<{ id: string; title: string } | null>(null);
+  const shareSheetRef = useRef<BottomSheetModal>(null);
   const [chatsExpanded, setChatsExpanded] = useState(false);
   const drawerProgress = useDrawerProgress();
   const pendingAfterCloseRef = useRef<(() => void) | null>(null);
@@ -599,6 +604,18 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
           await renameSession(sessionId, title);
         }}
         onDelete={handleDelete}
+        onShare={(sessionId) => {
+          setShareTarget({
+            id: sessionId,
+            title: actionsSession?.title ?? 'Chat',
+          });
+          requestAnimationFrame(() => shareSheetRef.current?.present());
+        }}
+      />
+      <ShareChatSheet
+        ref={shareSheetRef}
+        sessionId={shareTarget?.id ?? null}
+        title={shareTarget?.title}
       />
     </>
   );
@@ -682,9 +699,14 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 2,
   },
-  generatingRow: {
-    height: 18,
-    justifyContent: 'center',
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  titleText: {
+    flex: 1,
+    flexShrink: 1,
   },
   menuBtn: {
     width: 36,
