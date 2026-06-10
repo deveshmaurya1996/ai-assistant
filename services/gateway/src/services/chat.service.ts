@@ -144,6 +144,25 @@ function shouldAutoTitle(
   return isPlaceholderTitle(title) || isFirstMessageTitle(title, userMessage);
 }
 
+function fallbackChatTitle(userMessage: string): string {
+  const trimmed = userMessage.trim();
+  if (!trimmed) return '';
+  return trimmed.length > 30 ? `${trimmed.slice(0, 27)}...` : trimmed;
+}
+
+function resolveAutoTitle(
+  aiTitle: string | undefined,
+  userMessage: string
+): string | null {
+  const trimmed = aiTitle?.trim();
+  if (trimmed && !isPlaceholderTitle(trimmed)) return trimmed;
+
+  const fallback = fallbackChatTitle(userMessage);
+  if (fallback && !isPlaceholderTitle(fallback)) return fallback;
+
+  return null;
+}
+
 export async function listSessions(
   userId: string,
   options?: { cursor?: string; limit?: number; personalityId?: string }
@@ -420,38 +439,51 @@ export async function maybeAutoTitleSession(params: {
 
   try {
     const session = await assertSessionAccess(userId, sessionId);
-    if (!shouldAutoTitle(session.title, userMessage)) return;
-
-    const assistantCount = await prisma.message.count({
-      where: { chatSessionId: sessionId, role: 'ASSISTANT' },
-    });
-    if (assistantCount !== 1) return;
+    if (!shouldAutoTitle(session.title, userMessage)) {
+      console.info('[chat] auto-title skipped: session already titled', { sessionId });
+      return;
+    }
 
     const userForTitle = userMessage.trim();
     const assistantForTitle = assistantTextForTitle(assistantMessage, hasImageAttachment);
-    if (!userForTitle && !assistantForTitle) return;
+    if (!userForTitle && !assistantForTitle) {
+      console.info('[chat] auto-title skipped: empty title payload', { sessionId });
+      return;
+    }
 
-    const { title } = await fetchAi<{ title: string }>('/v1/chat/title', {
-      method: 'POST',
-      body: JSON.stringify({
-        user_message: userForTitle || 'New conversation',
-        assistant_message: assistantForTitle || 'The assistant replied.',
-      }),
-      signal:
-        typeof AbortSignal.timeout === 'function'
-          ? AbortSignal.timeout(20_000)
-          : undefined,
-    });
+    let resolvedTitle: string | null = null;
+    try {
+      const { title } = await fetchAi<{ title: string }>('/v1/chat/title', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_message: userForTitle || 'New conversation',
+          assistant_message: assistantForTitle || 'The assistant replied.',
+        }),
+        signal:
+          typeof AbortSignal.timeout === 'function'
+            ? AbortSignal.timeout(20_000)
+            : undefined,
+      });
+      resolvedTitle = resolveAutoTitle(title, userForTitle);
+    } catch (err) {
+      console.warn(
+        '[chat] auto-title AI call failed, using fallback:',
+        err instanceof Error ? err.message : err
+      );
+      resolvedTitle = resolveAutoTitle(undefined, userForTitle);
+    }
 
-    const trimmed = title?.trim();
-    if (!trimmed || isPlaceholderTitle(trimmed)) return;
+    if (!resolvedTitle) {
+      console.info('[chat] auto-title skipped: no usable title', { sessionId });
+      return;
+    }
 
     await prisma.chatSession.update({
       where: { id: sessionId },
-      data: { title: trimmed },
+      data: { title: resolvedTitle },
     });
 
-    onTitleUpdated?.(sessionId, trimmed);
+    onTitleUpdated?.(sessionId, resolvedTitle);
   } catch (err) {
     console.error(
       '[chat] auto-title failed:',
@@ -731,6 +763,14 @@ export async function processChatMessage(params: {
         },
       });
 
+      void maybeAutoTitleSession({
+        userId,
+        sessionId,
+        userMessage: text.trim() || agentQuery,
+        assistantMessage: confirmText,
+        onTitleUpdated,
+      });
+
       return {
         sessionId,
         userMessage: mapApiMessage(userMessage),
@@ -742,13 +782,22 @@ export async function processChatMessage(params: {
 
     params.onActionConfirmRequired?.(payload);
 
+    const modalConfirmText = 'Please confirm this action to continue.';
     const assistantMessage = await prisma.message.create({
       data: {
         chatSessionId: sessionId,
         role: 'ASSISTANT',
-        content: 'Please confirm this action to continue.',
+        content: modalConfirmText,
         metadata: buildAssistantMessageMetadata(assistantContext),
       },
+    });
+
+    void maybeAutoTitleSession({
+      userId,
+      sessionId,
+      userMessage: text.trim() || agentQuery,
+      assistantMessage: modalConfirmText,
+      onTitleUpdated,
     });
 
     return {

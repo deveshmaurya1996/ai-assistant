@@ -2,6 +2,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { prisma, Prisma } from '@ai-assistant/database';
 import { getWhatsAppAuthRoot } from './auth-paths';
+import { ensureAuthDirLocal, listRemoteSessionIds, usesRemoteWhatsAppAuth } from './auth-remote';
 import { sessionManager } from './session-manager';
 import { markConnectionActive } from './connection-lifecycle';
 
@@ -13,11 +14,10 @@ type SessionMeta = {
 };
 
 async function readSessionMeta(sessionId: string): Promise<SessionMeta | null> {
+  const authDir = path.join(getWhatsAppAuthRoot(), sessionId);
   try {
-    const raw = await readFile(
-      path.join(getWhatsAppAuthRoot(), sessionId, 'session.json'),
-      'utf8'
-    );
+    await ensureAuthDirLocal(sessionId, authDir);
+    const raw = await readFile(path.join(authDir, 'session.json'), 'utf8');
     return JSON.parse(raw) as SessionMeta;
   } catch {
     return null;
@@ -32,24 +32,31 @@ async function isSessionActive(sessionId: string): Promise<boolean> {
 }
 
 export async function findLatestActiveBridgeSession(userId: string): Promise<string | null> {
-  const root = getWhatsAppAuthRoot();
-  let entries;
-  try {
-    entries = await readdir(root, { withFileTypes: true });
-  } catch {
-    return null;
+  const prefix = `wa_${userId}_`;
+  let sessionIds: string[];
+
+  if (usesRemoteWhatsAppAuth()) {
+    sessionIds = (await listRemoteSessionIds()).filter((id) => id.startsWith(prefix));
+  } else {
+    const root = getWhatsAppAuthRoot();
+    try {
+      const entries = await readdir(root, { withFileTypes: true });
+      sessionIds = entries
+        .filter((ent) => ent.isDirectory() && ent.name.startsWith(prefix))
+        .map((ent) => ent.name);
+    } catch {
+      return null;
+    }
   }
 
-  const prefix = `wa_${userId}_`;
   const candidates: { sessionId: string; updatedAt: number }[] = [];
 
-  for (const ent of entries) {
-    if (!ent.isDirectory() || !ent.name.startsWith(prefix)) continue;
+  for (const sessionId of sessionIds) {
     try {
-      const meta = await readSessionMeta(ent.name);
+      const meta = await readSessionMeta(sessionId);
       if (meta?.status !== 'active') continue;
       candidates.push({
-        sessionId: meta.sessionId ?? ent.name,
+        sessionId: meta.sessionId ?? sessionId,
         updatedAt: new Date(meta.updatedAt ?? 0).getTime(),
       });
     } catch {

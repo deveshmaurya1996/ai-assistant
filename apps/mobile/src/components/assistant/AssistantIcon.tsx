@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { AssistantLogoMark } from '@/components/assistant/AssistantLogoMark';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -175,6 +175,12 @@ export function SplashLogo({
   const onExitCompleteRef = useRef(onExitComplete);
   onExitCompleteRef.current = onExitComplete;
 
+  const notifyExitComplete = useCallback(() => {
+    if (mountedRef.current) {
+      onExitCompleteRef.current?.();
+    }
+  }, []);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -200,14 +206,10 @@ export function SplashLogo({
       { duration: SPLASH_EXIT_MS, easing: Easing.in(Easing.cubic) },
       (finished) => {
         if (!finished) return;
-        scheduleOnRN(() => {
-          if (mountedRef.current) {
-            onExitCompleteRef.current?.();
-          }
-        });
+        scheduleOnRN(notifyExitComplete);
       }
     );
-  }, [ready, opacity, scale]);
+  }, [ready, notifyExitComplete, opacity, scale]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,

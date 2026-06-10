@@ -20,6 +20,7 @@ import { useChatActionConfirmBridge } from './chatActionConfirmBridge';
 import { useSettingsStore } from '@/stores/settings';
 import { useOverlaySessionStore } from '@/features/overlay/overlaySessionStore';
 import { useChatSidebarStore } from './chatSidebarStore';
+import { getActiveChatSessionId } from './activeChatSessionStore';
 import { syncSidebarAttention } from './sidebarAttention';
 import {
   PENDING_CHAT_STREAM_KEY,
@@ -319,17 +320,11 @@ export function ChatSocketProvider({
       });
 
       connected.on('chat:title_updated', (data) => {
-        const boundId = useChatStreamStore.getState().boundTurnSessionId;
         useOverlaySessionStore.getState().setTitle(data.chatSessionId, data.title);
         useChatSidebarStore.getState().patchTitle(data.chatSessionId, data.title);
-        for (const entry of listenerMapRef.current.values()) {
-          const { filterSessionId, listeners } = entry;
-          if (
-            filterSessionId === data.chatSessionId ||
-            (filterSessionId === null && boundId === data.chatSessionId)
-          ) {
-            listeners.onTitleUpdated?.(data.title);
-          }
+        notifySessionEvent(data.chatSessionId, (l) => l.onTitleUpdated?.(data.title));
+        if (getActiveChatSessionId() === data.chatSessionId) {
+          notifyPendingOnly((l) => l.onTitleUpdated?.(data.title));
         }
       });
 

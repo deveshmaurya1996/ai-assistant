@@ -20,13 +20,20 @@ export function useAppBootstrap(fontsLoaded: boolean) {
     let cancelled = false;
 
     void (async () => {
-      await hydrateAuth();
-      if (cancelled) return;
-      await hydrateSettings();
-      if (cancelled) return;
-      if (Platform.OS === 'android') {
-        await setReminderOverlayEnabledNative(reminderOverlayEnabled);
-        await registerPushTokenIfNeeded(reminderOverlayEnabled);
+      try {
+        await hydrateAuth();
+        if (cancelled) return;
+        await hydrateSettings();
+        if (cancelled) return;
+        if (Platform.OS === 'android') {
+          await setReminderOverlayEnabledNative(reminderOverlayEnabled);
+          await registerPushTokenIfNeeded(reminderOverlayEnabled);
+        }
+      } catch (err) {
+        console.warn(
+          '[bootstrap] startup task failed:',
+          err instanceof Error ? err.message : err
+        );
       }
       if (!cancelled) setReady(true);
     })();

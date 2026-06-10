@@ -728,7 +728,11 @@ async def plan_tools(
 ) -> Dict[str, Any]:
     del preferred_model 
 
-    from orchestration.scheduling_planner import plan_scheduling_actions
+    from orchestration.scheduling_planner import (
+        _looks_like_scheduling_query,
+        plan_scheduling_actions,
+        should_run_scheduling_planner,
+    )
 
     connection_states = list(manifest_connection_states or [])
     if not connection_states:
@@ -753,57 +757,6 @@ async def plan_tools(
 
     route_text = (routing_query or query).strip() or query
     history = chat_history or []
-
-    schedule_items, clarification, scheduling_intent, schedule_warnings = (
-        await plan_scheduling_actions(
-            route_text,
-            user_id=user_id,
-            chat_history=history,
-            timezone=timezone,
-        )
-    )
-    warnings.extend(schedule_warnings)
-
-    if clarification:
-        warnings.append(clarification)
-        return _build_plan_result(
-            query,
-            context,
-            user_id,
-            connections,
-            tools,
-            [],
-            "llm-scheduling-clarification",
-            warnings,
-        )
-
-    if schedule_items:
-        return _build_plan_result(
-            query,
-            context,
-            user_id,
-            connections,
-            tools,
-            schedule_items,
-            "llm-scheduling",
-            warnings,
-        )
-
-    if scheduling_intent:
-        warnings.append(
-            "Scheduling planner did not produce a schedule — "
-            "the assistant should ask the user to rephrase or try again."
-        )
-        return _build_plan_result(
-            query,
-            context,
-            user_id,
-            connections,
-            tools,
-            [],
-            "llm-scheduling-empty",
-            warnings,
-        )
 
     if _heuristic_connected_apps_query(query):
         return _build_plan_result(
@@ -863,7 +816,57 @@ async def plan_tools(
             warnings,
         )
 
-    from orchestration.scheduling_planner import _looks_like_scheduling_query
+    if should_run_scheduling_planner(route_text, history):
+        schedule_items, clarification, scheduling_intent, schedule_warnings = (
+            await plan_scheduling_actions(
+                route_text,
+                user_id=user_id,
+                chat_history=history,
+                timezone=timezone,
+            )
+        )
+        warnings.extend(schedule_warnings)
+
+        if clarification:
+            warnings.append(clarification)
+            return _build_plan_result(
+                query,
+                context,
+                user_id,
+                connections,
+                tools,
+                [],
+                "llm-scheduling-clarification",
+                warnings,
+            )
+
+        if schedule_items:
+            return _build_plan_result(
+                query,
+                context,
+                user_id,
+                connections,
+                tools,
+                schedule_items,
+                "llm-scheduling",
+                warnings,
+            )
+
+        if scheduling_intent:
+            warnings.append(
+                "Scheduling planner did not produce a schedule — "
+                "the assistant should ask the user to rephrase or try again."
+            )
+            return _build_plan_result(
+                query,
+                context,
+                user_id,
+                connections,
+                tools,
+                [],
+                "llm-scheduling-empty",
+                warnings,
+            )
 
     if not is_likely_tool_query(query) and not _looks_like_scheduling_query(
         route_text, history

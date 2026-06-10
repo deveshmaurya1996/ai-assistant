@@ -15,22 +15,30 @@ _TITLE_SYSTEM = (
 )
 
 
-def _sanitize_title(raw: str) -> str:
+def _sanitize_title(raw: str, *, user_excerpt: str = "") -> str:
     text = raw.strip().strip('"\'').strip()
     text = re.sub(r"\s+", " ", text)
     if len(text) > 80:
         text = text[:77] + "..."
-    return text or "New Chat"
+    if text:
+        return text
+    trimmed_user = user_excerpt.strip()
+    if trimmed_user:
+        return trimmed_user[:27] + "..." if len(trimmed_user) > 30 else trimmed_user
+    return "New Chat"
+
+
+def _user_excerpt_fallback(user_message: str) -> str:
+    user_excerpt = user_message.strip()[:500]
+    if not user_excerpt:
+        return "New Chat"
+    return user_excerpt[:27] + "..." if len(user_excerpt) > 30 else user_excerpt
 
 
 def generate_chat_title(user_message: str, assistant_message: str) -> str:
     user_excerpt = user_message.strip()[:500]
     assistant_excerpt = assistant_message.strip()[:500]
-    fallback = (
-        user_excerpt[:27] + "..."
-        if len(user_excerpt) > 30
-        else user_excerpt or "New Chat"
-    )
+    fallback = _user_excerpt_fallback(user_message)
 
     models = resolve_chain("title")
     messages = [
@@ -50,7 +58,7 @@ def generate_chat_title(user_message: str, assistant_message: str) -> str:
 
         litellm.suppress_debug_info = True
     except ImportError:
-        return _sanitize_title(fallback)
+        return _sanitize_title(fallback, user_excerpt=user_excerpt)
 
     last_error: Optional[Exception] = None
     for model_name in models:
@@ -65,7 +73,7 @@ def generate_chat_title(user_message: str, assistant_message: str) -> str:
             response = litellm.completion(messages=messages, **call_kwargs)
             content = response.choices[0].message.content
             if content and str(content).strip():
-                title = _sanitize_title(str(content))
+                title = _sanitize_title(str(content), user_excerpt=user_excerpt)
                 logger.info("Chat title generated via %s: %s", model_name, title)
                 return title
         except Exception as exc:
@@ -73,4 +81,4 @@ def generate_chat_title(user_message: str, assistant_message: str) -> str:
             logger.warning("Title model %s failed: %s", model_name, exc)
 
     logger.warning("Title generation failed, using fallback: %s", last_error)
-    return _sanitize_title(fallback)
+    return _sanitize_title(fallback, user_excerpt=user_excerpt)

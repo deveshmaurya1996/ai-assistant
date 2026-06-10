@@ -3,13 +3,13 @@ import path from 'node:path';
 import { prisma, Prisma } from '@ai-assistant/database';
 import type { CachedMessage, ChatEntry, UnreadChatItem } from './session-manager';
 import { getWhatsAppAuthRoot } from './auth-paths';
+import { ensureAuthDirLocal } from './auth-remote';
 
 async function readSessionUserId(sessionId: string): Promise<string | null> {
+  const authDir = path.join(getWhatsAppAuthRoot(), sessionId);
   try {
-    const raw = await readFile(
-      path.join(getWhatsAppAuthRoot(), sessionId, 'session.json'),
-      'utf8'
-    );
+    await ensureAuthDirLocal(sessionId, authDir);
+    const raw = await readFile(path.join(authDir, 'session.json'), 'utf8');
     return (JSON.parse(raw) as { userId?: string }).userId ?? null;
   } catch {
     return null;

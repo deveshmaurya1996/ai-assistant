@@ -11,6 +11,7 @@ export interface FileStorage {
   putObject(input: PutObjectInput): Promise<void>;
   getObject(key: string): Promise<Buffer>;
   deleteObject(key: string): Promise<void>;
+  listObjectKeys(prefix: string): Promise<string[]>;
 }
 
 export interface StorageConfig {

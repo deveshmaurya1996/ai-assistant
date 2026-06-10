@@ -32,6 +32,39 @@ export class LocalDiskStorage implements FileStorage {
     });
   }
 
+  async listObjectKeys(prefix: string): Promise<string[]> {
+    const normalized = prefix.endsWith('/') ? prefix : `${prefix}/`;
+    const base = this.resolve(normalized);
+    const rootResolved = path.resolve(this.root);
+    const keys: string[] = [];
+
+    const walk = async (dir: string): Promise<void> => {
+      let entries: fs.Dirent[];
+      try {
+        entries = await fs.promises.readdir(dir, { withFileTypes: true });
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === 'ENOENT') return;
+        throw err;
+      }
+      for (const ent of entries) {
+        const abs = path.join(dir, ent.name);
+        if (ent.isDirectory()) await walk(abs);
+        else if (ent.isFile()) {
+          keys.push(path.relative(rootResolved, abs).split(path.sep).join('/'));
+        }
+      }
+    };
+
+    try {
+      await fs.promises.access(base);
+      await walk(base);
+    } catch {
+      return [];
+    }
+    return keys;
+  }
+
   createReadStream(key: string): fs.ReadStream {
     return fs.createReadStream(this.resolve(key));
   }

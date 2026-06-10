@@ -25,6 +25,8 @@ import { UpdateGate } from '@/features/updates/UpdateGate';
 SplashScreen.preventAutoHideAsync();
 SplashScreen.setOptions({ fade: true, duration: 280 });
 
+const SPLASH_MAX_MS = 12_000;
+
 function RootStack() {
   const screenOptions = useThemedScreenOptions();
 
@@ -53,6 +55,12 @@ export default function RootLayout() {
   useEffect(() => {
     void hydrateAuthStorage();
   }, []);
+
+  useEffect(() => {
+    if (splashFinished) return;
+    const timer = setTimeout(() => setSplashFinished(true), SPLASH_MAX_MS);
+    return () => clearTimeout(timer);
+  }, [splashFinished]);
 
   if (!splashFinished) {
     return (

@@ -9,6 +9,7 @@ import { useSavedNotesStore } from '@/features/notes/savedNotesStore';
 import { useChatSocketStream } from './useChatSocketStream';
 import { buildStreamingMessages } from './buildStreamingMessages';
 import { useOverlaySessionStore } from '@/features/overlay/overlaySessionStore';
+import { useChatSidebarStore } from './chatSidebarStore';
 import { useChatStreamStore } from './chatStreamStore';
 import {
   finishInPlacePromotion,
@@ -45,6 +46,36 @@ export function useChatRoom({
 
   const loadGenerationRef = useRef(0);
   const loadSessionRef = useRef<(generation: number) => Promise<void>>(async () => {});
+  const titleFetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleTitleRefetch = useCallback((targetSessionId: string) => {
+    if (titleFetchTimeoutRef.current) {
+      clearTimeout(titleFetchTimeoutRef.current);
+    }
+    titleFetchTimeoutRef.current = setTimeout(() => {
+      titleFetchTimeoutRef.current = null;
+      void (async () => {
+        try {
+          const chatSession = await apiClient.getChatSession(targetSessionId);
+          if (!chatSession.title) return;
+          setTitle(chatSession.title);
+          useOverlaySessionStore.getState().upsertSession(targetSessionId, {
+            title: chatSession.title,
+            kind: chatSession.kind === 'voice' ? 'voice' : 'text',
+          });
+          useChatSidebarStore.getState().patchTitle(
+            targetSessionId,
+            chatSession.title,
+            chatSession.kind
+          );
+        } catch (err) {
+          if (__DEV__) {
+            console.warn('[useChatRoom] title refetch failed:', formatApiError(err), err);
+          }
+        }
+      })();
+    }, 2500);
+  }, []);
 
   const {
     messages,
@@ -67,6 +98,7 @@ export function useChatRoom({
         finishInPlacePromotion();
         void loadSessionRef.current(loadGenerationRef.current);
       }
+      scheduleTitleRefetch(id);
       onExchangeComplete?.(id);
     },
     onTitleUpdated: setTitle,
@@ -222,6 +254,14 @@ export function useChatRoom({
   useEffect(() => {
     skipNextFocusReloadRef.current = true;
   }, [sessionId]);
+
+  useEffect(() => {
+    return () => {
+      if (titleFetchTimeoutRef.current) {
+        clearTimeout(titleFetchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const send = useCallback(
     (payload: ChatSendPayload) => {

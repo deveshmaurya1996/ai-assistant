@@ -341,7 +341,7 @@ def _build_system_prompt(
 _SCHEDULING_SIGNAL = re.compile(
     r"\b(remind|reminder|notify\s+me|alarm|don'?t\s+forget|"
     r"set\s+(?:a\s+)?reminder|schedule\s+(?:a\s+)?reminder|every\s+hour|"
-    r"digest|automation|inbox|check\s+my\s+inbox|monitor|"
+    r"digest|automation|monitor|"
     r"delete\s+(?:the\s+)?automation|cancel\s+(?:the\s+)?automation|pause\s+(?:the\s+)?automation|"
     r"how\s+long\s+until|next\s+reminder|time\s+left)\b",
     re.IGNORECASE,
@@ -423,6 +423,16 @@ def _looks_like_scheduling_query(
     return False
 
 
+def should_run_scheduling_planner(
+    query: str,
+    chat_history: Optional[List[Dict[str, str]]] = None,
+) -> bool:
+    """True when the scheduling LLM should run (reminders, automations, timezone follow-ups)."""
+    return _looks_like_scheduling_query(query, chat_history) or _is_timezone_followup(
+        query, chat_history
+    )
+
+
 def _normalize_action(action: Dict[str, Any], effective_tz: Optional[str]) -> Optional[Dict[str, Any]]:
     tool = str(action.get("tool") or "").strip()
     if tool not in _SCHEDULING_TOOLS:
@@ -470,6 +480,9 @@ async def plan_scheduling_actions(
         return [], None, False, []
 
     history = chat_history or []
+    if not should_run_scheduling_planner(trimmed, history):
+        return [], None, False, []
+
     effective_tz = resolve_effective_timezone(timezone, trimmed, history)
     now_iso = _now_iso(effective_tz)
 

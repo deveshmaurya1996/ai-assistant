@@ -136,3 +136,55 @@ async def test_plan_tools_disconnected_gmail_blocks_tools():
     assert result["planner"] == "integration-blocked"
     assert result["tools"] == []
     assert "Connect Apps" in result.get("user_guidance", "")
+
+
+@pytest.mark.asyncio
+async def test_plan_tools_gmail_unread_uses_heuristic_not_scheduling():
+    result = await plan_tools(
+        "check my gmail unread",
+        "Ready for AI: google.",
+        "user-1",
+        manifest_caps={"email.list_unread", "email.search"},
+        manifest_connections=[{"id": "google_user-1", "providerId": "google"}],
+        manifest_connection_states=[{"providerId": "google", "state": "ready"}],
+    )
+    assert result["planner"] == "heuristic"
+    tool_names = [t.get("tool") for t in result["tools"]]
+    assert "email.list_unread" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_plan_tools_inbox_plans_email_and_whatsapp_when_connected():
+    result = await plan_tools(
+        "check my inbox",
+        "Ready for AI: google, whatsapp.",
+        "user-1",
+        manifest_caps={"email.list_unread", "messaging.list_unread"},
+        manifest_connections=[
+            {"id": "google_user-1", "providerId": "google"},
+            {"id": "whatsapp_user-1", "providerId": "whatsapp"},
+        ],
+        manifest_connection_states=[
+            {"providerId": "google", "state": "ready"},
+            {"providerId": "whatsapp", "state": "ready"},
+        ],
+    )
+    assert result["planner"] == "heuristic"
+    tool_names = [t.get("tool") for t in result["tools"]]
+    assert "whatsapp.list_unread" in tool_names
+    assert "email.list_unread" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_plan_tools_check_whatsapp_plans_list_unread():
+    result = await plan_tools(
+        "check my whatsapp",
+        "Ready for AI: whatsapp.",
+        "user-1",
+        manifest_caps={"messaging.list_unread"},
+        manifest_connections=[{"id": "whatsapp_user-1", "providerId": "whatsapp"}],
+        manifest_connection_states=[{"providerId": "whatsapp", "state": "ready"}],
+    )
+    assert result["planner"] == "heuristic"
+    tool_names = [t.get("tool") for t in result["tools"]]
+    assert "whatsapp.list_unread" in tool_names

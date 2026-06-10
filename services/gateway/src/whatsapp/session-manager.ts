@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, access } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import pino from 'pino';
 import QRCode from 'qrcode';
@@ -14,6 +14,11 @@ import {
   syncWhatsAppMessage,
 } from './message-sync';
 import { getWhatsAppAuthRoot } from './auth-paths';
+import {
+  authDirExists,
+  ensureAuthDirLocal,
+  pushAuthDirToRemote,
+} from './auth-remote';
 import { markConnectionActive, markWhatsAppDisconnectedForUser } from './connection-lifecycle';
 import { repairWhatsAppConnectionMetadata } from './session-resolve';
 import { normalizeWhatsAppPairingPhone } from './phone-normalize';
@@ -31,7 +36,6 @@ export interface SessionState {
   pairingPhone?: string;
   pairingInProgress?: boolean;
   pairingCodeIssuedAt?: string;
-  /** Set after Baileys messaging-history.set completes (isLatest). */
   historySyncComplete?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -96,15 +100,6 @@ function authDirFor(sessionId: string): string {
   return path.join(AUTH_ROOT, sessionId);
 }
 
-async function authDirExists(sessionId: string): Promise<boolean> {
-  try {
-    await access(authDirFor(sessionId));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export class SessionManager {
   private sessions = new Map<string, SessionState>();
   private sockets = new Map<string, BaileysSocket>();
@@ -131,8 +126,10 @@ export class SessionManager {
       return existing;
     }
 
-    if (await authDirExists(sessionId)) {
-      const metaPath = path.join(authDirFor(sessionId), 'session.json');
+    const authDir = authDirFor(sessionId);
+    if (await authDirExists(sessionId, authDir)) {
+      await ensureAuthDirLocal(sessionId, authDir);
+      const metaPath = path.join(authDir, 'session.json');
       try {
         const raw = await readFile(metaPath, 'utf8');
         const saved = JSON.parse(raw) as SessionState;
@@ -169,13 +166,16 @@ export class SessionManager {
       return;
     }
 
-    const metaPath = path.join(authDirFor(sessionId), 'session.json');
+    const authDir = authDirFor(sessionId);
+    const metaPath = path.join(authDir, 'session.json');
     try {
+      await ensureAuthDirLocal(sessionId, authDir);
       const raw = await readFile(metaPath, 'utf8');
       const saved = JSON.parse(raw) as SessionState;
       saved.status = 'disconnected';
       saved.updatedAt = new Date().toISOString();
       await writeFile(metaPath, JSON.stringify(saved), 'utf8');
+      await pushAuthDirToRemote(sessionId, authDir);
     } catch {
       /* no session on disk */
     }
@@ -710,6 +710,7 @@ export class SessionManager {
     const dir = authDirFor(session.sessionId);
     await mkdir(dir, { recursive: true });
     await writeFile(path.join(dir, 'session.json'), JSON.stringify(session), 'utf8');
+    await pushAuthDirToRemote(session.sessionId, dir);
   }
 
   private persistSessionMeta(session: SessionState, immediate = false): void {
@@ -783,8 +784,10 @@ export class SessionManager {
       if (sock) return sock;
     }
 
-    if (!this.sessions.get(sessionId) && (await authDirExists(sessionId))) {
-      const metaPath = path.join(authDirFor(sessionId), 'session.json');
+    const authDir = authDirFor(sessionId);
+    if (!this.sessions.get(sessionId) && (await authDirExists(sessionId, authDir))) {
+      await ensureAuthDirLocal(sessionId, authDir);
+      const metaPath = path.join(authDir, 'session.json');
       try {
         const raw = await readFile(metaPath, 'utf8');
         const saved = JSON.parse(raw) as SessionState;
@@ -841,6 +844,7 @@ export class SessionManager {
     }
 
     const authDir = authDirFor(sessionId);
+    await ensureAuthDirLocal(sessionId, authDir);
     await mkdir(authDir, { recursive: true });
 
     await repairWhatsAppConnectionMetadata(session.userId, sessionId);
@@ -848,6 +852,10 @@ export class SessionManager {
 
     const baileys = await getBaileys();
     const { state: authState, saveCreds } = await baileys.useMultiFileAuthState(authDir);
+    const persistBaileysAuth = async () => {
+      await saveCreds();
+      await pushAuthDirToRemote(sessionId, authDir);
+    };
     const { version } = await baileys.fetchLatestBaileysVersion();
 
     const syncedThreads = await countSyncedThreads(sessionId);
@@ -885,7 +893,7 @@ export class SessionManager {
     this.connectionPhases.set(sessionId, 'connecting');
 
     sock.ev.on('creds.update', async () => {
-      await saveCreds();
+      await persistBaileysAuth();
       void this.persistSessionMeta(session);
     });
 
