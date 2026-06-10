@@ -561,6 +561,11 @@ export function listAllToolsOpenAi(): Array<{
   }));
 }
 
+export {
+  BLOCKED_INTEGRATION_TOOLS,
+  isBlockedIntegrationTool,
+} from './integration-policy';
+
 export function listToolsForUserOpenAi(activeProviderIds: string[]): Array<{
   type: 'function';
   function: { name: string; description: string; parameters: Record<string, unknown> };

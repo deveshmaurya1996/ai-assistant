@@ -1,5 +1,4 @@
-import { isBlockedIntegrationTool } from '@ai-assistant/integrations';
-import { getToolDefinition } from '@ai-assistant/tool-schema';
+import { getToolDefinition, isBlockedIntegrationTool } from '@ai-assistant/tool-schema';
 import type { ToolSource } from '@ai-assistant/types';
 
 export interface ToolPolicy {
