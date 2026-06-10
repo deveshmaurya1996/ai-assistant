@@ -17,7 +17,10 @@ const ExecuteSchema = z.object({
   chatSessionId: z.string().optional(),
 });
 
-const PORT = parseInt(process.env.TOOL_RUNTIME_PORT ?? '3011', 10);
+const PORT = parseInt(
+  process.env.TOOL_RUNTIME_PORT ?? process.env.PORT ?? '3011',
+  10
+);
 
 async function main() {
   const app = Fastify({ logger: true });

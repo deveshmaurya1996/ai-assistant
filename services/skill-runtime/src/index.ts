@@ -19,7 +19,10 @@ import {
   parseAssistantCliCommand,
 } from '@ai-assistant/skills';
 
-const PORT = parseInt(process.env.SKILL_RUNTIME_PORT ?? '3014', 10);
+const PORT = parseInt(
+  process.env.SKILL_RUNTIME_PORT ?? process.env.PORT ?? '3014',
+  10
+);
 const TOOL_RUNTIME_URL = config.toolRuntimeUrl.replace(/\/$/, '');
 
 const ExecuteSchema = z.object({

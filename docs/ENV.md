@@ -68,9 +68,11 @@ Public endpoint: `GET {API_PUBLIC_URL}/mobile/version` (no auth).
 
 Copy from `.env.production` into each service:
 
-- **ai-assistant-gateway** — full gateway block (DB, Redis, R2, auth, URLs)
-- **ai-assistant-cognitive** — `API_PUBLIC_URL`, `AI_SERVICE_URL`, `INTERNAL_SERVICE_TOKEN`, provider keys
+- **ai-assistant-gateway** — full gateway block (DB, Redis, R2, auth, URLs) + `TOOL_RUNTIME_URL`, `SKILL_RUNTIME_URL`
+- **ai-assistant-cognitive** — `API_PUBLIC_URL`, `AI_SERVICE_URL`, `INTERNAL_SERVICE_TOKEN`, `TOOL_RUNTIME_URL`, `SKILL_RUNTIME_URL`, provider keys
 - **ai-assistant-ai** — `QDRANT_*`, provider keys
+- **ai-assistant-tool-runtime** — `SKIP_INSTALL_DEPS=true`, `DATABASE_URL`, `INTEGRATION_ENCRYPTION_KEY`, Google integration keys. Build: `npx pnpm@9.0.0 install --frozen-lockfile && npx pnpm@9.0.0 run build:tool-runtime`. Start: `pnpm run start:tool-runtime`
+- **ai-assistant-skill-runtime** — `SKIP_INSTALL_DEPS=true`, `TOOL_RUNTIME_URL`. Build: `npx pnpm@9.0.0 install --frozen-lockfile && npx pnpm@9.0.0 run build:skill-runtime`. Start: `pnpm run start:skill-runtime`
 
 Canonical public gateway URL: **`API_PUBLIC_URL`** (replaces duplicate `GATEWAY_URL` / `API_URL` / `BETTER_AUTH_URL` in new configs).
 

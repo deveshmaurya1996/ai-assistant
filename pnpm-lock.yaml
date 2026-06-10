@@ -471,9 +471,6 @@ importers:
 
   packages/permissions:
     dependencies:
-      '@ai-assistant/integrations':
-        specifier: workspace:*
-        version: link:../integrations
       '@ai-assistant/tool-schema':
         specifier: workspace:*
         version: link:../tool-schema

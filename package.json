@@ -31,7 +31,11 @@
     "mobile:eas:build:android:preview": "pnpm --filter @ai-assistant/mobile eas:build:android:preview",
     "mobile:eas:update": "pnpm --filter @ai-assistant/mobile eas:update:production",
     "mobile:eas:update:preview": "pnpm --filter @ai-assistant/mobile eas:update:preview",
-    "mobile:release:sync": "pnpm --filter @ai-assistant/mobile release:sync"
+    "mobile:release:sync": "pnpm --filter @ai-assistant/mobile release:sync",
+    "build:tool-runtime": "pnpm exec turbo run build --filter=@ai-assistant/tool-runtime...",
+    "build:skill-runtime": "pnpm exec turbo run build --filter=@ai-assistant/skill-runtime...",
+    "start:tool-runtime": "node services/tool-runtime/dist/index.js",
+    "start:skill-runtime": "node services/skill-runtime/dist/index.js"
   },
   "dependencies": {
     "turbo": "latest",
