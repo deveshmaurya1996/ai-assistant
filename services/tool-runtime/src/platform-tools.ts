@@ -248,7 +248,7 @@ async function fanOutLiveResourceSearch(
       ),
       connector.executeTool(
         conn.id,
-        'files.search_documents',
+        'drive.search',
         { query, maxResults: limit },
         ctx,
         credentials

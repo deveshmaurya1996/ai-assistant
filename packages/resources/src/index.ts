@@ -72,24 +72,6 @@ export async function resourceDomainSearch(
     }
   }
 
-  if (includeProvider('files')) {
-    const files = await prisma.fileAsset.findMany({
-      where: {
-        userId,
-        filename: { contains: query, mode: 'insensitive' },
-      },
-      take: limit,
-    });
-    for (const f of files) {
-      hits.push({
-        id: f.id,
-        provider: 'files',
-        title: f.filename,
-        mimeType: f.mimeType,
-      });
-    }
-  }
-
   return hits.slice(0, limit);
 }
 

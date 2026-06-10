@@ -1,7 +1,6 @@
 export type FeatureFlag =
   | 'integrations.google'
   | 'integrations.whatsapp'
-  | 'integrations.files'
   | 'integrations.notes'
   | 'workflows.enabled'
   | 'tool-runtime.streaming'
@@ -11,7 +10,6 @@ export type FeatureFlag =
 const DEFAULT_FLAGS: Record<FeatureFlag, boolean> = {
   'integrations.google': true,
   'integrations.whatsapp': true,
-  'integrations.files': true,
   'integrations.notes': true,
   'workflows.enabled': true,
   'tool-runtime.streaming': true,

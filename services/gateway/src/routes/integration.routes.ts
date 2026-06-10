@@ -1,6 +1,5 @@
 import { FastifyInstance } from 'fastify';
 import { prisma, Prisma } from '@ai-assistant/database';
-import { EventNames, publishEvent } from '@ai-assistant/events';
 import {
   getConnector,
   integrationsDeepLink,
@@ -17,15 +16,14 @@ import {
   encryptCredentials,
 } from '../services/encryption.service';
 import { sessionManager } from '../whatsapp/session-manager';
-import { markConnectionActive } from '../whatsapp/connection-lifecycle';
+import { findLatestActiveBridgeSession } from '../whatsapp/session-resolve';
+import { formatPhoneForDisplay } from '../whatsapp/phone-normalize';
+import {
+  markConnectionActive,
+  markConnectionDisconnected,
+} from '../whatsapp/connection-lifecycle';
 import { assessConnectionsHealth } from '../services/integration-health.service';
 import { ensureIntegrationProvider } from '../services/ensure-integration-provider.service';
-import {
-  checkDeviceFiles,
-  completeDeviceSync,
-  getDeviceFilesStatus,
-  updateDeviceFilesConfig,
-} from '../services/device-files.service';
 import { randomBytes } from 'crypto';
 
 function resolveWhatsAppBridgeSessionId(metadata: unknown): string | null {
@@ -39,13 +37,19 @@ function toPublicSession(session: {
   qrData?: string;
   pairingCode?: string;
   pairingPhone?: string;
+  pairingCodeIssuedAt?: string;
   updatedAt: string;
 }) {
+  const rawCode = session.pairingCode?.replace(/[^A-Za-z0-9]/g, '').toUpperCase() ?? '';
+  const pairingCodeDisplay =
+    rawCode.length === 8 ? `${rawCode.slice(0, 4)}-${rawCode.slice(4)}` : session.pairingCode;
   return {
     status: session.status,
     qrData: session.qrData,
-    pairingCode: session.pairingCode,
+    pairingCode: pairingCodeDisplay,
+    pairingCodeRaw: rawCode || undefined,
     pairingPhone: session.pairingPhone,
+    pairingCodeIssuedAt: session.pairingCodeIssuedAt,
     updatedAt: session.updatedAt,
   };
 }
@@ -175,6 +179,7 @@ export async function integrationRoutes(fastify: FastifyInstance) {
       return reply.send(
         connections.map((c) => {
           const runtimeHealthy = health.get(c.id) === true;
+          const meta = (c.metadata ?? {}) as { lastHealthError?: string | null };
           return {
             id: c.id,
             providerId: c.providerId,
@@ -185,77 +190,13 @@ export async function integrationRoutes(fastify: FastifyInstance) {
             provider: c.provider,
             runtimeHealthy,
             aiReady: c.status === 'ACTIVE' && runtimeHealthy,
+            healthError:
+              c.status === 'ACTIVE' && !runtimeHealthy && meta.lastHealthError
+                ? meta.lastHealthError
+                : null,
           };
         })
       );
-    } catch (error) {
-      return sendError(reply, error);
-    }
-  });
-
-  authenticated.get('/files/device-status', async (request, reply) => {
-    try {
-      const userId = requireUserId(request);
-      return reply.send(await getDeviceFilesStatus(userId));
-    } catch (error) {
-      return sendError(reply, error);
-    }
-  });
-
-  authenticated.put('/files/device-config', async (request, reply) => {
-    try {
-      const userId = requireUserId(request);
-      const body = request.body as {
-        enabledSources?: Array<'documents' | 'photos'>;
-        syncEnabled?: boolean;
-      };
-      const config = await updateDeviceFilesConfig(userId, body);
-      return reply.send({ config });
-    } catch (error) {
-      return sendError(reply, error);
-    }
-  });
-
-  authenticated.post('/files/device-check', async (request, reply) => {
-    try {
-      const userId = requireUserId(request);
-      const body = request.body as {
-        items?: Array<{
-          devicePath: string;
-          deviceModifiedAt?: string;
-          sizeBytes?: number;
-        }>;
-      };
-      return reply.send(
-        await checkDeviceFiles(
-          userId,
-          (body.items ?? []).map((item) => ({
-            devicePath: item.devicePath,
-            deviceModifiedAt: item.deviceModifiedAt,
-            sizeBytes:
-              typeof item.sizeBytes === 'number' ? item.sizeBytes : undefined,
-          }))
-        )
-      );
-    } catch (error) {
-      return sendError(reply, error);
-    }
-  });
-
-  authenticated.post('/files/sync-complete', async (request, reply) => {
-    try {
-      const userId = requireUserId(request);
-      const body = request.body as {
-        uploaded?: number;
-        skipped?: number;
-        failed?: number;
-      };
-      const config = await completeDeviceSync(userId, {
-        uploaded: Number(body.uploaded ?? 0),
-        skipped: Number(body.skipped ?? 0),
-        failed: Number(body.failed ?? 0),
-      });
-      return reply.send({ config });
     } catch (error) {
       return sendError(reply, error);
     }
@@ -303,6 +244,82 @@ export async function integrationRoutes(fastify: FastifyInstance) {
       await ensureIntegrationProvider(provider);
 
       if (provider === 'whatsapp') {
+        const existing = await prisma.userConnection.findUnique({
+          where: { id: connectionId },
+        });
+        const oldBridge = existing
+          ? resolveWhatsAppBridgeSessionId(existing.metadata)
+          : null;
+
+        if (existing?.status === 'PENDING' && oldBridge) {
+          try {
+            const resumed = await sessionManager.getOrRestoreSession(oldBridge);
+            if (resumed.status === 'pending') {
+              await sessionManager.restartPendingSession(oldBridge).catch(() => undefined);
+              return reply.send({
+                connectionId: existing.id,
+                type: 'qr',
+                state: 'pending',
+              });
+            }
+            if (resumed.status === 'active') {
+              await markConnectionActive({
+                userId,
+                connectionId: existing.id,
+                providerId: 'whatsapp',
+              });
+              return reply.send({
+                connectionId: existing.id,
+                type: 'qr',
+                state: 'ready',
+              });
+            }
+          } catch {
+            if (oldBridge) {
+              await sessionManager.disconnectSession(oldBridge).catch(() => undefined);
+            }
+          }
+        } else {
+          const restoredBridge = await findLatestActiveBridgeSession(userId);
+          if (restoredBridge) {
+            const state = randomBytes(16).toString('hex');
+            const metadata: Record<string, unknown> = {
+              state,
+              challengeType: 'qr',
+              bridgeSessionId: restoredBridge,
+            };
+            const connection = await prisma.userConnection.upsert({
+              where: { id: connectionId },
+              create: {
+                id: connectionId,
+                userId,
+                providerId: provider,
+                status: 'ACTIVE',
+                scopes: [],
+                metadata: metadata as Prisma.InputJsonValue,
+              },
+              update: {
+                status: 'ACTIVE',
+                metadata: metadata as Prisma.InputJsonValue,
+              },
+            });
+            await markConnectionActive({
+              userId,
+              connectionId: connection.id,
+              providerId: 'whatsapp',
+            });
+            return reply.send({
+              connectionId: connection.id,
+              type: 'qr',
+              state: 'ready',
+            });
+          }
+
+          if (oldBridge) {
+            await sessionManager.disconnectSession(oldBridge).catch(() => undefined);
+          }
+        }
+
         const state = randomBytes(16).toString('hex');
         const waSession = await sessionManager.createSession(userId, state);
         const metadata: Record<string, unknown> = {
@@ -337,36 +354,6 @@ export async function integrationRoutes(fastify: FastifyInstance) {
       const connector = getConnector(provider);
 
       if (!connector?.getConnectUrl) {
-        if (provider === 'files') {
-          const connection = await prisma.userConnection.upsert({
-            where: { id: connectionId },
-            create: {
-              id: connectionId,
-              userId,
-              providerId: provider,
-              status: 'PENDING',
-              scopes: ['read'],
-              metadata: {
-                deviceSync: {
-                  enabledSources: ['documents', 'photos'],
-                  syncEnabled: true,
-                  lastSyncAt: null,
-                  lastSyncStats: null,
-                },
-              } as Prisma.InputJsonValue,
-            },
-            update: {
-              status: 'PENDING',
-            },
-          });
-
-          return reply.send({
-            connectionId: connection.id,
-            type: 'local',
-            state: 'pending_setup',
-          });
-        }
-
         const connection = await prisma.userConnection.upsert({
           where: { id: connectionId },
           create: {
@@ -471,8 +458,23 @@ export async function integrationRoutes(fastify: FastifyInstance) {
       try {
         session = await sessionManager.getOrRestoreSession(bridgeSessionId);
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Session not found';
-        return reply.code(404).send({ error: message });
+        if (connection.status === 'PENDING') {
+          try {
+            session = await sessionManager.restartPendingSession(bridgeSessionId);
+          } catch (restartErr) {
+            const message =
+              restartErr instanceof Error ? restartErr.message : 'Session not found';
+            return reply.code(404).send({
+              error:
+                message === 'Session not found'
+                  ? 'WhatsApp session expired. Go back and tap Connect again.'
+                  : message,
+            });
+          }
+        } else {
+          const message = err instanceof Error ? err.message : 'Session not found';
+          return reply.code(404).send({ error: message });
+        }
       }
 
       if (session.status === 'active' && connection.status !== 'ACTIVE') {
@@ -496,10 +498,13 @@ export async function integrationRoutes(fastify: FastifyInstance) {
     try {
       const userId = requireUserId(request);
       const { id } = request.params as { id: string };
-      const { phoneNumber } = request.body as { phoneNumber?: string };
-      if (!phoneNumber) {
+      const body = request.body as { phoneNumber?: string | number };
+      const rawPhone = body.phoneNumber;
+      if (rawPhone === undefined || rawPhone === null || String(rawPhone).trim() === '') {
         return reply.code(400).send({ error: 'phoneNumber is required' });
       }
+
+      const phoneNumber = String(rawPhone).trim();
 
       const connection = await prisma.userConnection.findFirst({
         where: { id, userId, providerId: 'whatsapp' },
@@ -521,6 +526,9 @@ export async function integrationRoutes(fastify: FastifyInstance) {
         return reply.send({
           connectionId: id,
           ...toPublicSession(session),
+          pairingPhoneDisplay: session.pairingPhone
+            ? formatPhoneForDisplay(session.pairingPhone)
+            : undefined,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Pairing failed';
@@ -546,8 +554,16 @@ export async function integrationRoutes(fastify: FastifyInstance) {
         if (!bridgeSessionId) {
           return reply.code(400).send({ error: 'WhatsApp session not found' });
         }
-        const session = sessionManager.getSession(bridgeSessionId);
-        if (!session || session.status !== 'active') {
+        let session;
+        try {
+          session = await sessionManager.getOrRestoreSession(bridgeSessionId);
+        } catch {
+          return reply.code(400).send({
+            error:
+              'WhatsApp is not linked yet. Scan the QR code or enter the pairing code on your phone.',
+          });
+        }
+        if (session.status !== 'active') {
           return reply.code(400).send({
             error:
               'WhatsApp is not linked yet. Scan the QR code or enter the pairing code on your phone.',
@@ -577,16 +593,17 @@ export async function integrationRoutes(fastify: FastifyInstance) {
       });
       if (!connection) return reply.code(404).send({ error: 'Not found' });
 
-      await prisma.userConnection.update({
-        where: { id },
-        data: { status: 'DISCONNECTED', encryptedCredentials: null },
-      });
+      if (connection.providerId === 'whatsapp') {
+        const bridgeSessionId = resolveWhatsAppBridgeSessionId(connection.metadata);
+        if (bridgeSessionId) {
+          await sessionManager.disconnectSession(bridgeSessionId).catch(() => undefined);
+        }
+      }
 
-      await publishEvent(EventNames.INTEGRATION_DISCONNECTED, {
+      await markConnectionDisconnected({
         userId,
         connectionId: id,
         providerId: connection.providerId,
-        status: 'disconnected',
       });
 
       return reply.code(204).send();

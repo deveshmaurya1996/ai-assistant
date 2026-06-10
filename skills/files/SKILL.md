@@ -1,22 +1,20 @@
-# File Intelligence
+# Google Drive
 
-Use this skill when the user asks about uploaded documents, PDFs, spreadsheets, Drive files, or images they attached in chat.
+Use this skill when the user asks to find, read, or summarize files in Google Drive.
 
 ## Capabilities
 
-- `files.search_documents` — search Drive (google) and/or uploaded files (files provider)
-- `files.search` — search indexed uploads by query (legacy tool for files provider)
+- `drive.search` — find Drive files by name or content (requires Google connected)
+- `drive.get_content` — read/export a file as text for summarization
 
-## Tools
+## Workflow
 
-- `files.search` — find files and matching excerpts by query (requires indexed `ready` status)
-- `files.get_summary` — short summary for a specific `fileId`
-- `files.get_chunks` — top relevant text chunks for a `fileId` and query
-- `files.analyze_image` — on-demand vision/OCR for an image `fileId`
+1. Use `drive.search` to find the relevant file(s)
+2. Use `drive.get_content` with the `fileId` from search results
+3. Summarize the returned `content` for the user
 
 ## Rules
 
-- Prefer registry + chunks over re-reading raw files
-- Do not request full file bytes in chat; use `fileId` references only
-- If status is not `ready`, tell the user indexing may still be in progress
-- When both Google and Files are connected, search uploads and Drive separately if needed
+- Drive is part of the Google integration (Gmail, Calendar, Drive)
+- If Google is not connected, prompt the user to link Google in Connect Apps
+- For summarize requests, always fetch content with `drive.get_content` before answering

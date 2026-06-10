@@ -1,49 +1,23 @@
-# Gmail Skill
+# Gmail (Google Email)
+
+The assistant can manage Gmail when Google is connected. **Deleting emails is not supported.**
 
 ## Capabilities
 
-- `email.list_unread` — list unread emails with subject and preview
-- `email.read_email` — read a single email by id or latest unread
-- `email.send_email` — send an email
+| Capability | Use for |
+|------------|---------|
+| `email.list_unread` | Inbox unread list with previews |
+| `email.read_email` | Read one email by id or latest unread |
+| `email.search` | Search by sender, subject, or keywords |
+| `email.send_email` | Send a new email |
+| `email.reply_email` | Reply in the same thread (sends immediately) |
+| `email.compose_draft` | Save a new draft without sending |
+| `email.draft_reply` | Save a reply draft without sending |
+| `email.mark_starred` | Star or unstar an email |
 
-## List Unread
+## Rules
 
-**Capability:** `email.list_unread`
-
-**Arguments:**
-
-- `maxResults` (number, optional)
-
-**Permissions:** `gmail.read`
-
-**Risk:** low
-
-## Read Email
-
-**Capability:** `email.read_email`
-
-**Arguments:**
-
-- `messageId` (string, optional) — omit for latest unread
-
-**Permissions:** `gmail.read`
-
-**Risk:** low
-
-## Send Email
-
-**Capability:** `email.send_email`
-
-**Arguments:**
-
-- `to` (string, required) — recipient email
-- `subject` (string, required)
-- `body` (string, required)
-
-**Permissions:** `gmail.send`
-
-**Risk:** high
-
-**Requires confirmation:** yes
-
-**Provider:** `google`
+- Use `email.read_email` or `email.search` before reply/star when the user refers to a specific message
+- Use `email.reply_email` when the user wants to send a reply; use `email.draft_reply` when they only want a draft
+- Never attempt to delete or trash emails — explain that delete is not supported
+- Send and reply require user confirmation

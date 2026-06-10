@@ -47,23 +47,17 @@ export default function RootLayout() {
   });
   const bootstrapReady = useAppBootstrap(fontsLoaded);
   const otaReady = useUpdateBootstrap(fontsLoaded, bootstrapReady);
-  const [splashDone, setSplashDone] = useState(false);
-  const appReady = bootstrapReady && otaReady && splashDone;
+  const appReady = bootstrapReady && otaReady;
+  const [splashFinished, setSplashFinished] = useState(false);
 
   useEffect(() => {
     void hydrateAuthStorage();
   }, []);
 
-  useEffect(() => {
-    if (appReady) {
-      void SplashScreen.hideAsync();
-    }
-  }, [appReady]);
-
-  if (!appReady) {
+  if (!splashFinished) {
     return (
       <ThemeProvider>
-        <AppSplash onComplete={() => setSplashDone(true)} />
+        <AppSplash ready={appReady} onComplete={() => setSplashFinished(true)} />
       </ThemeProvider>
     );
   }

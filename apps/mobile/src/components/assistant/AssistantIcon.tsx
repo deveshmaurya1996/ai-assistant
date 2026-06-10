@@ -1,5 +1,6 @@
-import { useEffect, type ReactNode } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { StyleSheet, View } from 'react-native';
+import { AssistantLogoMark } from '@/components/assistant/AssistantLogoMark';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   Easing,
@@ -7,15 +8,26 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
-  withSequence,
   withTiming,
   ZoomIn,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { PulseRing } from '@/components/motion/PulseRing';
-import { splashBackground } from '@/theme/tokens';
+import { splashBackground, type ThemeColors } from '@/theme/tokens';
 import { useTheme } from '@/theme/ThemeProvider';
 
-const LOGO = require('../../../assets/images/logo-mark.png');
+function resolveLogoColors(
+  colors: ThemeColors,
+  isDark: boolean,
+  backgroundColor?: string,
+  color?: string
+) {
+  return {
+    markBackground: backgroundColor ?? (isDark ? splashBackground : colors.primaryMuted),
+    logoColor: color ?? (isDark ? '#FFFFFF' : colors.primary),
+  };
+}
+
 const DRAWER_SLOT = 28;
 const LOGO_INSET_RATIO = 0.1;
 
@@ -23,6 +35,7 @@ type AssistantIconProps = {
   size?: number;
   inset?: number;
   backgroundColor?: string;
+  color?: string;
   drawer?: boolean;
   animated?: boolean;
   hero?: boolean;
@@ -59,13 +72,16 @@ function LogoMark({
   padded = true,
   inset: insetOverride,
   backgroundColor = splashBackground,
+  color = '#FFFFFF',
 }: {
   size: number;
   padded?: boolean;
   inset?: number;
   backgroundColor?: string;
+  color?: string;
 }) {
   const inset = logoInset(size, padded, insetOverride);
+  const logoSize = Math.max(8, size - inset * 2);
 
   return (
     <View
@@ -79,12 +95,7 @@ function LogoMark({
           padding: inset,
         },
       ]}>
-      <Image
-        source={LOGO}
-        style={styles.markImage}
-        resizeMode="contain"
-        accessibilityLabel="AI Assistant"
-      />
+      <AssistantLogoMark size={logoSize} color={color} />
     </View>
   );
 }
@@ -93,16 +104,17 @@ export function AssistantIcon({
   size = 20,
   inset,
   backgroundColor,
+  color,
   drawer = false,
   animated = false,
   hero = false,
 }: AssistantIconProps) {
-  const { colors } = useTheme();
-  const markBackground = backgroundColor ?? splashBackground;
+  const { colors, isDark } = useTheme();
+  const { markBackground, logoColor } = resolveLogoColors(colors, isDark, backgroundColor, color);
 
   const mark = (
     <Breathe enabled={animated || hero}>
-      <LogoMark size={size} inset={inset} backgroundColor={markBackground} />
+      <LogoMark size={size} inset={inset} backgroundColor={markBackground} color={logoColor} />
     </Breathe>
   );
 
@@ -140,21 +152,62 @@ export function AssistantIcon({
   return icon;
 }
 
-export function SplashLogo({ size = 300 }: { size?: number }) {
-  const scale = useSharedValue(0.9);
+const SPLASH_LOAD_MS = 7000;
+const SPLASH_EXIT_MS = 320;
+const SPLASH_LOAD_GROW = 1.1;
+const SPLASH_EXIT_SCALE = 1.65;
+
+export function SplashLogo({
+  size = 180,
+  color = '#FFFFFF',
+  ready = false,
+  onExitComplete,
+}: {
+  size?: number;
+  color?: string;
+  ready?: boolean;
+  onExitComplete?: () => void;
+}) {
+  const scale = useSharedValue(1);
   const opacity = useSharedValue(0);
+  const exitingRef = useRef(false);
+  const mountedRef = useRef(false);
+  const onExitCompleteRef = useRef(onExitComplete);
+  onExitCompleteRef.current = onExitComplete;
 
   useEffect(() => {
-    opacity.value = withTiming(1, { duration: 450, easing: Easing.out(Easing.cubic) });
-    scale.value = withSequence(
-      withTiming(1, { duration: 520, easing: Easing.out(Easing.cubic) }),
-      withRepeat(
-        withTiming(1.03, { duration: 2600, easing: Easing.inOut(Easing.ease) }),
-        -1,
-        true
-      )
-    );
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    opacity.value = withTiming(1, { duration: 350, easing: Easing.out(Easing.cubic) });
+    scale.value = withTiming(SPLASH_LOAD_GROW, {
+      duration: SPLASH_LOAD_MS,
+      easing: Easing.out(Easing.quad),
+    });
   }, [opacity, scale]);
+
+  useEffect(() => {
+    if (!ready || exitingRef.current) return;
+    exitingRef.current = true;
+
+    opacity.value = withTiming(0, { duration: SPLASH_EXIT_MS, easing: Easing.in(Easing.cubic) });
+    scale.value = withTiming(
+      SPLASH_EXIT_SCALE,
+      { duration: SPLASH_EXIT_MS, easing: Easing.in(Easing.cubic) },
+      (finished) => {
+        if (!finished) return;
+        scheduleOnRN(() => {
+          if (mountedRef.current) {
+            onExitCompleteRef.current?.();
+          }
+        });
+      }
+    );
+  }, [ready, opacity, scale]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
@@ -163,7 +216,7 @@ export function SplashLogo({ size = 300 }: { size?: number }) {
 
   return (
     <Animated.View style={animatedStyle}>
-      <LogoMark size={size} padded={false} />
+      <AssistantLogoMark size={size} color={color} />
     </Animated.View>
   );
 }
@@ -173,10 +226,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  markImage: {
-    width: '100%',
-    height: '100%',
   },
   drawerSlot: {
     alignItems: 'center',

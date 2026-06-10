@@ -12,15 +12,6 @@ export {
   resolveAssistantContext,
 } from './personality';
 export type * from './attachments';
-export type {
-  DeviceFileCheckItem,
-  DeviceFileCheckResult,
-  DeviceFilesConfig,
-  DeviceFilesSource,
-  DeviceFilesStatus,
-  DeviceFileUploadMeta,
-  FileBulkStatusItem,
-} from './device-files';
 export {
   buildDefaultAttachmentQuery,
   resolvedAttachmentHasVision,

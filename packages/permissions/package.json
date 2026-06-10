@@ -15,6 +15,7 @@
     "build": "node ../../node_modules/typescript/bin/tsc"
   },
   "dependencies": {
+    "@ai-assistant/integrations": "workspace:*",
     "@ai-assistant/tool-schema": "workspace:*",
     "@ai-assistant/types": "workspace:*"
   },

@@ -82,7 +82,7 @@
     "build": "echo \"Expo app — use expo export for production builds\"",
     "start": "expo start",
     "adb-reverse": "node scripts/adb-reverse.mjs",
-    "android": "node scripts/adb-reverse.mjs && expo run:android",
+    "android": "node scripts/adb-reverse.mjs && expo prebuild --platform android && expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",

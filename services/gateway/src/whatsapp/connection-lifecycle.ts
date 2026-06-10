@@ -22,7 +22,7 @@ export async function markConnectionActive(params: {
 
   invalidateCognitiveManifestCache(params.userId);
 
-  if (params.providerId === 'google' || params.providerId === 'files') {
+  if (params.providerId === 'google') {
     enqueueIngestionJob(`/v1/sync/${params.connectionId}`, undefined, 'sync');
   }
 }

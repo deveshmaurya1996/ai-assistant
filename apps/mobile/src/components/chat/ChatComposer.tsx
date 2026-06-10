@@ -287,7 +287,7 @@ export function ChatComposer({
                   accessibilityLabel={`Open ${assistantDisplayName}`}
                   accessibilityRole="button"
                   style={{ opacity: isGenerating ? 0.45 : 1 }}>
-                  <AssistantIcon size={36} inset={8} />
+                  <AssistantIcon size={36} inset={5} />
                 </PressableScale>
               </View>
             )}

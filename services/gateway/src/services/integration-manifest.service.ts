@@ -8,27 +8,6 @@ import {
 } from '@ai-assistant/capabilities';
 import { assessConnectionsHealth } from './integration-health.service';
 
-async function ensureFilesConnectionForUploads(userId: string): Promise<void> {
-  const connectionId = `files_${userId}`;
-  const hasFiles = await prisma.fileAsset.findFirst({
-    where: { userId },
-    select: { id: true },
-  });
-  if (!hasFiles) return;
-
-  await prisma.userConnection.upsert({
-    where: { id: connectionId },
-    create: {
-      id: connectionId,
-      userId,
-      providerId: 'files',
-      status: 'ACTIVE',
-      scopes: [],
-    },
-    update: { status: 'ACTIVE' },
-  });
-}
-
 function resolveProviderState(
   providerId: string,
   connections: Array<{ id: string; providerId: string; status: string }>,
@@ -47,8 +26,6 @@ export async function buildUserIntegrationManifest(userId: string): Promise<{
   supportedProviders: string[];
   unhealthyNotes: string[];
 }> {
-  await ensureFilesConnectionForUploads(userId);
-
   const enabledProviders = await prisma.integrationProvider.findMany({
     where: { isEnabled: true },
     select: { id: true },

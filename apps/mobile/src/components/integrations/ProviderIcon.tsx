@@ -18,11 +18,10 @@ const SIZES = {
 
 const PROVIDERS: Record<string, { name: MciName; color: string }> = {
   whatsapp: { name: 'whatsapp', color: '#25D366' },
-  files: { name: 'folder-multiple', color: '#3B82F6' },
   notes: { name: 'note-text', color: '#F59E0B' },
 };
 
-const DEFAULT_PROVIDER = PROVIDERS.files;
+const DEFAULT_PROVIDER = PROVIDERS.whatsapp;
 
 export function ProviderIcon({ providerId, size = 'sm' }: Props) {
   const { slot, icon } = SIZES[size];

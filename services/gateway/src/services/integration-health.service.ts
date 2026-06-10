@@ -53,10 +53,6 @@ export async function assessConnectionHealth(
     }
   }
 
-  if (connection.providerId === 'files') {
-    return true;
-  }
-
   return true;
 }
 

@@ -6,13 +6,11 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { AppHeader } from '@/components/layout/AppHeader';
 import { WhatsAppLinkScreen } from '@/components/integrations/WhatsAppLinkScreen';
-import { FilesLinkScreen } from '@/components/integrations/FilesLinkScreen';
 import { spacing } from '@/theme/tokens';
 
 const PROVIDER_NAMES: Record<string, string> = {
   google: 'Google',
   whatsapp: 'WhatsApp',
-  files: 'Files',
 };
 
 export default function ProviderDetailScreen() {
@@ -26,10 +24,6 @@ export default function ProviderDetailScreen() {
 
   if (provider === 'whatsapp' && connectionId) {
     return <WhatsAppLinkScreen connectionId={connectionId} />;
-  }
-
-  if (provider === 'files' && connectionId) {
-    return <FilesLinkScreen connectionId={connectionId} />;
   }
 
   return (

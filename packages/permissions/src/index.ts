@@ -1,3 +1,4 @@
+import { isBlockedIntegrationTool } from '@ai-assistant/integrations';
 import { getToolDefinition } from '@ai-assistant/tool-schema';
 import type { ToolSource } from '@ai-assistant/types';
 
@@ -37,13 +38,6 @@ const DEFAULT_POLICIES: ToolPolicy[] = [
   },
   {
     tool: 'calendar.list',
-    requiresConfirmation: false,
-    allowedSources: ['chat', 'voice', 'automation', 'workflow', 'manual'],
-    dangerous: false,
-    automationRequiresPreApproval: false,
-  },
-  {
-    tool: 'drive.search',
     requiresConfirmation: false,
     allowedSources: ['chat', 'voice', 'automation', 'workflow', 'manual'],
     dangerous: false,
@@ -100,6 +94,34 @@ const DEFAULT_POLICIES: ToolPolicy[] = [
     automationRequiresPreApproval: true,
   },
   {
+    tool: 'email.search',
+    requiresConfirmation: false,
+    allowedSources: ['chat', 'voice', 'automation', 'workflow', 'manual'],
+    dangerous: false,
+    automationRequiresPreApproval: false,
+  },
+  {
+    tool: 'email.reply_email',
+    requiresConfirmation: true,
+    allowedSources: ['chat', 'voice', 'automation', 'workflow', 'manual'],
+    dangerous: true,
+    automationRequiresPreApproval: true,
+  },
+  {
+    tool: 'email.compose_draft',
+    requiresConfirmation: false,
+    allowedSources: ['chat', 'voice', 'automation', 'workflow', 'manual'],
+    dangerous: false,
+    automationRequiresPreApproval: false,
+  },
+  {
+    tool: 'email.mark_starred',
+    requiresConfirmation: false,
+    allowedSources: ['chat', 'voice', 'automation', 'workflow', 'manual'],
+    dangerous: false,
+    automationRequiresPreApproval: false,
+  },
+  {
     tool: 'calendar.list_upcoming',
     requiresConfirmation: false,
     allowedSources: ['chat', 'voice', 'automation', 'workflow', 'manual'],
@@ -107,35 +129,14 @@ const DEFAULT_POLICIES: ToolPolicy[] = [
     automationRequiresPreApproval: false,
   },
   {
-    tool: 'files.search_documents',
+    tool: 'drive.search',
     requiresConfirmation: false,
     allowedSources: ['chat', 'voice', 'automation', 'workflow', 'manual'],
     dangerous: false,
     automationRequiresPreApproval: false,
   },
   {
-    tool: 'files.search',
-    requiresConfirmation: false,
-    allowedSources: ['chat', 'voice', 'automation', 'workflow', 'manual'],
-    dangerous: false,
-    automationRequiresPreApproval: false,
-  },
-  {
-    tool: 'files.get_summary',
-    requiresConfirmation: false,
-    allowedSources: ['chat', 'voice', 'automation', 'workflow', 'manual'],
-    dangerous: false,
-    automationRequiresPreApproval: false,
-  },
-  {
-    tool: 'files.get_chunks',
-    requiresConfirmation: false,
-    allowedSources: ['chat', 'voice', 'automation', 'workflow', 'manual'],
-    dangerous: false,
-    automationRequiresPreApproval: false,
-  },
-  {
-    tool: 'files.analyze_image',
+    tool: 'drive.get_content',
     requiresConfirmation: false,
     allowedSources: ['chat', 'voice', 'automation', 'workflow', 'manual'],
     dangerous: false,
@@ -215,6 +216,13 @@ export interface PermissionCheckResult {
 
 export function checkToolPermission(input: PermissionCheckInput): PermissionCheckResult {
   const { tool, source, confirmed, userId } = input;
+  if (isBlockedIntegrationTool(tool)) {
+    return {
+      allowed: false,
+      requiresConfirmation: false,
+      reason: 'Deleting emails or WhatsApp messages is not supported.',
+    };
+  }
   const def = getToolDefinition(tool);
   if (!def) {
     return { allowed: false, requiresConfirmation: false, reason: `Unknown tool: ${tool}` };

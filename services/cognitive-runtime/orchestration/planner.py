@@ -122,8 +122,8 @@ def _filter_caps_for_providers(
         expected_prov, _ = CAPABILITY_TO_TOOL[cap_id]
         if expected_prov in healthy_providers or expected_prov == "platform":
             out.add(cap_id)
-        elif cap_id == "files.search_documents":
-            if "google" in healthy_providers or "files" in healthy_providers:
+        elif cap_id in ("drive.search", "drive.get_content"):
+            if "google" in healthy_providers:
                 out.add(cap_id)
         elif cap_id == "resources.search":
             out.add(cap_id)
@@ -434,41 +434,39 @@ def _heuristic_connected_apps_query(query: str) -> bool:
     return is_connected_apps_query(query)
 
 
-def _heuristic_file_search(
+def _heuristic_drive(
     query: str, available_caps: Set[str], connected: Set[str]
 ) -> List[Dict[str, Any]]:
     q = query.lower()
-    if not any(
-        w in q
-        for w in [
-            "search my files",
-            "search my documents",
-            "find my file",
-            "find my document",
-            "uploaded file",
-            "uploaded pdf",
-            "my pdf",
-            "my document",
-            "file search",
-            "drive",
-        ]
-    ):
+    drive_signals = [
+        "google drive",
+        "my drive",
+        "in drive",
+        "on drive",
+        "drive file",
+        "drive document",
+        "drive doc",
+        "google doc",
+        "google sheet",
+        "search my documents",
+        "find my document",
+        "find my file",
+        "my document",
+        "my spreadsheet",
+        "drive",
+    ]
+    if not any(w in q for w in drive_signals):
         return []
+    if "google" not in connected:
+        return []
+
     out: List[Dict[str, Any]] = []
     search_q = query
-    if "files.search_documents" in available_caps and "google" in connected:
+    if "drive.search" in available_caps:
         out.append(
             {
-                "capability": "files.search_documents",
+                "capability": "drive.search",
                 "provider": "google",
-                "args": {"query": search_q, "maxResults": 10},
-            }
-        )
-    if "files.search_documents" in available_caps and "files" in connected:
-        out.append(
-            {
-                "capability": "files.search_documents",
-                "provider": "files",
                 "args": {"query": search_q, "maxResults": 10},
             }
         )
@@ -524,7 +522,7 @@ def _heuristic_capabilities(
     out.extend(_heuristic_whatsapp_read(query, available_caps))
     out.extend(_heuristic_email(query, available_caps))
     out.extend(_heuristic_calendar(query, available_caps))
-    out.extend(_heuristic_file_search(query, available_caps, connected))
+    out.extend(_heuristic_drive(query, available_caps, connected))
     out = _dedupe_cap_items(out)
 
     if not is_send_intent(query) or is_read_intent(query):

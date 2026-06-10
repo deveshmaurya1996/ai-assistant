@@ -29,12 +29,6 @@ import type {
   WhatsAppSessionStatus,
   UserNote,
   CreateNoteBody,
-  DeviceFileCheckItem,
-  DeviceFileCheckResult,
-  DeviceFilesConfig,
-  DeviceFilesStatus,
-  DeviceFileUploadMeta,
-  FileBulkStatusItem,
 } from '@ai-assistant/types';
 
 export type * from '@ai-assistant/types';
@@ -392,18 +386,10 @@ export class AssistantClient {
 
   async uploadFilePart(
     file: Blob | File | UploadFilePayload,
-    filename?: string,
-    meta?: DeviceFileUploadMeta
+    filename?: string
   ): Promise<FileAssetResponse> {
     const form = new FormData();
     this.appendUploadPart(form, 'file', file, filename);
-    if (meta?.devicePath) {
-      form.append('devicePath', meta.devicePath);
-      form.append('source', meta.source ?? 'device');
-      if (meta.deviceModifiedAt) {
-        form.append('deviceModifiedAt', meta.deviceModifiedAt);
-      }
-    }
     return this.postFileUploadForm(form);
   }
 
@@ -418,42 +404,6 @@ export class AssistantClient {
       indexedAt: string | null;
       createdAt: string;
     }>(`/files/${fileId}/status`);
-  }
-
-  async getFileBulkStatus(ids: string[]) {
-    return this.request<{ items: FileBulkStatusItem[] }>('/files/bulk-status', {
-      method: 'POST',
-      body: JSON.stringify({ ids }),
-    });
-  }
-
-  async checkDeviceFiles(items: DeviceFileCheckItem[]) {
-    return this.request<DeviceFileCheckResult>('/integrations/files/device-check', {
-      method: 'POST',
-      body: JSON.stringify({ items }),
-    });
-  }
-
-  async getDeviceFilesStatus(): Promise<DeviceFilesStatus> {
-    return this.request<DeviceFilesStatus>('/integrations/files/device-status');
-  }
-
-  async updateDeviceFilesConfig(config: Partial<DeviceFilesConfig>) {
-    return this.request<{ config: DeviceFilesConfig }>('/integrations/files/device-config', {
-      method: 'PUT',
-      body: JSON.stringify(config),
-    });
-  }
-
-  async completeDeviceFilesSync(stats: {
-    uploaded: number;
-    skipped: number;
-    failed: number;
-  }) {
-    return this.request<{ config: DeviceFilesConfig }>('/integrations/files/sync-complete', {
-      method: 'POST',
-      body: JSON.stringify(stats),
-    });
   }
 
   private async postFileUploadForm(form: FormData): Promise<FileAssetResponse> {
@@ -550,6 +500,7 @@ export class AssistantClient {
       sessionId: string;
       pairingCode?: string;
       pairingPhone?: string;
+      pairingPhoneDisplay?: string;
       status: string;
     }>(`/integrations/connections/${connectionId}/whatsapp/pairing`, {
       method: 'POST',

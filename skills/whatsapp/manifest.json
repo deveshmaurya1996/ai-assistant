@@ -4,8 +4,11 @@
   "version": "1.0.0",
   "connector": "whatsapp",
   "capabilities": [
+    "messaging.list_unread",
+    "messaging.read_chat",
+    "messaging.search_messages",
     "communication.chat.search",
-    "communication.message.send"
+    "messaging.send_message"
   ],
-  "description": "Search chats and send WhatsApp messages"
+  "description": "Read, search, and send WhatsApp messages (delete not supported)"
 }

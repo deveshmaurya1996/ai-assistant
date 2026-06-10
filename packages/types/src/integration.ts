@@ -33,6 +33,7 @@ export interface UserConnection {
   provider?: IntegrationProvider;
   runtimeHealthy?: boolean;
   aiReady?: boolean;
+  healthError?: string | null;
 }
 
 export interface ConnectChallenge {

@@ -1,7 +1,8 @@
 import type { ExpoConfig } from 'expo/config';
 
-const { splashBackground } = require('./src/theme/brand.constants.js') as {
+const { splashBackground, brandLogo } = require('./src/theme/brand.constants.js') as {
   splashBackground: string;
+  brandLogo: string;
 };
 
 const EAS_PROJECT_ID = 'e571137a-6ce6-4d5f-bba1-ee812975eb4a';
@@ -37,7 +38,7 @@ const config: ExpoConfig = {
   android: {
     package: 'com.aiassistant.app',
     googleServicesFile: './google-services.json',
-    versionCode: 1,
+    versionCode: 2,
     adaptiveIcon: {
       foregroundImage: './assets/images/android-icon-foreground.png',
       backgroundColor: splashBackground,
@@ -103,11 +104,11 @@ const config: ExpoConfig = {
       'expo-splash-screen',
       {
         backgroundColor: splashBackground,
-        image: './assets/images/splash-icon.png',
-        imageWidth: 300,
+        image: brandLogo,
+        imageWidth: 200,
         dark: {
           backgroundColor: splashBackground,
-          image: './assets/images/splash-icon.png',
+          image: brandLogo,
         },
       },
     ],

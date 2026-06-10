@@ -29,7 +29,6 @@ export type IntegrationManifest = {
 const PROVIDER_DISPLAY: Record<string, string> = {
   google: 'Google Workspace (Gmail, Calendar, Drive)',
   whatsapp: 'WhatsApp',
-  files: 'Files',
   notes: 'Notes',
 };
 
@@ -65,7 +64,7 @@ export function formatManifestForPlanner(
     connectionStates?: ProviderConnectionState[];
   }
 ): string {
-  const supported = options?.supportedProviders ?? ['google', 'whatsapp', 'files'];
+  const supported = options?.supportedProviders ?? ['google', 'whatsapp'];
   const states = options?.connectionStates ?? [];
   const supportedLine = supported
     .map((id) => PROVIDER_DISPLAY[id] ?? id)

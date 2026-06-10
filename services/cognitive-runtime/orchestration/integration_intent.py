@@ -35,10 +35,6 @@ SUPPORTED_PROVIDERS: Dict[str, Dict[str, object]] = {
         "display": "WhatsApp",
         "aliases": ("whatsapp", "wa ", " wa", "whats app"),
     },
-    "files": {
-        "display": "Files",
-        "aliases": ("files", "my files", "uploaded", "my document", "my pdf", "file search"),
-    },
 }
 
 UNSUPPORTED_APPS: Dict[str, str] = {
@@ -157,7 +153,9 @@ def _unsupported_guidance(apps: List[str]) -> str:
     subject = names if names else "that app"
     return (
         f"We don't support {subject} in the assistant yet, but we're actively working on adding it. "
-        "Today you can connect Google Workspace, WhatsApp, or Files in Connect Apps."
+        "Today you can connect Google (Gmail, Calendar, Drive) or WhatsApp in Connect Apps. "
+        "The assistant can read, send, reply, star, and draft emails; manage calendar and Drive; "
+        "and read or send WhatsApp messages — but cannot delete emails or WhatsApp messages."
     )
 
 

@@ -1,64 +1,19 @@
-# WhatsApp Skill
+# WhatsApp
+
+The assistant can manage linked-device WhatsApp when WhatsApp is connected. **Deleting messages or chats is not supported.**
 
 ## Capabilities
 
-- `messaging.list_unread` — list unread chats with previews
-- `messaging.read_chat` — read recent messages in a conversation
-- `messaging.send_message` — send a WhatsApp message
-- `communication.chat.search` — find a chat by contact name (use before send when `to` is a name)
+| Capability | Use for |
+|------------|---------|
+| `messaging.list_unread` | Unread chats with previews |
+| `messaging.read_chat` | Recent messages in a conversation |
+| `messaging.search_messages` | Search synced message history |
+| `communication.chat.search` | Find a chat by contact name |
+| `messaging.send_message` | Send a message |
 
-## List Unread
+## Rules
 
-**Capability:** `messaging.list_unread`
-
-**Arguments:**
-
-- `limit` (number, optional) — max chats to return
-
-**Permissions:** `whatsapp.read`
-
-**Risk:** low
-
-## Read Chat
-
-**Capability:** `messaging.read_chat`
-
-**Arguments:**
-
-- `chatId` or `jid` (string, optional)
-- `limit` (number, optional)
-
-**Permissions:** `whatsapp.read`
-
-**Risk:** low
-
-## Search Chats
-
-**Capability:** `communication.chat.search`
-
-**Arguments:**
-
-- `query` (string, required) — contact name or partial match
-
-**Permissions:** `whatsapp.read`
-
-**Risk:** low
-
-## Send Message
-
-**Capability:** `messaging.send_message`
-
-**Arguments:**
-
-- `to` (string, required) — JID or resolvable contact name
-- `message` (string, required)
-
-**Permissions:** `whatsapp.send`
-
-**Risk:** high
-
-**Requires confirmation:** yes
-
-**Planning hint:** If `to` is a person name (not a JID with `@`), run `communication.chat.search` first, then send using the resolved JID.
-
-**Provider:** `whatsapp`
+- If `to` is a person name (not a JID with `@`), run `communication.chat.search` first
+- Never attempt to delete messages or chats — explain that delete is not supported
+- Sending requires user confirmation

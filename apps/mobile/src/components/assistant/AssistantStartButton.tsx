@@ -10,7 +10,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { AssistantIcon } from '@/components/assistant/AssistantIcon';
 import { PressableScale } from '@/components/motion/PressableScale';
-import { splashBackground } from '@/theme/tokens';
 import { useTheme } from '@/theme/ThemeProvider';
 
 const LOGO_SIZE = 112;
@@ -110,11 +109,7 @@ export function AssistantStartButton({ assistantName, onPress }: Props) {
         accessibilityLabel={`Start voice conversation with ${assistantName}`}
         style={styles.pressable}>
         <Animated.View style={coreStyle}>
-          <AssistantIcon
-            size={LOGO_SIZE}
-            inset={14}
-            backgroundColor={splashBackground}
-          />
+          <AssistantIcon size={LOGO_SIZE} inset={14} />
         </Animated.View>
       </PressableScale>
     </View>

@@ -16,6 +16,7 @@ import {
 import { getWhatsAppAuthRoot } from './auth-paths';
 import { markConnectionActive, markWhatsAppDisconnectedForUser } from './connection-lifecycle';
 import { repairWhatsAppConnectionMetadata } from './session-resolve';
+import { normalizeWhatsAppPairingPhone } from './phone-normalize';
 import { prisma } from '@ai-assistant/database';
 
 export type SessionStatus = 'pending' | 'active' | 'disconnected';
@@ -28,6 +29,8 @@ export interface SessionState {
   qrData?: string;
   pairingCode?: string;
   pairingPhone?: string;
+  pairingInProgress?: boolean;
+  pairingCodeIssuedAt?: string;
   /** Set after Baileys messaging-history.set completes (isLatest). */
   historySyncComplete?: boolean;
   createdAt: string;
@@ -73,7 +76,14 @@ export function formatPairingCode(code: string): string {
 }
 
 function normalizePhone(phone: string): string {
-  return phone.replace(/\D/g, '');
+  let digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('91') && digits.length === 12 && digits[2] === '0') {
+    digits = `91${digits.slice(3)}`;
+  }
+  if (digits.length > 10 && digits.startsWith('0')) {
+    digits = digits.replace(/^0+/, '');
+  }
+  return digits;
 }
 
 function toJid(to: string): string {
@@ -104,7 +114,6 @@ export class SessionManager {
   private chatCache = new Map<string, ChatEntry[]>();
   private messageCache = new Map<string, Map<string, CachedMessage[]>>();
   private unreadCounts = new Map<string, Map<string, number>>();
-  /** Raw Baileys messages for getMessage retry/decrypt (per Baileys docs). */
   private rawMessageCache = new Map<string, Map<string, unknown>>();
 
   getSession(sessionId: string): SessionState | undefined {
@@ -139,6 +148,39 @@ export class SessionManager {
     throw new Error('Session not found');
   }
 
+  async disconnectSession(sessionId: string): Promise<void> {
+    const socket = this.sockets.get(sessionId);
+    if (socket) {
+      try {
+        socket.end(undefined);
+      } catch {
+        /* ignore */
+      }
+      this.sockets.delete(sessionId);
+    }
+    this.connectionPhases.delete(sessionId);
+    this.starting.delete(sessionId);
+
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      session.status = 'disconnected';
+      session.updatedAt = new Date().toISOString();
+      this.persistSessionMeta(session, true);
+      return;
+    }
+
+    const metaPath = path.join(authDirFor(sessionId), 'session.json');
+    try {
+      const raw = await readFile(metaPath, 'utf8');
+      const saved = JSON.parse(raw) as SessionState;
+      saved.status = 'disconnected';
+      saved.updatedAt = new Date().toISOString();
+      await writeFile(metaPath, JSON.stringify(saved), 'utf8');
+    } catch {
+      /* no session on disk */
+    }
+  }
+
   async createSession(userId: string, state: string): Promise<SessionState> {
     const sessionId = `wa_${userId}_${Date.now()}`;
     const now = new Date().toISOString();
@@ -152,11 +194,33 @@ export class SessionManager {
     };
     this.sessions.set(sessionId, session);
     this.chatCache.set(sessionId, []);
-    void this.persistSessionMeta(session, true);
+    await this.persistSessionMetaNow(session);
     void this.ensureSocket(sessionId).catch((err) => {
       logger.warn({ err, sessionId }, 'WhatsApp socket start failed');
     });
     return session;
+  }
+
+  async restartPendingSession(sessionId: string): Promise<SessionState> {
+    const session = await this.getOrRestoreSession(sessionId);
+    if (session.status === 'active') return session;
+
+    const socket = this.sockets.get(sessionId);
+    if (socket) {
+      try {
+        socket.end(undefined);
+      } catch {
+        /* ignore */
+      }
+      this.sockets.delete(sessionId);
+    }
+    this.connectionPhases.delete(sessionId);
+    this.starting.delete(sessionId);
+
+    await this.ensureSocket(sessionId);
+    const refreshed = this.sessions.get(sessionId);
+    if (!refreshed) throw new Error('WhatsApp session could not be restarted');
+    return refreshed;
   }
 
   async requestPairingCode(sessionId: string, phoneNumber: string): Promise<SessionState> {
@@ -167,13 +231,19 @@ export class SessionManager {
       return session;
     }
 
-    const normalized = normalizePhone(phoneNumber);
-    if (normalized.length < 10) {
-      throw new Error('Enter a valid phone number with country code (digits only)');
+    let normalized: string;
+    try {
+      normalized = normalizeWhatsAppPairingPhone(phoneNumber);
+    } catch {
+      normalized = normalizePhone(phoneNumber);
+      if (normalized.length < 10) {
+        throw new Error('Enter a valid phone number with country code (digits only)');
+      }
     }
+    logger.info({ sessionId, pairingPhone: normalized }, 'Requesting WhatsApp pairing code');
 
     if (sock.authState.creds.registered) {
-      throw new Error('Session already registered — use QR or tap Connect again');
+      throw new Error('Session already registered — disconnect WhatsApp and tap Connect again');
     }
 
     try {
@@ -182,11 +252,22 @@ export class SessionManager {
       throw new Error('WhatsApp is still connecting — wait a moment and try again');
     }
 
-    const code = await sock.requestPairingCode(normalized);
+    let code: string;
+    try {
+      code = await sock.requestPairingCode(normalized);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Pairing code request failed';
+      throw new Error(
+        `Could not start phone linking for ${normalized}. Check the number matches your WhatsApp account. (${message})`
+      );
+    }
+
     session.pairingPhone = normalized;
     session.pairingCode = formatPairingCode(code);
-    session.updatedAt = new Date().toISOString();
-    void this.persistSessionMeta(session, true);
+    session.pairingInProgress = true;
+    session.pairingCodeIssuedAt = new Date().toISOString();
+    session.updatedAt = session.pairingCodeIssuedAt;
+    await this.persistSessionMetaNow(session);
     return session;
   }
 
@@ -625,12 +706,15 @@ export class SessionManager {
     }
   }
 
+  private async persistSessionMetaNow(session: SessionState): Promise<void> {
+    const dir = authDirFor(session.sessionId);
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, 'session.json'), JSON.stringify(session), 'utf8');
+  }
+
   private persistSessionMeta(session: SessionState, immediate = false): void {
     const run = () => {
-      const dir = authDirFor(session.sessionId);
-      void mkdir(dir, { recursive: true }).then(() =>
-        writeFile(path.join(dir, 'session.json'), JSON.stringify(session), 'utf8')
-      );
+      void this.persistSessionMetaNow(session);
     };
 
     if (immediate) {
@@ -767,14 +851,18 @@ export class SessionManager {
     const { version } = await baileys.fetchLatestBaileysVersion();
 
     const syncedThreads = await countSyncedThreads(sessionId);
-    const wantsFullHistory = !session.historySyncComplete || syncedThreads < 25;
+    const isLinking = session.status === 'pending';
+    const wantsFullHistory =
+      !isLinking && (!session.historySyncComplete || syncedThreads < 25);
 
     const sock = baileys.default({
       version,
       logger,
       printQRInTerminal: false,
-      // Baileys docs: Desktop browser + syncFullHistory receives more message history.
-      browser: baileys.Browsers.macOS('Desktop'),
+      // Chrome fingerprint is required for QR + phone pairing (Desktop breaks linking).
+      browser: isLinking
+        ? baileys.Browsers.macOS('Chrome')
+        : baileys.Browsers.macOS('Desktop'),
       auth: {
         creds: authState.creds,
         keys: baileys.makeCacheableSignalKeyStore(authState.keys, logger),
@@ -932,6 +1020,10 @@ export class SessionManager {
 
       if (update.connection === 'open') {
         current.status = 'active';
+        current.pairingInProgress = false;
+        current.pairingCode = undefined;
+        current.pairingPhone = undefined;
+        current.pairingCodeIssuedAt = undefined;
         current.updatedAt = new Date().toISOString();
         void this.persistSessionMeta(current, true);
         void this.hydrateFromDatabase(sessionId);

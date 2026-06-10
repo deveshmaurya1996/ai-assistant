@@ -5,7 +5,7 @@ import { getFileStorage, getLocalDiskStorage } from '@ai-assistant/storage';
 import { authenticateRequest } from '../utils/auth.middleware';
 import { requireUserId } from '../lib/auth';
 import { sendError } from '../lib/errors';
-import { getFileBulkStatus, getFileRegistryRecord } from '../services/file-registry.service';
+import { getFileRegistryRecord } from '../services/file-registry.service';
 import {
   enqueueFileIndex,
   getUserFileForDownload,
@@ -23,9 +23,7 @@ export async function fileRoutes(fastify: FastifyInstance) {
       let buffer: Buffer | null = null;
       let filename = 'upload';
       let mimeFromPart = 'application/octet-stream';
-      let source: 'upload' | 'device' | 'chat' = 'upload';
-      let devicePath: string | undefined;
-      let deviceModifiedAt: Date | undefined;
+      let source: 'upload' | 'chat' = 'upload';
 
       for await (const part of parts) {
         if (part.type === 'file') {
@@ -34,13 +32,8 @@ export async function fileRoutes(fastify: FastifyInstance) {
           mimeFromPart = part.mimetype || mimeFromPart;
         } else if (part.type === 'field') {
           const value = String(part.value ?? '');
-          if (part.fieldname === 'source' && (value === 'device' || value === 'chat')) {
+          if (part.fieldname === 'source' && value === 'chat') {
             source = value;
-          } else if (part.fieldname === 'devicePath' && value) {
-            devicePath = value.slice(0, 512);
-          } else if (part.fieldname === 'deviceModifiedAt' && value) {
-            const parsed = new Date(value);
-            if (!Number.isNaN(parsed.getTime())) deviceModifiedAt = parsed;
           }
         }
       }
@@ -61,9 +54,7 @@ export async function fileRoutes(fastify: FastifyInstance) {
           filename,
           mimeType,
           buffer,
-          source: devicePath ? 'device' : source,
-          devicePath,
-          deviceModifiedAt,
+          source,
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Upload failed';
@@ -85,17 +76,6 @@ export async function fileRoutes(fastify: FastifyInstance) {
         createdAt: updated.createdAt.toISOString(),
         indexedAt: updated.indexedAt?.toISOString() ?? null,
       });
-    } catch (error) {
-      return sendError(reply, error);
-    }
-  });
-
-  fastify.post('/bulk-status', async (request, reply) => {
-    try {
-      const userId = requireUserId(request);
-      const body = request.body as { ids?: string[] };
-      const items = await getFileBulkStatus(userId, body.ids ?? []);
-      return { items };
     } catch (error) {
       return sendError(reply, error);
     }

@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
-  Pressable,
 } from 'react-native';
 import { ApiError } from '@ai-assistant/sdk';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -32,6 +31,7 @@ const TITLE = 'Connect Apps';
 type UserConnection = BaseUserConnection & {
   runtimeHealthy?: boolean;
   aiReady?: boolean;
+  healthError?: string | null;
 };
 
 const PROVIDERS = [
@@ -41,11 +41,6 @@ const PROVIDERS = [
     description: 'Grant Gmail, Calendar & Drive access',
   },
   { id: 'whatsapp', name: 'WhatsApp', description: 'Linked device messages' },
-  {
-    id: 'files',
-    name: 'Phone files',
-    description: 'Sync documents & photos from your phone for AI search',
-  },
 ] as const;
 
 export default function IntegrationsScreen() {
@@ -54,7 +49,10 @@ export default function IntegrationsScreen() {
   const [connections, setConnections] = useState<UserConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [busy, setBusy] = useState<{
+    providerId: string;
+    action: 'connect' | 'disconnect';
+  } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -109,6 +107,8 @@ export default function IntegrationsScreen() {
 
   const isActive = (providerId: string) => getConnection(providerId)?.status === 'ACTIVE';
 
+  const isPending = (providerId: string) => getConnection(providerId)?.status === 'PENDING';
+
   const isAiReady = (providerId: string) => {
     const connection = getConnection(providerId);
     if (!connection || connection.status !== 'ACTIVE') return false;
@@ -117,15 +117,23 @@ export default function IntegrationsScreen() {
 
   const connectionSubtitle = (providerId: string, description: string) => {
     const connection = getConnection(providerId);
-    if (!connection || connection.status !== 'ACTIVE') return description;
+    if (!connection) return description;
+    if (connection.status === 'PENDING') {
+      return `${description} · Finish linking on the QR screen`;
+    }
+    if (connection.status !== 'ACTIVE') return description;
     if (!isAiReady(providerId)) {
+      const detail = connection.healthError?.trim();
+      if (detail) {
+        return `${description} · ${detail}`;
+      }
       return `${description} · Connected — offline (reconnect for AI access)`;
     }
     return `${description} · Available to AI`;
   };
 
   const handleConnect = async (providerId: string) => {
-    setBusyId(providerId);
+    setBusy({ providerId, action: 'connect' });
     try {
       const challenge = await apiClient.connectProvider(providerId);
       if (challenge.type === 'oauth' && challenge.url) {
@@ -135,12 +143,10 @@ export default function IntegrationsScreen() {
           await Linking.openURL(challenge.url);
         }
       } else if (providerId === 'whatsapp' && challenge.connectionId) {
-        router.push(
-          integrationProviderRoute(providerId, {
-            connectionId: challenge.connectionId,
-          })
-        );
-      } else if (providerId === 'files' && challenge.connectionId) {
+        if (challenge.state === 'ready') {
+          await load();
+          return;
+        }
         router.push(
           integrationProviderRoute(providerId, {
             connectionId: challenge.connectionId,
@@ -162,7 +168,7 @@ export default function IntegrationsScreen() {
         Alert.alert('Connect failed', message);
       }
     } finally {
-      setBusyId(null);
+      setBusy(null);
     }
   };
 
@@ -191,12 +197,24 @@ export default function IntegrationsScreen() {
 
     const message = `Disconnect ${name}?`;
     const run = async () => {
-      setBusyId(providerId);
+      setBusy({ providerId, action: 'disconnect' });
       try {
         await apiClient.disconnectConnection(connection.id);
         await load();
+      } catch (e) {
+        const message =
+          e instanceof ApiError
+            ? e.message
+            : e instanceof Error
+              ? e.message
+              : 'Could not disconnect';
+        if (Platform.OS === 'web') {
+          window.alert(message);
+        } else {
+          Alert.alert('Disconnect failed', message);
+        }
       } finally {
-        setBusyId(null);
+        setBusy(null);
       }
     };
 
@@ -209,6 +227,10 @@ export default function IntegrationsScreen() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Disconnect', style: 'destructive', onPress: () => void run() },
     ]);
+  };
+
+  const openPendingWhatsApp = (connectionId: string) => {
+    router.push(integrationProviderRoute('whatsapp', { connectionId }));
   };
 
   if (loading) {
@@ -246,61 +268,59 @@ export default function IntegrationsScreen() {
             </Text>
             <Text variant="caption" muted style={styles.subtitle}>
               For Google, you will approve Gmail, Calendar, and Drive permissions in
-              Google&apos;s consent screen.
+              Google&apos;s consent screen. All three APIs must be enabled in your Google
+              Cloud project.
             </Text>
           </View>
         }
         renderItem={({ item, index }) => {
           const connected = isActive(item.id);
+          const pending = isPending(item.id);
           const aiReady = isAiReady(item.id);
-          const busy = busyId === item.id;
+          const isBusy = busy?.providerId === item.id;
+          const busyAction = isBusy ? busy?.action : null;
+          const connection = getConnection(item.id);
+
+          const actionLabel = pending
+            ? 'Continue'
+            : connected
+              ? aiReady
+                ? 'Disconnect'
+                : 'Reconnect'
+              : 'Connect';
+
+          const loadingLabel =
+            busyAction === 'disconnect' ? 'Disconnecting…' : 'Connecting…';
 
           return (
             <FadeIn delay={index * 40} style={styles.cardWrap}>
-              <Pressable
-                disabled={item.id !== 'files' || !getConnection(item.id)}
-                onPress={() => {
-                  const c = getConnection(item.id);
-                  if (item.id === 'files' && c) {
-                    router.push(
-                      integrationProviderRoute(item.id, { connectionId: c.id })
-                    );
-                  }
-                }}
-              >
               <Card style={styles.card}>
                 <ProviderIcon providerId={item.id} size="sm" />
                 <View style={styles.cardBody}>
                   <Text variant="bodyMedium" numberOfLines={1}>
                     {item.name}
                   </Text>
-                  <Text variant="caption" muted numberOfLines={2}>
-                    {connected
-                      ? connectionSubtitle(item.id, item.description)
-                      : item.description}
+                  <Text variant="caption" muted numberOfLines={3}>
+                    {connectionSubtitle(item.id, item.description)}
                   </Text>
                 </View>
                 <IntegrationActionButton
-                  variant={connected ? 'disconnect' : 'connect'}
-                  label={
-                    busy
-                      ? '…'
-                      : connected
-                        ? aiReady
-                          ? 'Disconnect'
-                          : 'Reconnect'
-                        : 'Connect'
-                  }
-                  loading={busy}
-                  disabled={busy}
+                  variant={connected && aiReady ? 'disconnect' : 'connect'}
+                  label={actionLabel}
+                  loadingLabel={loadingLabel}
+                  loading={isBusy}
+                  disabled={isBusy}
                   onPress={() => {
-                    if (!connected) void handleConnect(item.id);
-                    else if (aiReady) confirmDisconnect(item.id, item.name);
-                    else handleOfflineAction(item.id, item.name);
+                    if (pending && item.id === 'whatsapp' && connection) {
+                      openPendingWhatsApp(connection.id);
+                      return;
+                    }
+                    if (!connected && !pending) void handleConnect(item.id);
+                    else if (connected && aiReady) confirmDisconnect(item.id, item.name);
+                    else if (connected) handleOfflineAction(item.id, item.name);
                   }}
                 />
               </Card>
-              </Pressable>
             </FadeIn>
           );
         }}

@@ -4,8 +4,14 @@
   "version": "1.0.0",
   "connector": "google",
   "capabilities": [
-    "communication.email.search",
-    "communication.email.send"
+    "email.list_unread",
+    "email.read_email",
+    "email.search",
+    "email.send_email",
+    "email.reply_email",
+    "email.compose_draft",
+    "email.draft_reply",
+    "email.mark_starred"
   ],
-  "description": "Search and send email via Gmail"
+  "description": "Read, search, send, reply, draft, and star Gmail messages"
 }

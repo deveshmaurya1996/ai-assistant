@@ -16,11 +16,197 @@ const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/gmail.compose',
+  'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/calendar',
   'https://www.googleapis.com/auth/drive.readonly',
 ].join(' ');
 
-export const GOOGLE_TOOL_NAMESPACES = ['gmail', 'calendar', 'drive', 'email'] as const;
+export const GOOGLE_TOOL_NAMESPACES = ['gmail', 'calendar', 'email', 'drive'] as const;
+
+const GOOGLE_DRIVE_EXPORT_MIME: Record<string, string> = {
+  'application/vnd.google-apps.document': 'text/plain',
+  'application/vnd.google-apps.spreadsheet': 'text/csv',
+  'application/vnd.google-apps.presentation': 'text/plain',
+};
+
+const DRIVE_TEXT_MIME_PREFIXES = ['text/', 'application/json', 'application/xml'];
+
+function escapeDriveQueryTerm(term: string): string {
+  return term.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function buildDriveSearchQuery(query: string): string {
+  const term = escapeDriveQueryTerm(query.trim());
+  if (!term) {
+    return 'trashed=false';
+  }
+  return `trashed=false and (name contains '${term}' or fullText contains '${term}')`;
+}
+
+async function searchDriveFiles(
+  token: string,
+  query: string,
+  maxResults: number
+): Promise<ToolResult> {
+  const q = buildDriveSearchQuery(query);
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&pageSize=${maxResults}&fields=files(id,name,mimeType,modifiedTime,webViewLink,size)&orderBy=modifiedTime desc`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) {
+    const errText = await res.text();
+    return { success: false, error: formatGoogleApiError(res.status, errText, 'drive') };
+  }
+  const data = (await res.json()) as {
+    files?: Array<{
+      id: string;
+      name: string;
+      mimeType?: string;
+      modifiedTime?: string;
+      webViewLink?: string;
+      size?: string;
+    }>;
+  };
+  return {
+    success: true,
+    data: {
+      type: 'drive.search_result',
+      query,
+      items: (data.files ?? []).map((f) => ({
+        id: f.id,
+        name: f.name,
+        mimeType: f.mimeType,
+        modifiedTime: f.modifiedTime,
+        webViewLink: f.webViewLink,
+        sizeBytes: f.size ? Number(f.size) : undefined,
+      })),
+    },
+  };
+}
+
+async function getDriveFileContent(
+  token: string,
+  fileId: string,
+  maxChars: number
+): Promise<ToolResult> {
+  const metaRes = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,size,webViewLink`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!metaRes.ok) {
+    const errText = await metaRes.text();
+    return { success: false, error: formatGoogleApiError(metaRes.status, errText, 'drive') };
+  }
+  const meta = (await metaRes.json()) as {
+    id: string;
+    name: string;
+    mimeType: string;
+    size?: string;
+    webViewLink?: string;
+  };
+
+  const exportMime = GOOGLE_DRIVE_EXPORT_MIME[meta.mimeType];
+  let content = '';
+
+  if (exportMime) {
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/export?mimeType=${encodeURIComponent(exportMime)}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) {
+      const errText = await res.text();
+      return { success: false, error: formatGoogleApiError(res.status, errText, 'drive') };
+    }
+    content = await res.text();
+  } else if (DRIVE_TEXT_MIME_PREFIXES.some((p) => meta.mimeType.startsWith(p))) {
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) {
+      const errText = await res.text();
+      return { success: false, error: formatGoogleApiError(res.status, errText, 'drive') };
+    }
+    content = await res.text();
+  } else if (meta.mimeType === 'application/pdf') {
+    return {
+      success: false,
+      error:
+        'PDF files cannot be read directly from Drive yet. Open the file in Drive or convert it to a Google Doc.',
+    };
+  } else {
+    return {
+      success: false,
+      error: `Cannot read this Drive file type (${meta.mimeType}). Supported: Google Docs/Sheets/Slides and plain text files.`,
+    };
+  }
+
+  const truncated = content.length > maxChars;
+  return {
+    success: true,
+    data: {
+      type: 'drive.content',
+      fileId: meta.id,
+      name: meta.name,
+      mimeType: meta.mimeType,
+      webViewLink: meta.webViewLink,
+      content: content.slice(0, maxChars),
+      truncated,
+      charCount: content.length,
+    },
+  };
+}
+
+function extractEmailAddress(header: string): string {
+  const match = header.match(/<([^>]+)>/);
+  return (match ? match[1] : header).trim();
+}
+
+function replySubject(subject: string): string {
+  const s = subject.trim() || '(no subject)';
+  return /^re:/i.test(s) ? s : `Re: ${s}`;
+}
+
+type GmailMessageMeta = {
+  id: string;
+  threadId: string;
+  from: string;
+  to: string;
+  subject: string;
+  messageIdHeader: string;
+};
+
+async function fetchGmailMessageMeta(
+  token: string,
+  messageId: string
+): Promise<GmailMessageMeta | ToolResult> {
+  const res = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Message-ID`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) {
+    return { success: false, error: formatGoogleApiError(res.status, await res.text()) };
+  }
+  const msg = (await res.json()) as {
+    id: string;
+    threadId?: string;
+    payload?: { headers?: { name: string; value: string }[] };
+  };
+  const headers = msg.payload?.headers ?? [];
+  const get = (name: string) => headers.find((h) => h.name === name)?.value ?? '';
+  return {
+    id: msg.id,
+    threadId: msg.threadId ?? msg.id,
+    from: get('From'),
+    to: get('To'),
+    subject: get('Subject'),
+    messageIdHeader: get('Message-ID'),
+  };
+}
+
+function encodeGmailRaw(lines: string[]): string {
+  return Buffer.from(lines.join('\r\n')).toString('base64url');
+}
 
 function decodeGmailBody(part: Record<string, unknown>): string {
   const body = part.body as { data?: string } | undefined;
@@ -376,14 +562,13 @@ export class GoogleConnector implements IntegrationConnector {
         };
       }
       case 'email.send_email': {
-        const raw = [
+        const encoded = encodeGmailRaw([
           `To: ${args.to}`,
           `Subject: ${args.subject}`,
           'Content-Type: text/plain; charset=utf-8',
           '',
           String(args.body ?? args.message ?? ''),
-        ].join('\r\n');
-        const encoded = Buffer.from(raw).toString('base64url');
+        ]);
         const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
           method: 'POST',
           headers: {
@@ -397,6 +582,141 @@ export class GoogleConnector implements IntegrationConnector {
         return {
           success: true,
           data: { type: 'email.send_result', sent: true, ...(sent as object) },
+        };
+      }
+      case 'email.search': {
+        const query = String(args.query ?? '');
+        const maxResults = Number(args.maxResults ?? 10);
+        const res = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=${maxResults}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!res.ok) {
+          return { success: false, error: formatGoogleApiError(res.status, await res.text()) };
+        }
+        const list = (await res.json()) as { messages?: { id: string }[] };
+        const items: Array<{
+          id: string;
+          from: string;
+          subject: string;
+          preview: string;
+          timestamp: string;
+        }> = [];
+        for (const ref of list.messages ?? []) {
+          const detail = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${ref.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (!detail.ok) continue;
+          const msg = (await detail.json()) as {
+            id: string;
+            snippet?: string;
+            internalDate?: string;
+            payload?: { headers?: { name: string; value: string }[] };
+          };
+          const headers = msg.payload?.headers ?? [];
+          items.push({
+            id: msg.id,
+            from: headers.find((h) => h.name === 'From')?.value ?? '',
+            subject: headers.find((h) => h.name === 'Subject')?.value ?? '(no subject)',
+            preview: msg.snippet ?? '',
+            timestamp: msg.internalDate
+              ? new Date(Number(msg.internalDate)).toISOString()
+              : new Date().toISOString(),
+          });
+        }
+        return {
+          success: true,
+          data: { type: 'email.search_result', query, items },
+        };
+      }
+      case 'email.reply_email': {
+        const messageId = String(args.messageId ?? '');
+        const body = String(args.body ?? '');
+        if (!messageId) return { success: false, error: 'messageId required' };
+        const meta = await fetchGmailMessageMeta(token, messageId);
+        if ('success' in meta && meta.success === false) return meta;
+        const m = meta as GmailMessageMeta;
+        const to = extractEmailAddress(m.from);
+        const subject = replySubject(m.subject);
+        const rawLines = [
+          `To: ${to}`,
+          `Subject: ${subject}`,
+          'Content-Type: text/plain; charset=utf-8',
+          ...(m.messageIdHeader ? [`In-Reply-To: ${m.messageIdHeader}`] : []),
+          ...(m.messageIdHeader ? [`References: ${m.messageIdHeader}`] : []),
+          '',
+          body,
+        ];
+        const encoded = encodeGmailRaw(rawLines);
+        const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ raw: encoded, threadId: m.threadId }),
+        });
+        if (!res.ok) return { success: false, error: await res.text() };
+        const sent = await res.json();
+        return {
+          success: true,
+          data: { type: 'email.reply_result', sent: true, threadId: m.threadId, ...(sent as object) },
+        };
+      }
+      case 'email.compose_draft': {
+        const to = String(args.to ?? '');
+        const subject = String(args.subject ?? '');
+        const body = String(args.body ?? '');
+        if (!to) return { success: false, error: 'to required' };
+        const encoded = encodeGmailRaw([
+          `To: ${to}`,
+          `Subject: ${subject}`,
+          'Content-Type: text/plain; charset=utf-8',
+          '',
+          body,
+        ]);
+        const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/drafts', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ message: { raw: encoded } }),
+        });
+        if (!res.ok) return { success: false, error: await res.text() };
+        const created = await res.json();
+        return {
+          success: true,
+          data: {
+            type: 'email.draft_result',
+            draftId: (created as { id?: string }).id,
+            to,
+            subject,
+          },
+        };
+      }
+      case 'email.mark_starred': {
+        const messageId = String(args.messageId ?? '');
+        if (!messageId) return { success: false, error: 'messageId required' };
+        const starred = args.starred !== false;
+        const res = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}/modify`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(
+              starred ? { addLabelIds: ['STARRED'] } : { removeLabelIds: ['STARRED'] }
+            ),
+          }
+        );
+        if (!res.ok) return { success: false, error: await res.text() };
+        return {
+          success: true,
+          data: { type: 'email.star_result', messageId, starred },
         };
       }
       case 'calendar.list_upcoming': {
@@ -428,31 +748,17 @@ export class GoogleConnector implements IntegrationConnector {
           data: { type: 'calendar.event_list', events },
         };
       }
+      case 'drive.search':
       case 'files.search_documents': {
         const query = String(args.query ?? '');
-        const res = await fetch(
-          `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`fullText contains '${query.replace(/'/g, "\\'")}'`)}&pageSize=${args.maxResults ?? 10}&fields=files(id,name,mimeType,modifiedTime)`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (!res.ok) {
-          const errText = await res.text();
-          return { success: false, error: formatGoogleApiError(res.status, errText, 'drive') };
-        }
-        const data = (await res.json()) as {
-          files?: Array<{ id: string; name: string; mimeType?: string; modifiedTime?: string }>;
-        };
-        return {
-          success: true,
-          data: {
-            type: 'files.search_result',
-            items: (data.files ?? []).map((f) => ({
-              id: f.id,
-              name: f.name,
-              mimeType: f.mimeType,
-              modifiedTime: f.modifiedTime,
-            })),
-          },
-        };
+        const maxResults = Math.min(Number(args.maxResults ?? 10), 25);
+        return searchDriveFiles(token, query, maxResults);
+      }
+      case 'drive.get_content': {
+        const fileId = String(args.fileId ?? '');
+        if (!fileId) return { success: false, error: 'fileId required' };
+        const maxChars = Math.min(Number(args.maxChars ?? 32_000), 64_000);
+        return getDriveFileContent(token, fileId, maxChars);
       }
       case 'gmail.search': {
         const query = String(args.query ?? '');
@@ -497,27 +803,40 @@ export class GoogleConnector implements IntegrationConnector {
       case 'email.draft_reply': {
         const messageId = String(args.messageId ?? '');
         const body = String(args.body ?? '');
-        const draft = {
-          message: {
-            raw: Buffer.from(
-              ['Content-Type: text/plain; charset=utf-8', '', body].join('\r\n')
-            ).toString('base64url'),
-            threadId: messageId,
-          },
-        };
+        if (!messageId) return { success: false, error: 'messageId required' };
+        const meta = await fetchGmailMessageMeta(token, messageId);
+        if ('success' in meta && meta.success === false) return meta;
+        const m = meta as GmailMessageMeta;
+        const to = extractEmailAddress(m.from);
+        const subject = replySubject(m.subject);
+        const rawLines = [
+          `To: ${to}`,
+          `Subject: ${subject}`,
+          'Content-Type: text/plain; charset=utf-8',
+          ...(m.messageIdHeader ? [`In-Reply-To: ${m.messageIdHeader}`] : []),
+          ...(m.messageIdHeader ? [`References: ${m.messageIdHeader}`] : []),
+          '',
+          body,
+        ];
         const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/drafts', {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(draft),
+          body: JSON.stringify({
+            message: { raw: encodeGmailRaw(rawLines), threadId: m.threadId },
+          }),
         });
         if (!res.ok) return { success: false, error: await res.text() };
         const created = await res.json();
         return {
           success: true,
-          data: { type: 'email.draft_result', draftId: (created as { id?: string }).id },
+          data: {
+            type: 'email.draft_result',
+            draftId: (created as { id?: string }).id,
+            threadId: m.threadId,
+          },
         };
       }
       case 'calendar.cancel_event': {
@@ -557,15 +876,6 @@ export class GoogleConnector implements IntegrationConnector {
             },
             body: JSON.stringify(event),
           }
-        );
-        if (!res.ok) return { success: false, error: await res.text() };
-        return { success: true, data: await res.json() };
-      }
-      case 'drive.search': {
-        const query = String(args.query ?? '');
-        const res = await fetch(
-          `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`fullText contains '${query.replace(/'/g, "\\'")}'`)}&pageSize=${args.maxResults ?? 10}`,
-          { headers: { Authorization: `Bearer ${token}` } }
         );
         if (!res.ok) return { success: false, error: await res.text() };
         return { success: true, data: await res.json() };

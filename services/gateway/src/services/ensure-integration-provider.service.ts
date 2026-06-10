@@ -14,11 +14,6 @@ const PROVIDER_DEFS: Record<
     authType: 'device_link',
     scopes: ['messages'],
   },
-  files: {
-    name: 'Phone files',
-    authType: 'local',
-    scopes: ['read', 'device_sync'],
-  },
 };
 
 export async function ensureIntegrationProvider(providerId: string): Promise<void> {

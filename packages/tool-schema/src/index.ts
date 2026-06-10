@@ -59,24 +59,9 @@ const emailSendParams = z.object({
   message: z.string().optional(),
 });
 
-const filesSearchParams = z.object({
+const resourceSearchParams = z.object({
   query: z.string(),
   maxResults: z.number().optional(),
-});
-
-const filesGetSummaryParams = z.object({
-  fileId: z.string(),
-});
-
-const filesGetChunksParams = z.object({
-  fileId: z.string(),
-  query: z.string().optional(),
-  limit: z.number().optional(),
-});
-
-const filesAnalyzeImageParams = z.object({
-  fileId: z.string(),
-  query: z.string().optional(),
 });
 
 function toOpenAiSchema(schema: z.ZodType): Record<string, unknown> {
@@ -173,16 +158,6 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     openAiParameters: { type: 'object', properties: { maxResults: { type: 'number' } } },
   },
   {
-    name: 'drive.search',
-    version: '1',
-    connector: 'google',
-    description: 'Search Google Drive files',
-    parameters: driveSearchParams,
-    supportsCancellation: true,
-    dangerous: false,
-    openAiParameters: toOpenAiSchema(driveSearchParams),
-  },
-  {
     name: 'whatsapp.send_message',
     version: '1',
     connector: 'whatsapp',
@@ -253,6 +228,48 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     openAiParameters: toOpenAiSchema(emailSendParams),
   },
   {
+    name: 'email.search',
+    version: '1',
+    connector: 'google',
+    description: 'Search Gmail messages by query',
+    parameters: gmailSearchParams,
+    supportsCancellation: true,
+    dangerous: false,
+    openAiParameters: toOpenAiSchema(gmailSearchParams),
+  },
+  {
+    name: 'email.reply_email',
+    version: '1',
+    connector: 'google',
+    description: 'Reply to an email in the same thread',
+    parameters: z.object({ messageId: z.string(), body: z.string() }),
+    supportsCancellation: false,
+    dangerous: true,
+    openAiParameters: toOpenAiSchema(z.object({ messageId: z.string(), body: z.string() })),
+  },
+  {
+    name: 'email.compose_draft',
+    version: '1',
+    connector: 'google',
+    description: 'Save a new email draft without sending',
+    parameters: emailSendParams,
+    supportsCancellation: false,
+    dangerous: false,
+    openAiParameters: toOpenAiSchema(emailSendParams),
+  },
+  {
+    name: 'email.mark_starred',
+    version: '1',
+    connector: 'google',
+    description: 'Star or unstar an email',
+    parameters: z.object({ messageId: z.string(), starred: z.boolean().optional() }),
+    supportsCancellation: false,
+    dangerous: false,
+    openAiParameters: toOpenAiSchema(
+      z.object({ messageId: z.string(), starred: z.boolean().optional() })
+    ),
+  },
+  {
     name: 'calendar.list_upcoming',
     version: '1',
     connector: 'google',
@@ -263,14 +280,33 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     openAiParameters: toOpenAiSchema(z.object({ maxResults: z.number().optional() })),
   },
   {
-    name: 'files.search_documents',
+    name: 'drive.search',
     version: '1',
     connector: 'google',
-    description: 'Search documents in Google Drive',
+    description: 'Search Google Drive by file name or document content',
     parameters: driveSearchParams,
     supportsCancellation: true,
     dangerous: false,
     openAiParameters: toOpenAiSchema(driveSearchParams),
+  },
+  {
+    name: 'drive.get_content',
+    version: '1',
+    connector: 'google',
+    description:
+      'Read and export a Google Drive file (Docs, Sheets, Slides, text) for summarization',
+    parameters: z.object({
+      fileId: z.string(),
+      maxChars: z.number().optional(),
+    }),
+    supportsCancellation: true,
+    dangerous: false,
+    openAiParameters: toOpenAiSchema(
+      z.object({
+        fileId: z.string(),
+        maxChars: z.number().optional(),
+      })
+    ),
   },
   {
     name: 'whatsapp.search_messages',
@@ -287,10 +323,10 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     version: '1',
     connector: 'platform',
     description: 'Search across connected apps and stored resources',
-    parameters: filesSearchParams,
+    parameters: resourceSearchParams,
     supportsCancellation: true,
     dangerous: false,
-    openAiParameters: toOpenAiSchema(filesSearchParams),
+    openAiParameters: toOpenAiSchema(resourceSearchParams),
   },
   {
     name: 'contacts.resolve',
@@ -460,46 +496,6 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     supportsCancellation: false,
     dangerous: true,
     openAiParameters: toOpenAiSchema(z.object({ eventId: z.string() })),
-  },
-  {
-    name: 'files.search',
-    version: '1',
-    connector: 'files',
-    description: 'Search uploaded and synced files',
-    parameters: filesSearchParams,
-    supportsCancellation: true,
-    dangerous: false,
-    openAiParameters: toOpenAiSchema(filesSearchParams),
-  },
-  {
-    name: 'files.get_summary',
-    version: '1',
-    connector: 'files',
-    description: 'Get summary and status for an uploaded file',
-    parameters: filesGetSummaryParams,
-    supportsCancellation: true,
-    dangerous: false,
-    openAiParameters: toOpenAiSchema(filesGetSummaryParams),
-  },
-  {
-    name: 'files.get_chunks',
-    version: '1',
-    connector: 'files',
-    description: 'Retrieve relevant text chunks from an indexed file',
-    parameters: filesGetChunksParams,
-    supportsCancellation: true,
-    dangerous: false,
-    openAiParameters: toOpenAiSchema(filesGetChunksParams),
-  },
-  {
-    name: 'files.analyze_image',
-    version: '1',
-    connector: 'files',
-    description: 'Run on-demand vision analysis on an uploaded image',
-    parameters: filesAnalyzeImageParams,
-    supportsCancellation: true,
-    dangerous: false,
-    openAiParameters: toOpenAiSchema(filesAnalyzeImageParams),
   },
   {
     name: 'notes.create',

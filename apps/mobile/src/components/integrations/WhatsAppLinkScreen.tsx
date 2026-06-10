@@ -6,10 +6,11 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
+  ScrollView,
 } from 'react-native';
 import type { CountryCode } from 'react-native-country-picker-modal';
 import * as Clipboard from 'expo-clipboard';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
+import { KeyboardStickyView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Check, Copy } from 'lucide-react-native';
@@ -29,6 +30,7 @@ import {
   buildE164Phone,
   DEFAULT_CALLING_CODE,
   DEFAULT_COUNTRY_CODE,
+  formatE164ForDisplay,
   validateLocalPhone,
 } from '@/components/integrations/countryCodes';
 
@@ -44,9 +46,8 @@ const STEPS_QR = [
 ];
 
 const STEPS_CODE = [
-  'Enter your mobile number and tap Get pairing code',
+  'Enter your 10-digit number (country from the flag)',
   'On phone: Linked devices → Link with phone number',
-  'Enter the 8-character code shown below',
 ];
 
 export function WhatsAppLinkScreen({ connectionId }: Props) {
@@ -61,6 +62,7 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
   const [loading, setLoading] = useState(true);
   const [pairingLoading, setPairingLoading] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const linkedRef = useRef(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -84,16 +86,40 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
   const refreshSession = useCallback(async () => {
     try {
       const data = await apiClient.getWhatsAppLinkSession(connectionId);
+      setSessionError(null);
       setSession(data);
       if (data.status === 'active') {
         await finishLink();
       }
-    } catch {
-      /* polling */
+    } catch (e) {
+      const message =
+        e instanceof ApiError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : 'Could not load WhatsApp link session';
+      setSessionError(message);
     } finally {
       setLoading(false);
     }
   }, [connectionId, finishLink]);
+
+  const handleRestartConnect = async () => {
+    setLoading(true);
+    setSessionError(null);
+    try {
+      const challenge = await apiClient.connectProvider('whatsapp');
+      if (challenge.state === 'ready') {
+        router.replace('/(app)/integrations');
+        return;
+      }
+      await refreshSession();
+    } catch (e) {
+      const message = e instanceof ApiError ? e.message : 'Could not restart WhatsApp connect';
+      setSessionError(message);
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     void refreshSession();
@@ -103,10 +129,14 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
     return () => clearInterval(interval);
   }, [refreshSession]);
 
+  const pairingCodeRaw =
+    (session as { pairingCodeRaw?: string } | null)?.pairingCodeRaw ??
+    session?.pairingCode?.replace(/[^A-Za-z0-9]/gi, '').toUpperCase() ??
+    '';
+
   const handleCopyPairingCode = async () => {
-    if (!session?.pairingCode) return;
-    const raw = session.pairingCode.replace(/[^A-Za-z0-9]/gi, '');
-    await Clipboard.setStringAsync(raw);
+    if (!pairingCodeRaw) return;
+    await Clipboard.setStringAsync(pairingCodeRaw);
     setCopied(true);
     if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
     copiedTimerRef.current = setTimeout(() => setCopied(false), 2000);
@@ -128,6 +158,9 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
     setPairingLoading(true);
     try {
       const data = await apiClient.requestWhatsAppPairing(connectionId, digits);
+      if (__DEV__) {
+        console.log('[WhatsApp pairing] sent', digits, 'linked as', data.pairingPhone);
+      }
       setSession((prev) => ({
         connectionId,
         status: (data.status as WhatsAppSessionStatus['status']) ?? prev?.status ?? 'pending',
@@ -179,6 +212,23 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
 
         <SegmentedControl options={modeOptions} value={mode} onChange={setMode} />
 
+        {sessionError ? (
+          <Card style={styles.card}>
+            <Text variant="bodyMedium" style={{ color: colors.danger }}>
+              {sessionError}
+            </Text>
+            <Text variant="caption" muted>
+              Keep the app open on this screen while linking. If the QR never appears, tap Start
+              over.
+            </Text>
+            <Button
+              label="Start over"
+              variant="secondary"
+              onPress={() => void handleRestartConnect()}
+            />
+          </Card>
+        ) : null}
+
         {mode === 'qr' ? (
           <View style={styles.qrPane}>
             <Card style={styles.cardCompact}>
@@ -219,33 +269,84 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
             {footer}
           </View>
         ) : (
-          <KeyboardAwareScrollView
-            style={styles.codeScroll}
-            contentContainerStyle={[
-              styles.codeScrollContent,
-              { paddingBottom: insets.bottom + spacing.xxl * 2 },
-            ]}
-            keyboardShouldPersistTaps="handled"
-            bottomOffset={spacing.lg}
-            extraKeyboardSpace={spacing.lg}>
-            <Card style={styles.card}>
-              <Text variant="label" muted style={styles.sectionLabel}>
-                Pair with phone number
-              </Text>
-              {STEPS_CODE.map((step, i) => (
-                <View key={step} style={styles.stepRow}>
-                  <View style={[styles.stepNum, { backgroundColor: '#25D366' }]}>
-                    <Text variant="label" style={{ color: '#fff' }}>
-                      {i + 1}
+          <View style={styles.codePane}>
+            <ScrollView
+              style={styles.codeScroll}
+              contentContainerStyle={styles.codeScrollContent}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={false}
+              bounces={false}>
+              <Card style={styles.cardCompactCode}>
+                <Text variant="label" muted style={styles.sectionLabel}>
+                  Pair with phone number
+                </Text>
+                {STEPS_CODE.map((step, i) => (
+                  <View key={step} style={styles.stepRow}>
+                    <View style={[styles.stepNum, { backgroundColor: '#25D366' }]}>
+                      <Text variant="label" style={{ color: '#fff', fontSize: 11 }}>
+                        {i + 1}
+                      </Text>
+                    </View>
+                    <Text variant="caption" style={styles.stepText}>
+                      {step}
                     </Text>
                   </View>
-                  <Text variant="caption" style={styles.stepText}>
-                    {step}
-                  </Text>
-                </View>
-              ))}
+                ))}
+                {session?.pairingCode ? (
+                  <View
+                    style={[
+                      styles.codeBox,
+                      { borderColor: '#25D366', backgroundColor: '#25D36611' },
+                    ]}>
+                    {session.pairingPhone ? (
+                      <Text variant="caption" muted style={styles.codeMeta}>
+                        Linking:{' '}
+                        <Text variant="caption" style={{ fontWeight: '600' }}>
+                          {formatE164ForDisplay(session.pairingPhone)}
+                        </Text>
+                      </Text>
+                    ) : null}
+                    <Text variant="caption" muted>
+                      Enter on your phone within 2 minutes
+                    </Text>
+                    <Text variant="h1" style={styles.codeDigits}>
+                      {session.pairingCode}
+                    </Text>
+                    <Pressable
+                      onPress={() => void handleCopyPairingCode()}
+                      style={({ pressed }) => [
+                        styles.copyBtn,
+                        { backgroundColor: pressed ? '#25D36633' : '#25D36622' },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel="Copy pairing code">
+                      {copied ? (
+                        <Check size={18} color="#128C7E" />
+                      ) : (
+                        <Copy size={18} color="#128C7E" />
+                      )}
+                      <Text variant="bodyMedium" style={styles.copyBtnLabel}>
+                        {copied ? 'Copied' : 'Copy code'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </Card>
+            </ScrollView>
+
+            <KeyboardStickyView
+              offset={{ closed: 0, opened: spacing.xs }}
+              style={[
+                styles.codeInputDock,
+                {
+                  paddingBottom: Math.max(insets.bottom, spacing.sm),
+                  backgroundColor: colors.background,
+                  borderTopColor: colors.border,
+                },
+              ]}>
               <Text variant="caption" muted>
-                Enter your mobile number without the country code.
+                Mobile number (without country code)
               </Text>
               <CountryPhoneField
                 countryCode={countryCode}
@@ -258,43 +359,22 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
                 onPhoneChange={setPhone}
               />
               <Button
-                label={pairingLoading ? 'Getting code…' : 'Get pairing code'}
+                label={
+                  pairingLoading
+                    ? 'Getting code…'
+                    : session?.pairingCode
+                      ? 'Get new code'
+                      : 'Get pairing code'
+                }
                 variant="primary"
                 loading={pairingLoading}
                 disabled={pairingLoading}
                 style={{ backgroundColor: '#25D366' }}
                 onPress={() => void handleRequestPairing()}
               />
-              {session?.pairingCode ? (
-                <View style={[styles.codeBox, { borderColor: '#25D366', backgroundColor: '#25D36611' }]}>
-                  <Text variant="caption" muted>
-                    Enter this code on your phone
-                  </Text>
-                  <Text variant="h1" style={styles.codeDigits}>
-                    {session.pairingCode}
-                  </Text>
-                  <Pressable
-                    onPress={() => void handleCopyPairingCode()}
-                    style={({ pressed }) => [
-                      styles.copyBtn,
-                      { backgroundColor: pressed ? '#25D36633' : '#25D36622' },
-                    ]}
-                    accessibilityRole="button"
-                    accessibilityLabel="Copy pairing code">
-                    {copied ? (
-                      <Check size={18} color="#128C7E" />
-                    ) : (
-                      <Copy size={18} color="#128C7E" />
-                    )}
-                    <Text variant="bodyMedium" style={styles.copyBtnLabel}>
-                      {copied ? 'Copied' : 'Copy code'}
-                    </Text>
-                  </Pressable>
-                </View>
-              ) : null}
-            </Card>
-            {footer}
-          </KeyboardAwareScrollView>
+              {footer}
+            </KeyboardStickyView>
+          </View>
         )}
       </View>
     </View>
@@ -331,10 +411,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
-  codeScroll: { flex: 1 },
+  codePane: {
+    flex: 1,
+    minHeight: 0,
+  },
+  codeScroll: {
+    flex: 1,
+    minHeight: 0,
+  },
   codeScrollContent: {
-    gap: spacing.md,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  codeInputDock: {
+    gap: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  cardCompactCode: {
+    gap: spacing.sm,
   },
   loadingBox: {
     alignItems: 'center',
@@ -371,12 +465,16 @@ const styles = StyleSheet.create({
   },
   qr: { width: 172, height: 172 },
   qrHint: { textAlign: 'center', fontSize: 11 },
+  codeMeta: {
+    textAlign: 'center',
+  },
   codeBox: {
     borderWidth: 2,
     borderRadius: radii.lg,
-    padding: spacing.lg,
+    padding: spacing.md,
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
+    marginTop: spacing.xs,
   },
   codeDigits: {
     letterSpacing: 6,

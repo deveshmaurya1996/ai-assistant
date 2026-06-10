@@ -10,13 +10,14 @@ const SPLASH_VIDEO = require('../../../assets/images/splash-video.mp4');
 const SPLASH_MAX_MS = 8000;
 
 type Props = {
+  ready?: boolean;
   onComplete?: () => void;
   playVideo?: boolean;
 };
 
 let introVideoPlayed = false;
 
-export function AppSplash({ onComplete, playVideo = false }: Props) {
+export function AppSplash({ ready = false, onComplete, playVideo = false }: Props) {
   const finishedRef = useRef(false);
   const shouldPlayVideo =
     playVideo && !introVideoPlayed && Platform.OS !== 'web';
@@ -29,10 +30,8 @@ export function AppSplash({ onComplete, playVideo = false }: Props) {
   }, [onComplete, shouldPlayVideo]);
 
   useEffect(() => {
-    if (!shouldPlayVideo) {
-      finish();
-    }
-  }, [shouldPlayVideo, finish]);
+    void SplashScreen.hideAsync();
+  }, []);
 
   if (shouldPlayVideo) {
     return <SplashVideo onComplete={finish} backgroundColor={splashBackground} />;
@@ -40,7 +39,7 @@ export function AppSplash({ onComplete, playVideo = false }: Props) {
 
   return (
     <View style={[styles.root, { backgroundColor: splashBackground }]}>
-      <SplashLogo size={180} />
+      <SplashLogo size={180} ready={ready} onExitComplete={onComplete} />
     </View>
   );
 }
