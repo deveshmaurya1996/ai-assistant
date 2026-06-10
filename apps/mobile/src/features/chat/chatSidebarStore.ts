@@ -51,11 +51,14 @@ export const useChatSidebarStore = create<ChatSidebarState>((set) => ({
       };
     }),
   patchUnread: (sessionId, hasUnread) =>
-    set((state) => ({
-      sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, hasUnread } : s
-      ),
-    })),
+    set((state) => {
+      const idx = state.sessions.findIndex((s) => s.id === sessionId);
+      if (idx < 0) return state;
+      if (state.sessions[idx].hasUnread === hasUnread) return state;
+      const next = [...state.sessions];
+      next[idx] = { ...next[idx], hasUnread };
+      return { sessions: next };
+    }),
   removeSession: (sessionId) =>
     set((state) => ({
       sessions: state.sessions.filter((s) => s.id !== sessionId),

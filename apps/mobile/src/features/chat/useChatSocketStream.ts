@@ -45,7 +45,9 @@ export function useChatSocketStream({
     streamStatusMessage,
     revision: streamRevision,
     showStreamBubble: isStreaming,
-  } = useChatStreamState(sessionId);
+  } = useChatStreamState(sessionId, {
+    isolateCompose: sessionId == null,
+  });
 
   const onSessionCreatedRef = useRef(onSessionCreated);
   const onExchangeCompleteRef = useRef(onExchangeComplete);
@@ -94,7 +96,8 @@ export function useChatSocketStream({
         lastNotifiedLenRef.current = 0;
         const key = resolveStreamSessionKey(
           sessionId,
-          useChatStreamStore.getState().boundTurnSessionId
+          useChatStreamStore.getState().boundTurnSessionId,
+          sessionId == null ? { isolateCompose: true } : undefined
         );
         clearTurn(key);
         setMessages((prev) => [...prev, message]);
@@ -104,7 +107,8 @@ export function useChatSocketStream({
         lastNotifiedLenRef.current = 0;
         const key = resolveStreamSessionKey(
           sessionId,
-          useChatStreamStore.getState().boundTurnSessionId
+          useChatStreamStore.getState().boundTurnSessionId,
+          sessionId == null ? { isolateCompose: true } : undefined
         );
         clearTurn(key);
       },
@@ -124,7 +128,8 @@ export function useChatSocketStream({
         lastNotifiedLenRef.current = 0;
         const key = resolveStreamSessionKey(
           sessionId,
-          useChatStreamStore.getState().boundTurnSessionId
+          useChatStreamStore.getState().boundTurnSessionId,
+          sessionId == null ? { isolateCompose: true } : undefined
         );
         clearTurn(key);
         onErrorRef.current?.(message);
@@ -149,7 +154,13 @@ export function useChatSocketStream({
     const promotingInPlace = useComposeDraftStore.getState().promotingInPlace;
 
     const prevBound = useChatStreamStore.getState().boundTurnSessionId;
-    const prevKey = resolveStreamSessionKey(prevSessionIdRef.current, prevBound);
+    const composeOpts =
+      prevSessionIdRef.current == null ? { isolateCompose: true as const } : undefined;
+    const prevKey = resolveStreamSessionKey(
+      prevSessionIdRef.current,
+      prevBound,
+      composeOpts
+    );
     prevSessionIdRef.current = sessionId;
     lastNotifiedLenRef.current = 0;
     setStreamTurnKey((k) => k + 1);
@@ -158,9 +169,12 @@ export function useChatSocketStream({
       return;
     }
 
+    const nextComposeOpts =
+      sessionId == null ? { isolateCompose: true as const } : undefined;
     const nextKey = resolveStreamSessionKey(
       sessionId,
-      useChatStreamStore.getState().boundTurnSessionId
+      useChatStreamStore.getState().boundTurnSessionId,
+      nextComposeOpts
     );
     if (prevKey !== nextKey) {
       const prevStream = useChatStreamStore.getState().sessions[prevKey];

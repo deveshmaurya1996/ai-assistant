@@ -278,7 +278,6 @@ export default function IntegrationsScreen() {
           const pending = isPending(item.id);
           const aiReady = isAiReady(item.id);
           const isBusy = busy?.providerId === item.id;
-          const busyAction = isBusy ? busy?.action : null;
           const connection = getConnection(item.id);
 
           const actionLabel = pending
@@ -290,7 +289,7 @@ export default function IntegrationsScreen() {
               : 'Connect';
 
           const loadingLabel =
-            busyAction === 'disconnect' ? 'Disconnecting…' : 'Connecting…';
+            busy?.action === 'disconnect' ? 'Disconnecting…' : 'Connecting…';
 
           return (
             <FadeIn delay={index * 40} style={styles.cardWrap}>

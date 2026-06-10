@@ -32,7 +32,11 @@ type AuthState = {
 
 function resetClientStores(): void {
   useChatSidebarStore.getState().reset();
-  useChatStreamStore.setState({ sessions: {}, boundTurnSessionId: null });
+  useChatStreamStore.setState({
+    sessions: {},
+    generatingSessionKeys: {},
+    boundTurnSessionId: null,
+  });
 }
 
 async function applySession(session: SessionInfo | null): Promise<void> {

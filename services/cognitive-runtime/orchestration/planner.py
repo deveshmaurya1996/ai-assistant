@@ -11,6 +11,7 @@ from orchestration.capability_map import (
     normalize_planned_item,
 )
 from orchestration.context import fetch_integration_manifest
+from orchestration.calendar_time_range import resolve_calendar_time_range
 from orchestration.integration_intent import (
     is_connected_apps_query,
     is_read_intent,
@@ -434,6 +435,21 @@ def _heuristic_connected_apps_query(query: str) -> bool:
     return is_connected_apps_query(query)
 
 
+def _extract_drive_search_query(query: str) -> str:
+    q = query.strip()
+    patterns = [
+        r"^(?:search|find)\s+my\s+(?:google\s+)?drive\s+for\s+(.+)$",
+        r"^(?:search|find)\s+(?:google\s+)?drive\s+for\s+(.+)$",
+        r"^(?:search|find)\s+(.+?)\s+in\s+(?:my\s+)?(?:google\s+)?drive$",
+        r"^(?:find|search)\s+my\s+(.+?)\s+in\s+(?:google\s+)?drive$",
+    ]
+    for pattern in patterns:
+        match = re.match(pattern, q, re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+    return q
+
+
 def _heuristic_drive(
     query: str, available_caps: Set[str], connected: Set[str]
 ) -> List[Dict[str, Any]]:
@@ -461,7 +477,7 @@ def _heuristic_drive(
         return []
 
     out: List[Dict[str, Any]] = []
-    search_q = query
+    search_q = _extract_drive_search_query(query)
     if "drive.search" in available_caps:
         out.append(
             {
@@ -473,7 +489,9 @@ def _heuristic_drive(
     return out
 
 
-def _heuristic_calendar(query: str, available_caps: Set[str]) -> List[Dict[str, Any]]:
+def _heuristic_calendar(
+    query: str, available_caps: Set[str], timezone: Optional[str] = None
+) -> List[Dict[str, Any]]:
     q = query.lower()
     if re.search(r"\b(remind|reminder|notify me)\b", q):
         return []
@@ -484,18 +502,32 @@ def _heuristic_calendar(query: str, available_caps: Set[str]) -> List[Dict[str, 
         return []
     if "calendar.list_upcoming" not in available_caps:
         return []
-    if any(
-        w in q
-        for w in ["meeting", "calendar", "schedule", "upcoming", "appointment", "events"]
-    ):
-        return [
-            {
-                "capability": "calendar.list_upcoming",
-                "provider": "google",
-                "args": {"maxResults": 10},
-            }
-        ]
-    return []
+    calendar_signals = [
+        "meeting",
+        "calendar",
+        "schedule",
+        "upcoming",
+        "appointment",
+        "events",
+        "yesterday",
+        "today",
+        "tomorrow",
+    ]
+    if not any(w in q for w in calendar_signals):
+        return []
+
+    args: Dict[str, Any] = {"maxResults": 25}
+    time_range = resolve_calendar_time_range(query, timezone)
+    if time_range:
+        args.update(time_range)
+
+    return [
+        {
+            "capability": "calendar.list_upcoming",
+            "provider": "google",
+            "args": args,
+        }
+    ]
 
 
 def _dedupe_cap_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -512,7 +544,10 @@ def _dedupe_cap_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _heuristic_capabilities(
-    query: str, available_caps: Set[str], connected: Set[str]
+    query: str,
+    available_caps: Set[str],
+    connected: Set[str],
+    timezone: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     q = query.lower()
@@ -521,7 +556,7 @@ def _heuristic_capabilities(
     out.extend(_heuristic_inbox_check(query, available_caps, connected))
     out.extend(_heuristic_whatsapp_read(query, available_caps))
     out.extend(_heuristic_email(query, available_caps))
-    out.extend(_heuristic_calendar(query, available_caps))
+    out.extend(_heuristic_calendar(query, available_caps, timezone))
     out.extend(_heuristic_drive(query, available_caps, connected))
     out = _dedupe_cap_items(out)
 
@@ -800,7 +835,9 @@ async def plan_tools(
             user_guidance=integration_intent.user_guidance,
         )
 
-    heuristic_items = _heuristic_capabilities(query, available_caps, connected)
+    heuristic_items = _heuristic_capabilities(
+        query, available_caps, connected, timezone=timezone
+    )
     if not heuristic_items:
         heuristic_items = _heuristic_note_capabilities(query, available_caps)
 

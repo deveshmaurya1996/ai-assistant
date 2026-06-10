@@ -3,8 +3,23 @@ import client from 'prom-client';
 import { prisma } from '@ai-assistant/database';
 import { listAllToolsOpenAi, listToolsForUserOpenAi } from '@ai-assistant/tool-schema';
 import { z } from 'zod';
-import { startExecution } from './executor';
+import { startExecution, type StartExecutionInput } from './executor';
 import { cancelExecution, getExecution } from './execution-store';
+
+function toStartExecutionInput(
+  body: z.infer<typeof ExecuteSchema>
+): StartExecutionInput {
+  return {
+    userId: body.userId,
+    tool: body.tool,
+    args: body.args,
+    source: body.source,
+    confirmed: body.confirmed,
+    preview: body.preview,
+    connectionId: body.connectionId ?? undefined,
+    chatSessionId: body.chatSessionId ?? undefined,
+  };
+}
 
 const ExecuteSchema = z.object({
   userId: z.string(),
@@ -13,8 +28,8 @@ const ExecuteSchema = z.object({
   source: z.enum(['chat', 'voice', 'automation', 'workflow', 'manual']),
   confirmed: z.boolean().default(false),
   preview: z.boolean().optional(),
-  connectionId: z.string().optional(),
-  chatSessionId: z.string().optional(),
+  connectionId: z.string().nullish(),
+  chatSessionId: z.string().nullish(),
 });
 
 const PORT = parseInt(
@@ -58,7 +73,7 @@ async function main() {
   app.post('/v1/executions', async (request, reply) => {
     const body = ExecuteSchema.parse(request.body);
     try {
-      const record = await startExecution(body);
+      const record = await startExecution(toStartExecutionInput(body));
       return reply.code(201).send({
         executionId: record.executionId,
         status: record.status,

@@ -151,11 +151,24 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     name: 'calendar.list',
     version: '1',
     connector: 'google',
-    description: 'List upcoming calendar events',
-    parameters: z.object({ maxResults: z.number().optional() }),
+    description: 'List calendar events in a time range (defaults to upcoming from now)',
+    parameters: z.object({
+      maxResults: z.number().optional(),
+      timeMin: z.string().optional(),
+      timeMax: z.string().optional(),
+      rangeLabel: z.string().optional(),
+    }),
     supportsCancellation: true,
     dangerous: false,
-    openAiParameters: { type: 'object', properties: { maxResults: { type: 'number' } } },
+    openAiParameters: {
+      type: 'object',
+      properties: {
+        maxResults: { type: 'number' },
+        timeMin: { type: 'string' },
+        timeMax: { type: 'string' },
+        rangeLabel: { type: 'string' },
+      },
+    },
   },
   {
     name: 'whatsapp.send_message',
@@ -273,11 +286,23 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
     name: 'calendar.list_upcoming',
     version: '1',
     connector: 'google',
-    description: 'List upcoming calendar events',
-    parameters: z.object({ maxResults: z.number().optional() }),
+    description: 'List calendar events in a time range (defaults to upcoming from now)',
+    parameters: z.object({
+      maxResults: z.number().optional(),
+      timeMin: z.string().optional(),
+      timeMax: z.string().optional(),
+      rangeLabel: z.string().optional(),
+    }),
     supportsCancellation: true,
     dangerous: false,
-    openAiParameters: toOpenAiSchema(z.object({ maxResults: z.number().optional() })),
+    openAiParameters: toOpenAiSchema(
+      z.object({
+        maxResults: z.number().optional(),
+        timeMin: z.string().optional(),
+        timeMax: z.string().optional(),
+        rangeLabel: z.string().optional(),
+      })
+    ),
   },
   {
     name: 'drive.search',

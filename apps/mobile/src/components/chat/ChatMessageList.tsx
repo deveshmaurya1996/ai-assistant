@@ -28,6 +28,7 @@ import { STREAMING_MESSAGE_ID } from '@/features/chat/buildStreamingMessages';
 import { isImageGenerationTurn } from '@/features/chat/isImageGenerationTurn';
 
 const NEAR_BOTTOM_THRESHOLD = 96;
+const STREAM_SCROLL_THROTTLE_MS = 120;
 
 function isNearBottom(event: NativeScrollEvent): boolean {
   const { contentOffset, contentSize, layoutMeasurement } = event;
@@ -99,6 +100,7 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function
     return undefined;
   }, [messages]);
   const streamActive = isStreaming || isGenerating;
+  const lastStreamScrollAtRef = useRef(0);
 
   const scrollToEnd = useCallback(
     (animated = true) => {
@@ -175,8 +177,17 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function
 
   useEffect(() => {
     if (!streamActive || !pinnedToBottomRef.current || userDraggingRef.current) return;
+    const now = Date.now();
+    if (now - lastStreamScrollAtRef.current < STREAM_SCROLL_THROTTLE_MS) return;
+    lastStreamScrollAtRef.current = now;
     scrollToEnd(false);
-  }, [streamRevision, visibleText, streamActive, scrollToEnd]);
+  }, [streamRevision, streamActive, scrollToEnd]);
+
+  useEffect(() => {
+    if (streamActive) return;
+    lastStreamScrollAtRef.current = 0;
+    scrollToEndIfPinned(true);
+  }, [streamActive, scrollToEndIfPinned]);
 
   useEffect(() => {
     const sub = Keyboard.addListener('keyboardDidShow', () => scrollToEndIfPinned(true));
@@ -241,7 +252,7 @@ export const ChatMessageList = forwardRef<ChatMessageListHandle, Props>(function
       <FlashList
         ref={listRef}
         data={messages}
-        extraData={`${streamRevision}|${visibleText.length}|${streamActive}|${streamTurnKey}|${savedRevision}|${pinnedToBottom}`}
+        extraData={`${streamRevision}|${streamActive}|${streamTurnKey}|${savedRevision}|${pinnedToBottom}`}
         keyExtractor={(item) => item.id}
         contentContainerStyle={[
           styles.list,

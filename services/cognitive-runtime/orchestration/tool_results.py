@@ -152,6 +152,15 @@ def _summarize_tool_entry(entry: Dict[str, Any]) -> str:
     if tool in _INBOX_TOOLS:
         return _summarize_inbox_tool(entry)
 
+    if tool.startswith("calendar."):
+        return _format_calendar_events(_unwrap_result(entry.get("result")))
+
+    if tool.startswith("drive."):
+        payload = _unwrap_result(entry.get("result"))
+        if tool == "drive.get_content":
+            return _format_drive_content(payload)
+        return _format_drive_search(payload)
+
     if status in ("completed", "success"):
         return "The requested action completed successfully."
 
@@ -269,6 +278,8 @@ def _summarize_inbox_tool(entry: Dict[str, Any]) -> str:
     tool = str(entry.get("tool") or "")
 
     if "email" in tool:
+        if payload.get("type") == "email.message" or payload.get("subject"):
+            return _format_email_message(payload)
         return _format_email_unread(payload)
     return _format_whatsapp_unread(payload)
 
@@ -279,6 +290,20 @@ def _unwrap_result(result: Any) -> Dict[str, Any]:
     if isinstance(result.get("data"), dict):
         return result["data"]
     return result
+
+
+def _format_email_message(payload: Dict[str, Any]) -> str:
+    sender = payload.get("from") or payload.get("sender") or "Unknown"
+    subject = payload.get("subject") or "(no subject)"
+    body = str(payload.get("body") or payload.get("snippet") or payload.get("preview") or "")
+    body = body.strip().replace("\n", " ")[:500]
+    ts = payload.get("timestamp") or payload.get("date") or ""
+    line = f"Latest Gmail — From: {sender}; Subject: {subject}"
+    if ts:
+        line += f"; Date: {ts}"
+    if body:
+        line += f"; Body: {body}"
+    return line
 
 
 def _format_email_unread(payload: Dict[str, Any]) -> str:
@@ -301,6 +326,64 @@ def _format_email_unread(payload: Dict[str, Any]) -> str:
         if preview:
             lines.append(f"    {preview}")
     return "\n".join(lines)
+
+
+def _format_calendar_events(payload: Dict[str, Any]) -> str:
+    events = payload.get("events")
+    range_label = str(payload.get("rangeLabel") or "").strip()
+    heading = (
+        f"Calendar ({range_label})"
+        if range_label
+        else "Calendar upcoming"
+    )
+    if not isinstance(events, list) or not events:
+        if range_label:
+            return f"{heading}: no events found."
+        return "Calendar: no upcoming events found."
+
+    lines = [f"{heading} ({len(events)} shown):"]
+    for event in events[:10]:
+        if not isinstance(event, dict):
+            continue
+        title = event.get("title") or event.get("summary") or "(no title)"
+        start = event.get("start") or event.get("startTime") or ""
+        end = event.get("end") or event.get("endTime") or ""
+        when = start if not end or end == start else f"{start} – {end}"
+        lines.append(f"  • {title}" + (f" ({when})" if when else ""))
+    return "\n".join(lines)
+
+
+def _format_drive_search(payload: Dict[str, Any]) -> str:
+    items = payload.get("items")
+    query = str(payload.get("query") or "").strip()
+    if not isinstance(items, list) or not items:
+        hint = f" for '{query}'" if query else ""
+        return f"Google Drive: no files found{hint}."
+
+    lines = [f"Google Drive files ({len(items)} shown):"]
+    for item in items[:10]:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name") or item.get("title") or "file"
+        mime = item.get("mimeType") or ""
+        modified = item.get("modifiedTime") or item.get("modifiedAt") or ""
+        extra = []
+        if mime:
+            extra.append(mime.split("/")[-1])
+        if modified:
+            extra.append(str(modified)[:10])
+        suffix = f" ({', '.join(extra)})" if extra else ""
+        lines.append(f"  • {name}{suffix}")
+    return "\n".join(lines)
+
+
+def _format_drive_content(payload: Dict[str, Any]) -> str:
+    name = payload.get("name") or payload.get("fileName") or "file"
+    content = str(payload.get("content") or payload.get("text") or payload.get("body") or "")
+    content = content.strip().replace("\n", " ")[:800]
+    if not content:
+        return f"Google Drive file '{name}' has no readable text content."
+    return f"Google Drive file '{name}': {content}"
 
 
 def _format_whatsapp_unread(payload: Dict[str, Any]) -> str:

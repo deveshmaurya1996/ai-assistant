@@ -139,6 +139,24 @@ async def test_plan_tools_disconnected_gmail_blocks_tools():
 
 
 @pytest.mark.asyncio
+async def test_plan_tools_yesterday_calendar_includes_time_range():
+    result = await plan_tools(
+        "what meetings did I have yesterday",
+        "Ready for AI: google.",
+        "user-1",
+        timezone="Asia/Kolkata",
+        manifest_caps={"calendar.list_upcoming"},
+        manifest_connections=[{"id": "google_user-1", "providerId": "google"}],
+        manifest_connection_states=[{"providerId": "google", "state": "ready"}],
+    )
+    assert result["planner"] == "heuristic"
+    cal = next(t for t in result["tools"] if t.get("tool") == "calendar.list_upcoming")
+    assert cal["args"].get("timeMin")
+    assert cal["args"].get("timeMax")
+    assert cal["args"].get("rangeLabel") == "yesterday"
+
+
+@pytest.mark.asyncio
 async def test_plan_tools_gmail_unread_uses_heuristic_not_scheduling():
     result = await plan_tools(
         "check my gmail unread",

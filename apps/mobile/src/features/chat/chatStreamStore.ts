@@ -13,6 +13,7 @@ export type SessionStreamState = {
 
 type ChatStreamState = {
   sessions: Record<string, SessionStreamState>;
+  generatingSessionKeys: Record<string, true>;
   boundTurnSessionId: string | null;
   setBoundTurnSessionId: (sessionId: string | null) => void;
   beginTurn: (sessionKey: string) => void;
@@ -39,14 +40,35 @@ function bump(session: SessionStreamState): SessionStreamState {
   return { ...session, revision: session.revision + 1 };
 }
 
+function withGeneratingKey(
+  keys: Record<string, true>,
+  sessionKey: string,
+  active: boolean
+): Record<string, true> {
+  if (active) {
+    if (keys[sessionKey]) return keys;
+    return { ...keys, [sessionKey]: true };
+  }
+  if (!keys[sessionKey]) return keys;
+  const next = { ...keys };
+  delete next[sessionKey];
+  return next;
+}
+
 export const useChatStreamStore = create<ChatStreamState>((set, get) => ({
   sessions: {},
+  generatingSessionKeys: {},
   boundTurnSessionId: null,
 
   setBoundTurnSessionId: (sessionId) => set({ boundTurnSessionId: sessionId }),
 
   beginTurn: (sessionKey) => {
     set((state) => ({
+      generatingSessionKeys: withGeneratingKey(
+        state.generatingSessionKeys,
+        sessionKey,
+        true
+      ),
       sessions: {
         ...state.sessions,
         [sessionKey]: {
@@ -101,6 +123,11 @@ export const useChatStreamStore = create<ChatStreamState>((set, get) => ({
       const prev = state.sessions[sessionKey];
       if (!prev) return state;
       return {
+        generatingSessionKeys: withGeneratingKey(
+          state.generatingSessionKeys,
+          sessionKey,
+          false
+        ),
         sessions: {
           ...state.sessions,
           [sessionKey]: bump({
@@ -117,7 +144,14 @@ export const useChatStreamStore = create<ChatStreamState>((set, get) => ({
     set((state) => {
       const next = { ...state.sessions };
       delete next[sessionKey];
-      return { sessions: next };
+      return {
+        generatingSessionKeys: withGeneratingKey(
+          state.generatingSessionKeys,
+          sessionKey,
+          false
+        ),
+        sessions: next,
+      };
     });
   },
 
@@ -146,18 +180,48 @@ export const useChatStreamStore = create<ChatStreamState>((set, get) => ({
         next[sessionId] = { ...pending };
       }
 
-      return { sessions: next };
+      let generatingSessionKeys = state.generatingSessionKeys;
+      if (pending.isGenerating) {
+        generatingSessionKeys = withGeneratingKey(
+          generatingSessionKeys,
+          PENDING_CHAT_STREAM_KEY,
+          false
+        );
+      }
+      if (next[sessionId]?.isGenerating) {
+        generatingSessionKeys = withGeneratingKey(
+          generatingSessionKeys,
+          sessionId,
+          true
+        );
+      }
+
+      return { sessions: next, generatingSessionKeys };
     });
   },
 
-  isSessionGenerating: (sessionId) => Boolean(get().sessions[sessionId]?.isGenerating),
+  isSessionGenerating: (sessionId) =>
+    Boolean(get().generatingSessionKeys[sessionId]),
 }));
+
+export function anyOtherSessionGenerating(exceptKey: string): boolean {
+  const { sessions } = useChatStreamStore.getState();
+  return Object.entries(sessions).some(
+    ([key, session]) => key !== exceptKey && session.isGenerating
+  );
+}
+
+export type ResolveStreamSessionKeyOptions = {
+  isolateCompose?: boolean;
+};
 
 export function resolveStreamSessionKey(
   sessionId: string | null | undefined,
-  boundTurnSessionId: string | null
+  boundTurnSessionId: string | null,
+  options?: ResolveStreamSessionKeyOptions
 ): string {
   if (sessionId) return sessionId;
+  if (options?.isolateCompose) return PENDING_CHAT_STREAM_KEY;
   if (boundTurnSessionId) return boundTurnSessionId;
   return PENDING_CHAT_STREAM_KEY;
 }
@@ -165,7 +229,8 @@ export function resolveStreamSessionKey(
 export function selectSessionStream(
   sessions: Record<string, SessionStreamState>,
   sessionId: string | null | undefined,
-  boundTurnSessionId: string | null = null
+  boundTurnSessionId: string | null = null,
+  options?: ResolveStreamSessionKeyOptions
 ): SessionStreamState | undefined {
-  return sessions[resolveStreamSessionKey(sessionId, boundTurnSessionId)];
+  return sessions[resolveStreamSessionKey(sessionId, boundTurnSessionId, options)];
 }

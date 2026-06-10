@@ -1,6 +1,8 @@
 import { memo } from 'react';
+import { StyleSheet } from 'react-native';
 import { AppMarkdown } from '@/components/markdown/AppMarkdown';
-import { useSmoothStreamText } from '@/features/chat/useSmoothStreamText';
+import { InlineStreamingCursor } from '@/components/chat/StreamingCursor';
+import { Text } from '@/components/ui/Text';
 
 type Props = {
   content: string;
@@ -20,22 +22,38 @@ export const ChatStreamingText = memo(function ChatStreamingText({
   revealActive = true,
 }: Props) {
   const accent = accentColor ?? color;
-  const revealed = useSmoothStreamText(content, revealActive);
-  const showContent = Boolean(revealed.trim()) || showCursor;
+  const showContent = Boolean(content.trim()) || showCursor;
 
   if (!showContent) {
     return null;
   }
 
+  if (revealActive) {
+    return (
+      <Text variant="body" style={[styles.plain, { color }]}>
+        {content}
+        {showCursor && cursorColor ? (
+          <InlineStreamingCursor color={cursorColor} />
+        ) : null}
+      </Text>
+    );
+  }
+
   return (
     <AppMarkdown
-      content={revealed}
+      content={content}
       color={color}
       accentColor={accent}
       variant="chat"
-      streaming
+      streaming={false}
       showCursor={showCursor}
       cursorColor={cursorColor}
     />
   );
+});
+
+const styles = StyleSheet.create({
+  plain: {
+    flexShrink: 1,
+  },
 });

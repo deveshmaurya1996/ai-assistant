@@ -17,6 +17,13 @@ import {
 } from './resolveOverlayRoute';
 
 const ROTATION_MS = 5000;
+const STREAM_OVERLAY_TICK_MS = 400;
+
+function selectGeneratingSignature(
+  keys: Record<string, true>
+): string {
+  return Object.keys(keys).sort().join(',');
+}
 
 export function useAssistantOverlaySync() {
   const overlayEnabled = useSettingsStore((s) => s.overlayEnabled);
@@ -34,7 +41,10 @@ export function useAssistantOverlaySync() {
     () => resolveCurrentChatSessionKey(segments),
     [segments]
   );
-  const chatSessions = useChatStreamStore((s) => s.sessions);
+  const generatingSignature = useChatStreamStore((s) =>
+    selectGeneratingSignature(s.generatingSessionKeys)
+  );
+  const [streamOverlayTick, setStreamOverlayTick] = useState(0);
 
   const { phase, isActive, visibleText, sessionId } = useVoiceSession();
 
@@ -46,10 +56,18 @@ export function useAssistantOverlaySync() {
     sessionId ? s.sessions[sessionId]?.title : undefined
   );
 
+  useEffect(() => {
+    if (!generatingSignature) return;
+    const timer = setInterval(() => {
+      setStreamOverlayTick((tick) => tick + 1);
+    }, STREAM_OVERLAY_TICK_MS);
+    return () => clearInterval(timer);
+  }, [generatingSignature]);
+
   const activities = useMemo(
     () =>
       buildOverlayActivities({
-        chatSessions,
+        chatSessions: useChatStreamStore.getState().sessions,
         assistantName: assistantDisplayName,
         voicePhase: phase,
         voiceSessionId: sessionId,
@@ -59,7 +77,8 @@ export function useAssistantOverlaySync() {
         lastReplies,
       }),
     [
-      chatSessions,
+      generatingSignature,
+      streamOverlayTick,
       assistantDisplayName,
       phase,
       sessionId,

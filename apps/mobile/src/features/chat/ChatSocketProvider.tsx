@@ -12,6 +12,7 @@ import type { AssistantSocket, ChatMessage } from '@ai-assistant/sdk';
 import type {
   ActionConfirmRequiredPayload,
   ChatAttachmentRef,
+  ChatErrorPayload,
   ChatStatusPayload,
 } from '@ai-assistant/types';
 import { apiClient } from '@/lib/api-client';
@@ -20,12 +21,13 @@ import { useChatActionConfirmBridge } from './chatActionConfirmBridge';
 import { useSettingsStore } from '@/stores/settings';
 import { useOverlaySessionStore } from '@/features/overlay/overlaySessionStore';
 import { useChatSidebarStore } from './chatSidebarStore';
-import { getActiveChatSessionId } from './activeChatSessionStore';
 import { syncSidebarAttention } from './sidebarAttention';
 import {
+  anyOtherSessionGenerating,
   PENDING_CHAT_STREAM_KEY,
   useChatStreamStore,
 } from './chatStreamStore';
+import { getComposeActiveSessionId } from './chatSessionLifecycle';
 import { getDeviceTimezone } from '@/lib/deviceTimezone';
 
 export type ChatSocketEmitOptions = {
@@ -62,6 +64,7 @@ type ChatSocketContextValue = {
 const ChatSocketContext = createContext<ChatSocketContextValue | null>(null);
 
 const TURN_TIMEOUT_MS = 45_000;
+const CHUNK_STORE_FLUSH_MS = 80;
 
 type ListenerEntry = {
   filterSessionId: string | null;
@@ -86,15 +89,30 @@ export function ChatSocketProvider({
     assistantDisplayName?: string;
   } | null>(null);
   const activeTurnSessionRef = useRef<string | null>(null);
-  const turnTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const turnTimeoutsRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const activeStreamKeyRef = useRef<string>(PENDING_CHAT_STREAM_KEY);
   const chunkBufferRef = useRef(new Map<string, string>());
   const chunkFlushRafRef = useRef<number | null>(null);
+  const lastChunkStoreFlushRef = useRef(new Map<string, number>());
 
-  const clearTurnTimeout = useCallback(() => {
-    if (turnTimeoutRef.current) {
-      clearTimeout(turnTimeoutRef.current);
-      turnTimeoutRef.current = null;
+  const clearTurnTimeout = useCallback((sessionKey?: string) => {
+    if (sessionKey) {
+      const existing = turnTimeoutsRef.current.get(sessionKey);
+      if (existing) {
+        clearTimeout(existing);
+        turnTimeoutsRef.current.delete(sessionKey);
+      }
+      return;
+    }
+    for (const timeout of turnTimeoutsRef.current.values()) {
+      clearTimeout(timeout);
+    }
+    turnTimeoutsRef.current.clear();
+  }, []);
+
+  const clearActiveTurnIfMatches = useCallback((sessionId: string | null) => {
+    if (activeTurnSessionRef.current === sessionId) {
+      activeTurnSessionRef.current = null;
     }
   }, []);
 
@@ -105,6 +123,16 @@ export function ChatSocketProvider({
   const abortTurn = useChatStreamStore((s) => s.abortTurn);
   const migratePendingToSession = useChatStreamStore((s) => s.migratePendingToSession);
   const setBoundTurnSessionId = useChatStreamStore((s) => s.setBoundTurnSessionId);
+
+  const releaseBoundTurnIfIdle = useCallback((endedKey: string) => {
+    const { boundTurnSessionId, setBoundTurnSessionId: releaseBound } =
+      useChatStreamStore.getState();
+    const endedSessionId =
+      endedKey === PENDING_CHAT_STREAM_KEY ? null : endedKey;
+    if (boundTurnSessionId !== endedSessionId) return;
+    if (anyOtherSessionGenerating(endedKey)) return;
+    releaseBound(null);
+  }, []);
 
   const shouldNotifyListener = useCallback(
     (eventSessionId: string, filterSessionId: string | null) => {
@@ -166,40 +194,87 @@ export function ChatSocketProvider({
     [bindIncomingStreamSession]
   );
 
-  const fireTurnTimeout = useCallback(() => {
-    const streamKey = activeStreamKeyRef.current;
-    const { sessions } = useChatStreamStore.getState();
-    if (!sessions[streamKey]?.isGenerating) return;
+  const fireTurnTimeout = useCallback(
+    (streamKey: string) => {
+      const { sessions } = useChatStreamStore.getState();
+      if (!sessions[streamKey]?.isGenerating) return;
 
-    const sid = activeTurnSessionRef.current;
-    abortTurn(streamKey);
-    activeTurnSessionRef.current = null;
-    setBoundTurnSessionId(null);
+      const sid = streamKey === PENDING_CHAT_STREAM_KEY ? null : streamKey;
+      abortTurn(streamKey);
+      clearActiveTurnIfMatches(sid);
+      releaseBoundTurnIfIdle(streamKey);
 
-    const message =
-      'Request timed out. Check that AI services are running and try again.';
-    if (sid) {
-      notifySessionEvent(sid, (l) => l.onError?.(message));
-    } else {
-      notifyPendingOnly((l) => l.onError?.(message));
+      const message =
+        'Request timed out. Check that AI services are running and try again.';
+      if (sid) {
+        notifySessionEvent(sid, (l) => l.onError?.(message));
+      } else {
+        notifyPendingOnly((l) => l.onError?.(message));
+      }
+    },
+    [
+      abortTurn,
+      notifySessionEvent,
+      notifyPendingOnly,
+      releaseBoundTurnIfIdle,
+      clearActiveTurnIfMatches,
+    ]
+  );
+
+  const scheduleTurnTimeout = useCallback(
+    (sessionKey: string) => {
+      clearTurnTimeout(sessionKey);
+      turnTimeoutsRef.current.set(
+        sessionKey,
+        setTimeout(() => {
+          turnTimeoutsRef.current.delete(sessionKey);
+          fireTurnTimeout(sessionKey);
+        }, TURN_TIMEOUT_MS)
+      );
+    },
+    [clearTurnTimeout, fireTurnTimeout]
+  );
+
+  const flushChunkBufferToStore = useCallback(
+    (force = false) => {
+      const buffer = chunkBufferRef.current;
+      const now = Date.now();
+      let hasRemainder = false;
+
+      for (const [key, text] of buffer.entries()) {
+        if (!text) continue;
+        const last = lastChunkStoreFlushRef.current.get(key) ?? 0;
+        if (!force && now - last < CHUNK_STORE_FLUSH_MS) {
+          hasRemainder = true;
+          continue;
+        }
+        appendChunk(key, text);
+        buffer.set(key, '');
+        lastChunkStoreFlushRef.current.set(key, now);
+      }
+
+      return hasRemainder;
+    },
+    [appendChunk]
+  );
+
+  const scheduleChunkFlush = useCallback(() => {
+    if (chunkFlushRafRef.current != null) return;
+    chunkFlushRafRef.current = requestAnimationFrame(() => {
+      chunkFlushRafRef.current = null;
+      if (flushChunkBufferToStore(false)) {
+        scheduleChunkFlush();
+      }
+    });
+  }, [flushChunkBufferToStore]);
+
+  const forceFlushChunkBuffer = useCallback(() => {
+    if (chunkFlushRafRef.current != null) {
+      cancelAnimationFrame(chunkFlushRafRef.current);
+      chunkFlushRafRef.current = null;
     }
-  }, [abortTurn, notifySessionEvent, notifyPendingOnly, setBoundTurnSessionId]);
-
-  const scheduleTurnTimeout = useCallback(() => {
-    clearTurnTimeout();
-    turnTimeoutRef.current = setTimeout(() => {
-      fireTurnTimeout();
-    }, TURN_TIMEOUT_MS);
-  }, [clearTurnTimeout, fireTurnTimeout]);
-
-  const flushChunkBuffer = useCallback(() => {
-    chunkFlushRafRef.current = null;
-    const buffer = chunkBufferRef.current;
-    for (const [key, text] of buffer.entries()) {
-      if (text) appendChunk(key, text);
-    }
-    buffer.clear();
-  }, [appendChunk]);
+    flushChunkBufferToStore(true);
+  }, [flushChunkBufferToStore]);
 
   const queueChunk = useCallback(
     (sessionId: string | null | undefined, chunk: string) => {
@@ -207,10 +282,9 @@ export function ChatSocketProvider({
       const key = resolveChunkStreamKey(sessionId);
       const buffer = chunkBufferRef.current;
       buffer.set(key, (buffer.get(key) ?? '') + chunk);
-      if (chunkFlushRafRef.current != null) return;
-      chunkFlushRafRef.current = requestAnimationFrame(flushChunkBuffer);
+      scheduleChunkFlush();
     },
-    [flushChunkBuffer, resolveChunkStreamKey]
+    [scheduleChunkFlush, resolveChunkStreamKey]
   );
 
   useEffect(() => {
@@ -236,16 +310,10 @@ export function ChatSocketProvider({
       setSocket(connected);
 
       connected.on('chat:chunk', (data) => {
-        if (data.chatSessionId) {
-          syncSidebarAttention(data.chatSessionId);
-        }
         queueChunk(data.chatSessionId, data.chunk);
       });
 
       connected.on('chat:status', (data: ChatStatusPayload) => {
-        if (data.chatSessionId) {
-          syncSidebarAttention(data.chatSessionId);
-        }
         const key = resolveChunkStreamKey(data.chatSessionId);
         setStatusMessage(key, data.message);
       });
@@ -264,9 +332,9 @@ export function ChatSocketProvider({
           cancelAnimationFrame(chunkFlushRafRef.current);
           chunkFlushRafRef.current = null;
         }
-        flushChunkBuffer();
-        clearTurnTimeout();
+        forceFlushChunkBuffer();
         const sid = data.chatSessionId;
+        clearTurnTimeout(sid);
         const hasContent = Boolean(data.message.content?.trim());
         const hasAttachments = Boolean(data.message.attachments?.length);
         if (!hasContent && !hasAttachments) {
@@ -274,11 +342,10 @@ export function ChatSocketProvider({
           notifySessionEvent(sid, (l) =>
             l.onError?.('The assistant returned an empty response. Please try again.')
           );
-          activeTurnSessionRef.current = null;
-          setBoundTurnSessionId(null);
+          clearActiveTurnIfMatches(sid);
+          releaseBoundTurnIfIdle(sid);
           return;
         }
-        activeTurnSessionRef.current = sid;
         endTurn(sid);
         syncSidebarAttention(sid);
         useOverlaySessionStore.getState().setLastReply(sid, data.message.content);
@@ -290,40 +357,42 @@ export function ChatSocketProvider({
           l.onAssistantMessage?.(data.message);
           l.onExchangeComplete?.(sid);
         });
-        activeTurnSessionRef.current = null;
-        setBoundTurnSessionId(null);
+        clearActiveTurnIfMatches(sid);
+        releaseBoundTurnIfIdle(sid);
       });
 
       connected.on('chat:aborted', (data) => {
-        clearTurnTimeout();
-        abortTurn(data.chatSessionId);
-        notifySessionEvent(data.chatSessionId, (l) => l.onAborted?.(data.chatSessionId));
-        activeTurnSessionRef.current = null;
-        setBoundTurnSessionId(null);
+        const sid = data.chatSessionId;
+        clearTurnTimeout(sid);
+        abortTurn(sid);
+        notifySessionEvent(sid, (l) => l.onAborted?.(sid));
+        clearActiveTurnIfMatches(sid);
+        releaseBoundTurnIfIdle(sid);
       });
 
-      connected.on('chat:error', (payload) => {
-        clearTurnTimeout();
+      connected.on('chat:error', (payload: ChatErrorPayload) => {
+        const streamKey = payload.chatSessionId ?? PENDING_CHAT_STREAM_KEY;
+        clearTurnTimeout(streamKey);
         const message = formatChatSocketError(payload);
-        const failedKey = activeStreamKeyRef.current;
-        if (useChatStreamStore.getState().sessions[failedKey]?.isGenerating) {
-          abortTurn(failedKey);
+        if (useChatStreamStore.getState().sessions[streamKey]?.isGenerating) {
+          abortTurn(streamKey);
         }
-        const sid = activeTurnSessionRef.current;
-        activeTurnSessionRef.current = null;
+        const sid = payload.chatSessionId ?? null;
+        clearActiveTurnIfMatches(sid);
         if (sid) {
           notifySessionEvent(sid, (l) => l.onError?.(message));
         } else {
           notifyPendingOnly((l) => l.onError?.(message));
         }
-        setBoundTurnSessionId(null);
+        releaseBoundTurnIfIdle(streamKey);
       });
 
       connected.on('chat:title_updated', (data) => {
         useOverlaySessionStore.getState().setTitle(data.chatSessionId, data.title);
         useChatSidebarStore.getState().patchTitle(data.chatSessionId, data.title);
         notifySessionEvent(data.chatSessionId, (l) => l.onTitleUpdated?.(data.title));
-        if (getActiveChatSessionId() === data.chatSessionId) {
+        const composeSessionId = getComposeActiveSessionId();
+        if (composeSessionId && composeSessionId === data.chatSessionId) {
           notifyPendingOnly((l) => l.onTitleUpdated?.(data.title));
         }
       });
@@ -393,10 +462,12 @@ export function ChatSocketProvider({
     setBoundTurnSessionId,
     resolveChunkStreamKey,
     queueChunk,
-    flushChunkBuffer,
+    forceFlushChunkBuffer,
     clearTurnTimeout,
     streamKeyForSession,
     setStatusMessage,
+    releaseBoundTurnIfIdle,
+    clearActiveTurnIfMatches,
   ]);
 
   const emitMessage = useCallback(
@@ -438,7 +509,7 @@ export function ChatSocketProvider({
       if (sessionId) {
         syncSidebarAttention(sessionId);
       }
-      scheduleTurnTimeout();
+      scheduleTurnTimeout(sessionKey);
       useChatActionConfirmBridge.getState().setPending(null);
 
       const payload: {
@@ -471,7 +542,7 @@ export function ChatSocketProvider({
           const key = streamKeyForSession(last.chatSessionId ?? null);
           activeStreamKeyRef.current = key;
           beginTurn(key);
-          scheduleTurnTimeout();
+          scheduleTurnTimeout(key);
           socketRef.current.emit('chat:message', { ...last, confirmed: true });
         },
         cancel: () => {
@@ -493,15 +564,21 @@ export function ChatSocketProvider({
     const { sessions } = useChatStreamStore.getState();
     if (!sessions[sessionKey]?.isGenerating) return;
 
-    clearTurnTimeout();
+    clearTurnTimeout(sessionKey);
     socketRef.current?.emit(
       'chat:abort',
       sessionId ? { chatSessionId: sessionId } : {}
     );
     abortTurn(sessionKey);
-    activeTurnSessionRef.current = null;
-    setBoundTurnSessionId(null);
-  }, [abortTurn, streamKeyForSession, clearTurnTimeout, setBoundTurnSessionId]);
+    clearActiveTurnIfMatches(sessionId);
+    releaseBoundTurnIfIdle(sessionKey);
+  }, [
+    abortTurn,
+    streamKeyForSession,
+    clearTurnTimeout,
+    clearActiveTurnIfMatches,
+    releaseBoundTurnIfIdle,
+  ]);
 
   const registerListeners = useCallback(
     (listenerId: string, listeners: SessionListeners) => {

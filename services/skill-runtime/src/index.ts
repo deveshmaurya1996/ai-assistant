@@ -34,8 +34,8 @@ const ExecuteSchema = z.object({
   source: z.enum(['chat', 'voice', 'automation', 'workflow', 'manual']).default('chat'),
   confirmed: z.boolean().default(false),
   preview: z.boolean().optional(),
-  connectionId: z.string().optional(),
-  chatSessionId: z.string().optional(),
+  connectionId: z.string().nullish(),
+  chatSessionId: z.string().nullish(),
 });
 
 async function toolRuntimeFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -174,8 +174,8 @@ async function main() {
         source: body.source,
         confirmed: body.confirmed,
         preview: body.preview,
-        connectionId: body.connectionId,
-        chatSessionId: body.chatSessionId,
+        ...(body.connectionId ? { connectionId: body.connectionId } : {}),
+        ...(body.chatSessionId ? { chatSessionId: body.chatSessionId } : {}),
       }),
     });
 

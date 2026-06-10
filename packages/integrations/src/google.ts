@@ -522,14 +522,14 @@ export class GoogleConnector implements IntegrationConnector {
         let messageId = args.messageId as string | undefined;
         if (!messageId) {
           const listRes = await fetch(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent('is:unread in:inbox')}&maxResults=1`,
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent('in:inbox')}&maxResults=1`,
             { headers: { Authorization: `Bearer ${token}` } }
           );
           if (!listRes.ok) return { success: false, error: await listRes.text() };
           const list = (await listRes.json()) as { messages?: { id: string }[] };
           messageId = list.messages?.[0]?.id;
           if (!messageId) {
-            return { success: false, error: 'No unread messages found' };
+            return { success: false, error: 'No messages found in inbox' };
           }
         }
         const res = await fetch(
@@ -721,8 +721,21 @@ export class GoogleConnector implements IntegrationConnector {
       }
       case 'calendar.list_upcoming': {
         const maxResults = Number(args.maxResults ?? 10);
+        const timeMin =
+          typeof args.timeMin === 'string' && args.timeMin.trim()
+            ? args.timeMin.trim()
+            : new Date().toISOString();
+        const params = new URLSearchParams({
+          maxResults: String(maxResults),
+          singleEvents: 'true',
+          orderBy: 'startTime',
+          timeMin,
+        });
+        if (typeof args.timeMax === 'string' && args.timeMax.trim()) {
+          params.set('timeMax', args.timeMax.trim());
+        }
         const res = await fetch(
-          `https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=${maxResults}&singleEvents=true&orderBy=startTime&timeMin=${new Date().toISOString()}`,
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params.toString()}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         if (!res.ok) {
@@ -745,7 +758,17 @@ export class GoogleConnector implements IntegrationConnector {
         }));
         return {
           success: true,
-          data: { type: 'calendar.event_list', events },
+          data: {
+            type: 'calendar.event_list',
+            events,
+            timeMin,
+            ...(typeof args.timeMax === 'string' && args.timeMax.trim()
+              ? { timeMax: args.timeMax.trim() }
+              : {}),
+            ...(typeof args.rangeLabel === 'string' && args.rangeLabel.trim()
+              ? { rangeLabel: args.rangeLabel.trim() }
+              : {}),
+          },
         };
       }
       case 'drive.search':
@@ -793,8 +816,21 @@ export class GoogleConnector implements IntegrationConnector {
       }
       case 'calendar.list': {
         const maxResults = Number(args.maxResults ?? 10);
+        const timeMin =
+          typeof args.timeMin === 'string' && args.timeMin.trim()
+            ? args.timeMin.trim()
+            : new Date().toISOString();
+        const params = new URLSearchParams({
+          maxResults: String(maxResults),
+          singleEvents: 'true',
+          orderBy: 'startTime',
+          timeMin,
+        });
+        if (typeof args.timeMax === 'string' && args.timeMax.trim()) {
+          params.set('timeMax', args.timeMax.trim());
+        }
         const res = await fetch(
-          `https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=${maxResults}&singleEvents=true&orderBy=startTime&timeMin=${new Date().toISOString()}`,
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params.toString()}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         if (!res.ok) return { success: false, error: await res.text() };

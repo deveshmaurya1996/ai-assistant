@@ -14,14 +14,26 @@ export type ChatStreamViewState = {
   showStreamBubble: boolean;
 };
 
+type UseChatStreamStateOptions = {
+  isolateCompose?: boolean;
+};
+
 export function useChatStreamState(
-  sessionId: string | null | undefined
+  sessionId: string | null | undefined,
+  options?: UseChatStreamStateOptions
 ): ChatStreamViewState {
   const boundTurnSessionId = useChatStreamStore((s) => s.boundTurnSessionId);
-  const streamKey = resolveStreamSessionKey(sessionId, boundTurnSessionId);
+  const streamOptions = options?.isolateCompose
+    ? { isolateCompose: true as const }
+    : undefined;
+  const streamKey = resolveStreamSessionKey(
+    sessionId,
+    boundTurnSessionId,
+    streamOptions
+  );
 
   const stream = useChatStreamStore((s) =>
-    selectSessionStream(s.sessions, sessionId, boundTurnSessionId)
+    selectSessionStream(s.sessions, sessionId, boundTurnSessionId, streamOptions)
   );
 
   const streamText = stream?.streamText ?? '';

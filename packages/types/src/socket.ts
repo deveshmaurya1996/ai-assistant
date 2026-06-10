@@ -47,6 +47,7 @@ export interface ChatErrorPayload {
   error: string;
   details?: string;
   debug?: string;
+  chatSessionId?: string;
 }
 
 export interface VoiceTurnStartPayload {

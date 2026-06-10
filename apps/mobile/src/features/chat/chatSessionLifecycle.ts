@@ -24,10 +24,12 @@ export function resetDraftChat() {
   const { liveSessionId } = useComposeDraftStore.getState();
   const stream = useChatStreamStore.getState();
 
-  if (liveSessionId) {
+  if (liveSessionId && !stream.isSessionGenerating(liveSessionId)) {
     stream.clearTurn(liveSessionId);
   }
-  stream.clearTurn(PENDING_CHAT_STREAM_KEY);
+  if (!stream.sessions[PENDING_CHAT_STREAM_KEY]?.isGenerating) {
+    stream.clearTurn(PENDING_CHAT_STREAM_KEY);
+  }
   stream.setBoundTurnSessionId(null);
 
   useComposeDraftStore.getState().setLiveSessionId(null);

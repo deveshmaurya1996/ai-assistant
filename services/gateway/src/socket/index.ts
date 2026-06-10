@@ -152,7 +152,11 @@ export function setupSocketIO(fastify: FastifyInstance) {
       } catch (err) {
         const message =
           err instanceof AppError ? err.message : 'Too many requests. Please try again later.';
-        socket.emit('chat:error', { error: message, details: message });
+        socket.emit('chat:error', {
+          chatSessionId: data.chatSessionId ?? PENDING_CHAT_SESSION_KEY,
+          error: message,
+          details: message,
+        });
         return;
       }
 
@@ -311,6 +315,7 @@ export function setupSocketIO(fastify: FastifyInstance) {
           fastify.log.error({ err, userId, socketId: socket.id }, 'chat:message failed');
 
           socket.emit('chat:error', {
+            chatSessionId: activeTurnSessionKey,
             error: message,
             details: message,
             ...(details !== undefined && { debug: details }),

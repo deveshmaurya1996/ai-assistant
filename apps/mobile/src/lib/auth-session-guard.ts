@@ -24,7 +24,11 @@ export async function handleUnauthorizedApiError(err: unknown): Promise<boolean>
     await clearAuthCookie();
     clearApiAuth();
     useChatSidebarStore.getState().reset();
-    useChatStreamStore.setState({ sessions: {}, boundTurnSessionId: null });
+    useChatStreamStore.setState({
+      sessions: {},
+      generatingSessionKeys: {},
+      boundTurnSessionId: null,
+    });
     useAuthStore.setState({ session: null, loading: false, hydrated: true });
     router.replace(Routes.welcome);
   } finally {

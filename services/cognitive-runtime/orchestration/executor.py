@@ -27,6 +27,7 @@ def _resolve_connection_id(tool: str, connections: List[Dict[str, Any]]) -> Opti
     prefix = tool.split(".")[0]
     provider_map = {
         "gmail": "google",
+        "email": "google",
         "calendar": "google",
         "drive": "google",
         "whatsapp": "whatsapp",
@@ -196,9 +197,11 @@ async def execute_planned_tools(
                 "args": args,
                 "source": source,
                 "confirmed": confirmed,
-                "chatSessionId": chat_session_id,
-                "connectionId": connection_id,
             }
+            if chat_session_id:
+                exec_body["chatSessionId"] = chat_session_id
+            if connection_id:
+                exec_body["connectionId"] = connection_id
             if item.get("capability"):
                 provider = item.get("provider") or default_provider_for_capability(
                     item["capability"]
@@ -209,10 +212,12 @@ async def execute_planned_tools(
                     "args": args,
                     "source": source,
                     "confirmed": confirmed,
-                    "chatSessionId": chat_session_id,
-                    "connectionId": connection_id,
                     "provider": provider,
                 }
+                if chat_session_id:
+                    exec_body["chatSessionId"] = chat_session_id
+                if connection_id:
+                    exec_body["connectionId"] = connection_id
 
             res = await client.post(f"{SKILL_RUNTIME_URL}/v1/execute", json=exec_body)
             if res.status_code == 428:

@@ -47,17 +47,35 @@ export function useChatRoom({
   const loadGenerationRef = useRef(0);
   const loadSessionRef = useRef<(generation: number) => Promise<void>>(async () => {});
   const titleFetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
 
-  const scheduleTitleRefetch = useCallback((targetSessionId: string) => {
+  const clearTitleRefetch = useCallback(() => {
     if (titleFetchTimeoutRef.current) {
       clearTimeout(titleFetchTimeoutRef.current);
+      titleFetchTimeoutRef.current = null;
     }
+  }, []);
+
+  const scheduleTitleRefetch = useCallback((targetSessionId: string) => {
+    clearTitleRefetch();
     titleFetchTimeoutRef.current = setTimeout(() => {
       titleFetchTimeoutRef.current = null;
       void (async () => {
         try {
+          const activeId =
+            sessionIdRef.current ??
+            useComposeDraftStore.getState().liveSessionId ??
+            null;
+          if (activeId !== targetSessionId) return;
+
           const chatSession = await apiClient.getChatSession(targetSessionId);
           if (!chatSession.title) return;
+          const activeAfterFetch =
+            sessionIdRef.current ??
+            useComposeDraftStore.getState().liveSessionId ??
+            null;
+          if (activeAfterFetch !== targetSessionId) return;
           setTitle(chatSession.title);
           useOverlaySessionStore.getState().upsertSession(targetSessionId, {
             title: chatSession.title,
@@ -75,7 +93,7 @@ export function useChatRoom({
         }
       })();
     }, 2500);
-  }, []);
+  }, [clearTitleRefetch]);
 
   const {
     messages,
@@ -200,6 +218,8 @@ export function useChatRoom({
     const prevId = prevSessionIdRef.current;
     prevSessionIdRef.current = sessionId;
 
+    clearTitleRefetch();
+
     if (!sessionId) {
       setMessages([]);
       resetStream();
@@ -236,6 +256,7 @@ export function useChatRoom({
     setSavedMessageIds,
     isCompose,
     setTitle,
+    clearTitleRefetch,
   ]);
 
   const skipNextFocusReloadRef = useRef(true);
@@ -255,13 +276,7 @@ export function useChatRoom({
     skipNextFocusReloadRef.current = true;
   }, [sessionId]);
 
-  useEffect(() => {
-    return () => {
-      if (titleFetchTimeoutRef.current) {
-        clearTimeout(titleFetchTimeoutRef.current);
-      }
-    };
-  }, []);
+  useEffect(() => clearTitleRefetch, [clearTitleRefetch]);
 
   const send = useCallback(
     (payload: ChatSendPayload) => {

@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -15,13 +16,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { router, usePathname } from 'expo-router';
 import { FlashList } from '@shopify/flash-list';
 import { useDrawerProgress } from 'react-native-drawer-layout';
 import { useAnimatedReaction } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
-import { LogOut, Pencil, Settings } from 'lucide-react-native';
+import { ChevronDown, LogOut, Pencil, Settings } from 'lucide-react-native';
 import type { ChatSession } from '@ai-assistant/sdk';
 import { Text } from '@/components/ui/Text';
 import { UserAvatar } from '@/components/ui/UserAvatar';
@@ -29,7 +29,6 @@ import { DrawerColorIcon } from '@/components/layout/DrawerColorIcon';
 import { AssistantIcon } from '@/components/assistant/AssistantIcon';
 import { ChatSessionActionsModal, type MenuAnchorRect } from '@/components/chat/ChatSessionActionsModal';
 import { ShareChatSheet } from '@/components/share/ShareChatSheet';
-import { PulseDot } from '@/components/motion/PulseDot';
 import { PressableScale } from '@/components/motion/PressableScale';
 import { useTheme } from '@/theme/ThemeProvider';
 import { useAuthStore } from '@/stores/auth';
@@ -69,7 +68,7 @@ function getCollapsedSessions(
   return [...sessions.slice(0, limit - 1), active];
 }
 
-function DrawerSessionRow({
+const DrawerSessionRow = memo(function DrawerSessionRow({
   item,
   isActive,
   onOpen,
@@ -83,7 +82,7 @@ function DrawerSessionRow({
   const { colors } = useTheme();
   const menuRef = useRef<View>(null);
   const isGenerating = useChatStreamStore((s) =>
-    Boolean(s.sessions[item.id]?.isGenerating)
+    Boolean(s.generatingSessionKeys[item.id])
   );
   const showAttentionDot = shouldShowSidebarAttentionDot(
     item.hasUnread,
@@ -125,7 +124,11 @@ function DrawerSessionRow({
         </View>
         <View style={styles.rowText}>
           <View style={styles.titleRow}>
-            {showAttentionDot ? <PulseDot color={colors.danger} /> : null}
+            {showAttentionDot ? (
+              <View
+                style={[styles.attentionDot, { backgroundColor: colors.danger }]}
+              />
+            ) : null}
             <Text variant="bodyMedium" numberOfLines={1} style={styles.titleText}>
               {item.title ?? (isVoice ? 'Voice chat' : 'Untitled')}
             </Text>
@@ -148,7 +151,7 @@ function DrawerSessionRow({
       </PressableScale>
     </View>
   );
-}
+});
 
 function NavRow({
   icon,
@@ -409,68 +412,17 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
   );
 
   const chatListFooter = useMemo(
-    () => (
-      <View>
-      {hasMoreChats ? (
-        <PressableScale
-          onPress={() => setChatsExpanded(true)}
-          accessibilityRole="button"
-          accessibilityLabel="Show all chats">
-          <View style={styles.expandTeaser}>
-            <View style={styles.peekStack} pointerEvents="none">
-              {[0, 1].map((i) => (
-                <View
-                  key={i}
-                  style={[
-                    styles.peekRow,
-                    {
-                      opacity: 0.22 - i * 0.06,
-                      marginTop: i === 0 ? 0 : -6,
-                    },
-                  ]}>
-                  <View
-                    style={[
-                      styles.iconWrap,
-                      { backgroundColor: colors.surfaceElevated },
-                    ]}
-                  />
-                  <View
-                    style={[styles.peekBar, { backgroundColor: colors.border }]}
-                  />
-                </View>
-              ))}
-            </View>
-            <LinearGradient
-              colors={[`${colors.background}00`, colors.background]}
-              style={styles.expandFade}
-              pointerEvents="none"
-            />
-            <Text variant="caption" muted style={styles.expandLabel}>
-              {hiddenChatCount > 0
-                ? `Show all chats (${hiddenChatCount} more)`
-                : 'Show all chats'}
-            </Text>
-          </View>
-        </PressableScale>
-      ) : null}
-        {loadingMore ? (
-          <ActivityIndicator
-            color={colors.primary}
-            style={styles.loadingMore}
-          />
-        ) : null}
-      </View>
-    ),
-    [
-      colors.background,
-      colors.border,
-      colors.primary,
-      colors.surfaceElevated,
-      hasMoreChats,
-      hiddenChatCount,
-      loadingMore,
-    ]
+    () =>
+      loadingMore ? (
+        <ActivityIndicator color={colors.primary} style={styles.loadingMore} />
+      ) : null,
+    [colors.primary, loadingMore]
   );
+
+  const showAllChatsLabel =
+    hiddenChatCount > 0
+      ? `Show all chats (${hiddenChatCount} more)`
+      : 'Show all chats';
 
   const drawerBottom = useMemo(
     () => (
@@ -564,31 +516,49 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
     <>
       <View style={[styles.root, { backgroundColor: colors.background }]}>
         {drawerTop}
-        <FlashList
-          style={styles.chatList}
-          data={visibleSessions}
-          extraData={`${activeSessionId}|${refreshing}|${loadingMore}|${chatsExpanded}`}
-          keyExtractor={(item) => item.id}
-          renderItem={renderSession}
-          ListFooterComponent={chatListFooter}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />
-          }
-          onEndReached={
-            chatsExpanded ? () => void loadMore() : undefined
-          }
-          onEndReachedThreshold={0.4}
-          keyboardShouldPersistTaps="handled"
-          ListEmptyComponent={
-            !refreshing ? (
-              <View style={styles.empty}>
-                <Text variant="caption" muted>
-                  No chats yet
-                </Text>
-              </View>
-            ) : null
-          }
-        />
+        <View style={styles.chatSection}>
+          <FlashList
+            style={styles.chatList}
+            data={visibleSessions}
+            extraData={`${activeSessionId}|${refreshing}|${loadingMore}|${chatsExpanded}`}
+            keyExtractor={(item) => item.id}
+            renderItem={renderSession}
+            ListFooterComponent={chatListFooter}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />
+            }
+            onEndReached={
+              chatsExpanded ? () => void loadMore() : undefined
+            }
+            onEndReachedThreshold={0.4}
+            keyboardShouldPersistTaps="handled"
+            ListEmptyComponent={
+              !refreshing ? (
+                <View style={styles.empty}>
+                  <Text variant="caption" muted>
+                    No chats yet
+                  </Text>
+                </View>
+              ) : null
+            }
+          />
+          {hasMoreChats ? (
+            <View style={styles.showAllFooter}>
+              <View style={[styles.divider, { backgroundColor: colors.border }]} />
+              <PressableScale
+                onPress={() => setChatsExpanded(true)}
+                accessibilityRole="button"
+                accessibilityLabel={showAllChatsLabel}>
+                <View style={styles.showAllBtn}>
+                  <Text variant="caption" muted numberOfLines={1}>
+                    {showAllChatsLabel}
+                  </Text>
+                  <ChevronDown color={colors.textMuted} size={14} strokeWidth={2.25} />
+                </View>
+              </PressableScale>
+            </View>
+          ) : null}
+        </View>
         {drawerBottom}
       </View>
 
@@ -625,8 +595,24 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
+  chatSection: {
+    flex: 1,
+    minHeight: 0,
+  },
   chatList: {
     flex: 1,
+  },
+  showAllFooter: {
+    flexShrink: 0,
+  },
+  showAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    minHeight: 32,
   },
   loadingMore: {
     paddingVertical: spacing.md,
@@ -708,6 +694,12 @@ const styles = StyleSheet.create({
     flex: 1,
     flexShrink: 1,
   },
+  attentionDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    flexShrink: 0,
+  },
   menuBtn: {
     width: 36,
     height: 36,
@@ -717,39 +709,6 @@ const styles = StyleSheet.create({
   empty: {
     paddingVertical: spacing.lg,
     alignItems: 'center',
-  },
-  expandTeaser: {
-    marginHorizontal: spacing.sm,
-    minHeight: 72,
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-  },
-  peekStack: {
-    position: 'absolute',
-    left: spacing.sm,
-    right: spacing.sm,
-    top: 0,
-  },
-  peekRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
-    paddingLeft: spacing.sm,
-    minHeight: 44,
-  },
-  peekBar: {
-    flex: 1,
-    height: 10,
-    borderRadius: radii.sm,
-    marginRight: spacing.xl,
-  },
-  expandFade: {
-    ...StyleSheet.absoluteFill,
-  },
-  expandLabel: {
-    textAlign: 'center',
-    paddingVertical: spacing.sm,
   },
   divider: {
     height: StyleSheet.hairlineWidth,
