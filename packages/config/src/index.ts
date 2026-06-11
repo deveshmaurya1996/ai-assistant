@@ -170,3 +170,5 @@ export function getIntelligenceUrl(path: string): string {
   const normalized = path.startsWith('/') ? path : `/${path}`;
   return `${base}${normalized}`;
 }
+
+export { loadMonorepoEnv } from './load-env';

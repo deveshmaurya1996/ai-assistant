@@ -26,7 +26,10 @@ RUN corepack enable
 COPY --from=node_deps /app/node_modules ./node_modules
 COPY --from=node_deps /app/patches ./patches
 COPY . .
-RUN pnpm catalog:generate && pnpm catalog:validate \
+
+ENV DATABASE_URL=postgresql://build:build@localhost:5432/build?schema=public
+RUN pnpm install --frozen-lockfile --ignore-scripts \
+ && pnpm catalog:generate && pnpm catalog:validate \
  && pnpm exec turbo run build --filter=@ai-assistant/gateway...
 
 FROM python:3.11-slim-bookworm AS python_deps
