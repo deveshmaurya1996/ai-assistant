@@ -1,0 +1,26 @@
+{
+  "name": "@ai-assistant/connectors",
+  "version": "1.0.0",
+  "description": "Connector catalog loader (meta.json + PLAYBOOK.md playbooks)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc",
+    "sync": "node scripts/sync.mjs"
+  },
+  "dependencies": {
+    "@ai-assistant/capabilities": "workspace:*",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "~6.0.3"
+  }
+}

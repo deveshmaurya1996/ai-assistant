@@ -1,9 +1,0 @@
-{
-  "name": "@ai-assistant/ai",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Compatibility shim — code lives in services/ai-runtime",
-  "scripts": {
-    "dev": "pnpm --filter @ai-assistant/ai-runtime dev"
-  }
-}

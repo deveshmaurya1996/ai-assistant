@@ -13,11 +13,6 @@ const PORT_ENV = {
   gateway: 'API_PORT',
   ai: 'AI_PORT',
   'ai-runtime': 'AI_PORT',
-  'tool-runtime': 'TOOL_RUNTIME_PORT',
-  'skill-runtime': 'SKILL_RUNTIME_PORT',
-  'ai-orchestrator': 'AI_ORCHESTRATOR_PORT',
-  'cognitive-runtime': 'AI_ORCHESTRATOR_PORT',
-  'ingestion-engine': 'INGESTION_ENGINE_PORT',
   studio: 'PRISMA_STUDIO_PORT',
   mobile: 'EXPO_DEV_PORT',
 };
@@ -71,14 +66,50 @@ function findPython(aiDirName = 'ai-runtime') {
   return process.platform === 'win32' ? 'python' : 'python3';
 }
 
+async function assertIntelligencePort(port) {
+  try {
+    const res = await fetch(`http://localhost:${port}/health`, {
+      signal: AbortSignal.timeout(2_000),
+    });
+    if (!res.ok) return;
+    const body = await res.json();
+    if (body.service === 'cognitive-runtime') {
+      console.error(
+        `[ai-runtime] Port ${port} is running cognitive-runtime alone (missing /v1/chat/stream).`,
+      );
+      console.error('[ai-runtime] Stop that process, then start ai-runtime: pnpm dev:ai-runtime');
+      process.exit(1);
+    }
+    if (body.service === 'intelligence' && body.ai === true) {
+      console.log(`[ai-runtime] Intelligence already listening on http://localhost:${port}`);
+      process.exit(0);
+    }
+  } catch {
+    /* port free or not HTTP */
+  }
+}
+
 async function serveAi() {
   const port = portFor('ai-runtime');
+  await assertIntelligencePort(port);
   const aiDir = path.join(root, 'services', 'ai-runtime');
   const python = findPython('ai-runtime');
+  const uvicornArgs = [
+    '-m',
+    'uvicorn',
+    'main:app',
+    '--host',
+    'localhost',
+    '--port',
+    String(port),
+    '--workers',
+    '2',
+  ];
+
   const code = await new Promise((resolve, reject) => {
     const child = spawn(
       python,
-      ['-m', 'uvicorn', 'main:app', '--reload', '--host', '0.0.0.0', '--port', String(port)],
+      uvicornArgs,
       { cwd: aiDir, stdio: 'inherit', env: process.env },
     );
     child.on('error', reject);
@@ -156,22 +187,6 @@ async function serveMobile() {
   );
 }
 
-async function serveCognitiveRuntime() {
-  const port = portFor('cognitive-runtime');
-  const orchDir = path.join(root, 'services', 'cognitive-runtime');
-  const python = findPython('ai-runtime');
-  const code = await new Promise((resolve, reject) => {
-    const child = spawn(
-      python,
-      ['-m', 'uvicorn', 'main:app', '--reload', '--host', '0.0.0.0', '--port', String(port)],
-      { cwd: orchDir, stdio: 'inherit', env: process.env },
-    );
-    child.on('error', reject);
-    child.on('exit', (c) => resolve(c ?? 1));
-  });
-  process.exit(code);
-}
-
 const HANDLERS = {
   api: {
     build: ['pnpm', '--filter', '@ai-assistant/gateway', 'build'],
@@ -181,22 +196,8 @@ const HANDLERS = {
     build: ['pnpm', '--filter', '@ai-assistant/gateway', 'build'],
     serve: () => runWithEnv(['pnpm', '--filter', '@ai-assistant/gateway', 'run', 'serve']),
   },
-  'tool-runtime': {
-    build: ['pnpm', '--filter', '@ai-assistant/tool-runtime', 'build'],
-    serve: () => runWithEnv(['pnpm', '--filter', '@ai-assistant/tool-runtime', 'start']),
-  },
-  'skill-runtime': {
-    build: ['pnpm', '--filter', '@ai-assistant/skill-runtime', 'build'],
-    serve: () => runWithEnv(['pnpm', '--filter', '@ai-assistant/skill-runtime', 'start']),
-  },
   ai: { serve: serveAi },
   'ai-runtime': { serve: serveAi },
-  'ai-orchestrator': { serve: serveCognitiveRuntime },
-  'cognitive-runtime': { serve: serveCognitiveRuntime },
-  'ingestion-engine': {
-    build: ['pnpm', '--filter', '@ai-assistant/ingestion-engine', 'build'],
-    serve: () => runWithEnv(['pnpm', '--filter', '@ai-assistant/ingestion-engine', 'start']),
-  },
   studio: { serve: serveStudio },
   mobile: { serve: serveMobile },
 };
@@ -220,21 +221,22 @@ async function main() {
 
   if (action === 'build') {
     if (!handler.build) {
-      console.error(`Service "${name}" has no build step`);
+      console.error(`No build step for "${name}"`);
       process.exit(1);
     }
     process.exit(await runWithEnv(handler.build));
   }
 
   if (action === 'serve') {
-    const result = handler.serve();
-    if (result instanceof Promise) await result;
+    if (!handler.serve) {
+      console.error(`No serve step for "${name}"`);
+      process.exit(1);
+    }
+    await handler.serve();
     return;
   }
 
-  console.error(
-    'Usage: node scripts/dev.mjs <build|serve> <gateway|api|tool-runtime|skill-runtime|ai|ai-runtime|cognitive-runtime|studio|mobile>'
-  );
+  console.error('Usage: node scripts/dev.mjs <build|serve|db-setup> [service]');
   process.exit(1);
 }
 

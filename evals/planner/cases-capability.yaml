@@ -1,0 +1,8 @@
+- id: capability_drive_ambiguous
+  connected: [google]
+  query: open the quarterly report document from last month
+  force_planner: capability-llm
+  mock_llm: fixtures/capability_drive.json
+  expect:
+    planner: capability-llm
+    tools: [drive.search]

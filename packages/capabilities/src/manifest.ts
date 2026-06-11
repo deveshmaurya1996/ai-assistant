@@ -1,5 +1,5 @@
+import { KNOWN_PROVIDER_IDS, PROVIDER_DISPLAY } from './generated/providers';
 import { listCapabilitiesForProviders } from './registry';
-import type { CapabilityDefinition } from './types';
 
 export type ConnectedProviderInfo = {
   id: string;
@@ -26,11 +26,7 @@ export type IntegrationManifest = {
   }>;
 };
 
-const PROVIDER_DISPLAY: Record<string, string> = {
-  google: 'Google Workspace (Gmail, Calendar, Drive)',
-  whatsapp: 'WhatsApp',
-  notes: 'Notes',
-};
+export { KNOWN_PROVIDER_IDS, PROVIDER_DISPLAY };
 
 export function buildIntegrationManifest(
   connections: Array<{ id: string; providerId: string }>
@@ -50,7 +46,7 @@ export function buildIntegrationManifest(
     risk: def.risk,
     requiresConfirmation: def.requiresConfirmation,
     providers: def.providers
-      .filter((p) => providerIds.includes(p.providerId) || p.providerId === 'notes')
+      .filter((p) => providerIds.includes(p.providerId))
       .map((p) => p.providerId),
   }));
 
@@ -64,7 +60,7 @@ export function formatManifestForPlanner(
     connectionStates?: ProviderConnectionState[];
   }
 ): string {
-  const supported = options?.supportedProviders ?? ['google', 'whatsapp'];
+  const supported = options?.supportedProviders ?? [...KNOWN_PROVIDER_IDS];
   const states = options?.connectionStates ?? [];
   const supportedLine = supported
     .map((id) => PROVIDER_DISPLAY[id] ?? id)
@@ -74,9 +70,7 @@ export function formatManifestForPlanner(
   const offline = states.filter((s) => s.state === 'offline').map((s) => s.providerId);
   const notConnected = states.filter((s) => s.state === 'not_connected').map((s) => s.providerId);
 
-  const lines: string[] = [
-    `Supported integrations: ${supportedLine}.`,
-  ];
+  const lines: string[] = [`Supported integrations: ${supportedLine}.`];
 
   if (ready.length > 0) {
     lines.push(`Ready for AI: ${ready.join(', ')}.`);
@@ -85,15 +79,11 @@ export function formatManifestForPlanner(
   }
 
   if (notConnected.length > 0) {
-    lines.push(
-      `Not connected: ${notConnected.join(', ')} — open Connect Apps to link.`
-    );
+    lines.push(`Not connected: ${notConnected.join(', ')} — open Connect Apps to link.`);
   }
 
   if (offline.length > 0) {
-    lines.push(
-      `Linked but offline: ${offline.join(', ')} — reconnect in Connect Apps.`
-    );
+    lines.push(`Linked but offline: ${offline.join(', ')} — reconnect in Connect Apps.`);
   }
 
   if (manifest.connectedProviders.length === 0) {
@@ -110,7 +100,7 @@ export function formatManifestForPlanner(
   );
 
   for (const cap of manifest.capabilities) {
-    const prov = cap.providers.length ? cap.providers.join(', ') : 'notes';
+    const prov = cap.providers.length ? cap.providers.join(', ') : 'platform';
     const confirm = cap.requiresConfirmation ? '; requires user confirmation' : '';
     lines.push(`- ${cap.id}: ${cap.description} [via: ${prov}] (risk: ${cap.risk}${confirm})`);
   }

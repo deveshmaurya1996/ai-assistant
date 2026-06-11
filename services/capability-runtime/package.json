@@ -1,0 +1,34 @@
+{
+  "name": "@ai-assistant/capability-runtime",
+  "version": "1.0.0",
+  "description": "Capability execution runtime (delegates to tool-runtime)",
+  "main": "dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./routes": {
+      "types": "./dist/routes.d.ts",
+      "default": "./dist/routes.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc"
+  },
+  "dependencies": {
+    "@ai-assistant/capabilities": "workspace:*",
+    "@ai-assistant/tool-runtime": "workspace:*",
+    "@ai-assistant/config": "workspace:*",
+    "@ai-assistant/connectors": "workspace:*",
+    "@ai-assistant/tool-schema": "workspace:*",
+    "fastify": "^5.8.5",
+    "prom-client": "^15.1.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "~6.0.3"
+  }
+}

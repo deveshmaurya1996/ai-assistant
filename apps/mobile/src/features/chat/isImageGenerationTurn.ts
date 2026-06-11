@@ -2,6 +2,7 @@ import type { ChatMessage } from '@ai-assistant/sdk';
 
 export const GENERATED_IMAGE_SIZE = { width: 1024, height: 1024 };
 
+export const THINKING_STATUS = '__thinking__';
 export const IMAGE_GENERATING_STATUS = '__image_generating__';
 
 export function isImageGenerationTurn(

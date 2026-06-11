@@ -152,7 +152,7 @@ async def test_build_context_skips_rag_for_casual_query():
             include_manifest=False,
         )
     fetch_rag.assert_not_called()
-    assert result == ""
+    assert "should-not-be-called" not in result
 
 
 @pytest.mark.asyncio

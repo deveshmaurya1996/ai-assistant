@@ -150,7 +150,10 @@ export function startScheduler(): Worker | null {
           await fireAutomation(data.entityId);
         }
       },
-      { connection: getConnection() }
+      {
+        connection: getConnection(),
+        concurrency: config.schedulerConcurrency,
+      }
     );
 
     jobWorker.on('error', (err) => {
@@ -168,6 +171,10 @@ export function startScheduler(): Worker | null {
     console.warn('[scheduler] disabled:', err instanceof Error ? err.message : err);
     return null;
   }
+}
+
+export async function closeScheduler(): Promise<void> {
+  return stopScheduler();
 }
 
 export async function stopScheduler(): Promise<void> {

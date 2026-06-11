@@ -1,5 +1,5 @@
 import { prisma } from '@ai-assistant/database';
-import { GoogleConnector } from '@ai-assistant/integrations';
+import { GoogleConnector } from '@ai-assistant/integration-runtime';
 import { resolveBridgeSessionForUser } from '../whatsapp/session-resolve';
 import { decryptCredentials, encryptCredentials } from './encryption.service';
 

@@ -1,0 +1,74 @@
+- id: whatsapp_unread
+  connected: [whatsapp]
+  query: check my whatsapp unread messages
+  expect:
+    planner: heuristic
+    tools: [whatsapp.list_unread]
+    must_not: [whatsapp.send_message]
+
+- id: send_to_john
+  connected: [whatsapp]
+  query: "send message to John: hello there"
+  expect:
+    planner: heuristic
+    tools: [whatsapp.search_chats, whatsapp.send_message]
+
+- id: gmail_unread
+  connected: [google]
+  query: check my gmail unread
+  expect:
+    planner: heuristic
+    tools: [email.list_unread]
+
+- id: inbox_both
+  connected: [google, whatsapp]
+  query: check my inbox
+  expect:
+    planner: heuristic
+    tools: [email.list_unread, whatsapp.list_unread]
+
+- id: calendar_yesterday
+  connected: [google]
+  query: what meetings did I have yesterday
+  timezone: Asia/Kolkata
+  expect:
+    planner: heuristic
+    tools: [calendar.list_upcoming]
+
+- id: calendar_cancel
+  connected: [google]
+  query: cancel my meeting with Sarah tomorrow
+  expect:
+    planner: heuristic
+    tools: [calendar.list_upcoming, calendar.cancel_event]
+
+- id: drive_read
+  connected: [google]
+  query: summarize my budget spreadsheet in google drive
+  expect:
+    planner: heuristic
+    tools: [drive.search, drive.get_content]
+
+- id: connected_apps
+  connected: [google, whatsapp]
+  query: what apps are connected
+  expect:
+    planner: connected-apps-info
+    tools: []
+
+- id: unsupported_slack
+  connected: []
+  query: check my slack messages
+  expect:
+    planner: integration-unsupported
+    tools: []
+
+- id: disconnected_gmail
+  connected: []
+  connection_states:
+    - providerId: google
+      state: not_connected
+  query: check my gmail
+  expect:
+    planner: integration-blocked
+    tools: []

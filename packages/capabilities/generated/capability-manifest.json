@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-06-10T09:51:06.167Z",
+  "generatedAt": "2026-06-11T18:13:41.712Z",
   "capabilities": [
     {
       "id": "messaging.list_unread",
@@ -419,34 +419,18 @@
       ]
     },
     {
-      "id": "productivity.note.create",
-      "domain": "notes",
-      "description": "Create note",
-      "risk": "low",
+      "id": "image.edit",
+      "domain": "image",
+      "description": "Generate or edit an image from a text prompt (optional source image)",
+      "risk": "medium",
       "requiresConfirmation": true,
-      "plannerVisible": false,
-      "resultSchema": "Legacy",
+      "plannerVisible": true,
+      "resultSchema": "ImageEditResult",
       "providers": [
         {
-          "providerId": "notes",
-          "adapterAction": "create",
-          "executionTool": "notes.create"
-        }
-      ]
-    },
-    {
-      "id": "productivity.note.search",
-      "domain": "notes",
-      "description": "Search notes",
-      "risk": "low",
-      "requiresConfirmation": false,
-      "plannerVisible": false,
-      "resultSchema": "Legacy",
-      "providers": [
-        {
-          "providerId": "notes",
-          "adapterAction": "search",
-          "executionTool": "notes.search"
+          "providerId": "platform",
+          "adapterAction": "edit_image",
+          "executionTool": "image.edit"
         }
       ]
     }

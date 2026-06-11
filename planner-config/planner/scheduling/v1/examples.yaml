@@ -1,0 +1,7 @@
+- id: simple_reminder
+  query: remind me at 9pm to call mom
+  output: '{"actions":[{"tool":"reminder.create","args":{"title":"Call mom","userPrompt":"remind me at 9pm to call mom","recurrence":"NONE"}}],"clarification":null,"schedulingIntent":false}'
+
+- id: inbox_automation
+  query: check my inbox every morning at 8
+  output: '{"actions":[{"tool":"automation.create","args":{"query":"Check Gmail and WhatsApp for important unread items","cronExpression":"0 8 * * *"}}],"clarification":null,"schedulingIntent":false}'

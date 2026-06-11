@@ -6,6 +6,7 @@ import {
   type IntegrationManifest,
   type ProviderConnectionState,
 } from '@ai-assistant/capabilities';
+import { formatConnectorsForPlanner } from '@ai-assistant/connectors';
 import { assessConnectionsHealth } from './integration-health.service';
 
 function resolveProviderState(
@@ -71,10 +72,18 @@ export async function buildUserIntegrationManifest(userId: string): Promise<{
     connections.map((c) => ({ id: c.id, providerId: c.providerId }))
   );
 
-  const plannerText = formatManifestForPlanner(manifest, {
+  const basePlannerText = formatManifestForPlanner(manifest, {
     supportedProviders,
     connectionStates,
   });
+
+  const readyProviderIds = connectionStates
+    .filter((s) => s.state === 'ready')
+    .map((s) => s.providerId);
+  const connectorBlock = formatConnectorsForPlanner(readyProviderIds);
+  const plannerText = connectorBlock
+    ? `${basePlannerText}\n\n---\n\n${connectorBlock}`
+    : basePlannerText;
 
   return {
     manifest,

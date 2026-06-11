@@ -7,7 +7,6 @@ export function apiBase() {
   const port = Number(process.env.API_PORT || process.env.GATEWAY_PORT || 3000);
   return (
     process.env.API_PUBLIC_URL ||
-    process.env.GATEWAY_URL ||
     process.env.API_URL ||
     `http://localhost:${port}`
   ).replace(/\/$/, '');

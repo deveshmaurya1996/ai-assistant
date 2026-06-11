@@ -1,0 +1,29 @@
+{
+  "name": "@ai-assistant/integration-runtime",
+  "version": "1.0.0",
+  "description": "OAuth/API integration runtime for third-party apps",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc"
+  },
+  "dependencies": {
+    "@ai-assistant/database": "workspace:*",
+    "@ai-assistant/storage": "workspace:*",
+    "@ai-assistant/types": "workspace:*",
+    "@ai-assistant/tool-schema": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "~6.0.3"
+  }
+}

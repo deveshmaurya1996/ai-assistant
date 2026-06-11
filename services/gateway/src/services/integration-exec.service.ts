@@ -2,7 +2,7 @@ import { capabilityFromLegacyTool } from '@ai-assistant/capabilities';
 import type { ToolSource } from '@ai-assistant/types';
 import { sessionManager } from '../whatsapp/session-manager';
 import { resolveBridgeSessionForUser } from '../whatsapp/session-resolve';
-import { skillRuntimeFetch, toolRuntimeFetch } from '../lib/runtime-clients';
+import { capabilityRuntimeFetch, toolRuntimeFetch } from '../lib/runtime-clients';
 
 export type ToolExecutionOutcome = {
   success: boolean;
@@ -80,7 +80,6 @@ async function pollExecution(
   };
 }
 
-/** In-process WhatsApp — uses gateway Baileys + correct auth directory. */
 async function executeWhatsAppDirect(params: {
   userId: string;
   tool: string;
@@ -212,7 +211,7 @@ async function executeViaSkillRuntime(params: {
 }): Promise<ToolExecutionOutcome> {
   const capability = capabilityFromLegacyTool(params.tool);
 
-  const res = await skillRuntimeFetch('/v1/execute', {
+  const res = await capabilityRuntimeFetch('/v1/execute', {
     method: 'POST',
     body: JSON.stringify({
       userId: params.userId,

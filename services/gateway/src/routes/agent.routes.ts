@@ -5,13 +5,10 @@ import { authenticateRequest } from '../utils/auth.middleware';
 import { requireUserId } from '../lib/auth';
 import { sendError } from '../lib/errors';
 import { EventNames, publishEvent } from '@ai-assistant/events';
+import { aiClient } from '../lib/ai-client';
 import { fetchAi } from '../lib/http';
 import { buildUserIntegrationManifest } from '../services/integration-manifest.service';
-import {
-  orchestratorFetch,
-  skillRuntimeFetch,
-  toolRuntimeFetch,
-} from '../lib/runtime-clients';
+import { capabilityRuntimeFetch, toolRuntimeFetch } from '../lib/runtime-clients';
 
 const AgentConfigSchema = z.object({
   agentType: z.enum(['email', 'calendar', 'browser']),
@@ -89,12 +86,12 @@ export async function agentRoutes(fastify: FastifyInstance) {
 
       const probes = await Promise.all([
         probe('tool-runtime', () => toolRuntimeFetch('/health')),
-        probe('skill-runtime', () => skillRuntimeFetch('/health')),
-        probe('cognitive-runtime', () => orchestratorFetch('/health')),
-        probe('ai-runtime-providers', () => fetchAi('/v1/providers/health')),
-        probe('cognitive-diagnostics', () =>
-          orchestratorFetch(`/v1/agent/diagnostics?userId=${encodeURIComponent(userId)}`)
+        probe('capability-runtime', () => capabilityRuntimeFetch('/health')),
+        probe('intelligence', () =>
+          aiClient.fetch(aiClient.url('/health'), { timeoutMs: 2_000 })
         ),
+        probe('ai-runtime-providers', () => fetchAi('/v1/providers/health')),
+        probe('cognitive-diagnostics', () => aiClient.agent.diagnostics(userId)),
       ]);
 
       return reply.send({

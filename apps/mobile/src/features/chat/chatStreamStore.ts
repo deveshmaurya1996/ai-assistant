@@ -1,5 +1,8 @@
 import { create } from 'zustand';
-import { IMAGE_GENERATING_STATUS } from './isImageGenerationTurn';
+import {
+  IMAGE_GENERATING_STATUS,
+  THINKING_STATUS,
+} from './isImageGenerationTurn';
 
 export const PENDING_CHAT_STREAM_KEY = '__pending__';
 
@@ -86,13 +89,16 @@ export const useChatStreamStore = create<ChatStreamState>((set, get) => ({
     set((state) => {
       const prev = state.sessions[sessionKey] ?? emptySession();
       const isImageGenerating = message === IMAGE_GENERATING_STATUS;
+      const hideStatus =
+        isImageGenerating ||
+        message === THINKING_STATUS
       return {
         sessions: {
           ...state.sessions,
           [sessionKey]: bump({
             ...prev,
             isImageGenerating: isImageGenerating || prev.isImageGenerating,
-            statusMessage: isImageGenerating ? null : message,
+            statusMessage: hideStatus ? null : message,
           }),
         },
       };

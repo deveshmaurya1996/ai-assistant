@@ -13,24 +13,6 @@ function confirmCopy(payload: ActionConfirmRequiredPayload): {
   subtitle: string;
   preview?: string;
 } {
-  if (payload.tool === 'notes.create') {
-    const content =
-      typeof payload.args.content === 'string'
-        ? payload.args.content
-        : typeof payload.args.text === 'string'
-          ? payload.args.text
-          : '';
-    const title =
-      typeof payload.args.title === 'string' && payload.args.title.trim()
-        ? payload.args.title.trim()
-        : 'Save note';
-    return {
-      title: 'Save note?',
-      subtitle: title,
-      preview: content || undefined,
-    };
-  }
-
   if (payload.tool.startsWith('whatsapp.')) {
     return {
       title: 'Confirm WhatsApp message',
@@ -68,7 +50,7 @@ export function ActionConfirmSheet({ visible, payload, onConfirm, onCancel }: Pr
             </Pressable>
             <Pressable style={[styles.button, styles.confirm]} onPress={onConfirm}>
               <Text style={styles.buttonText}>
-                {payload.tool === 'notes.create' ? 'Save' : 'Confirm'}
+                Confirm
               </Text>
             </Pressable>
           </View>

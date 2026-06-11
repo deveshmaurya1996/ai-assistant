@@ -15,13 +15,18 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Cognitive Runtime", version="1.0.0")
 
-SKILL_RUNTIME_URL = os.getenv("SKILL_RUNTIME_URL", "http://localhost:3014")
-TOOL_RUNTIME_URL = os.getenv("TOOL_RUNTIME_URL", "http://localhost:3011")
-AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://localhost:8000")
-from env_loader import load_service_env, resolve_public_api_url
+from ai_http import AI_SERVICE_URL, ai_http_client, ai_request_url
+from cognitive_env_loader import (
+    load_service_env,
+    resolve_capability_runtime_url,
+    resolve_public_api_url,
+    resolve_tool_runtime_url,
+)
 
 load_service_env()
 GATEWAY_URL = resolve_public_api_url()
+TOOL_RUNTIME_URL = resolve_tool_runtime_url()
+CAPABILITY_RUNTIME_URL = resolve_capability_runtime_url()
 INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev-internal-token")
 
 MEMORY_STATUS_MESSAGE = os.getenv(
@@ -83,7 +88,16 @@ async def _probe(
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "cognitive-runtime"}
+    embedded = os.getenv("COGNITIVE_EMBEDDED", "").strip().lower() in ("1", "true", "yes")
+    if embedded:
+        return {"status": "ok", "service": "intelligence", "ai": True, "cognitive": True}
+    return {
+        "status": "degraded",
+        "service": "cognitive-runtime",
+        "ai": False,
+        "cognitive": True,
+        "hint": "Start ai-runtime (pnpm dev:ai-runtime), not cognitive-runtime alone",
+    }
 
 
 @app.middleware("http")
@@ -132,13 +146,13 @@ async def agent_diagnostics(user_id: str):
         {"userId": user_id},
         {"X-Internal-Token": INTERNAL_SERVICE_TOKEN},
     )
-    skill_manifest = await _probe(
-        SKILL_RUNTIME_URL,
+    capability_manifest = await _probe(
+        CAPABILITY_RUNTIME_URL,
         "/v1/integrations/manifest",
         {"userId": user_id},
     )
     tool_runtime = await _probe(TOOL_RUNTIME_URL, "/health")
-    skill_runtime = await _probe(SKILL_RUNTIME_URL, "/health")
+    capability_runtime = await _probe(CAPABILITY_RUNTIME_URL, "/health")
     ai_runtime = await _probe(AI_SERVICE_URL, "/health")
 
     return {
@@ -148,9 +162,9 @@ async def agent_diagnostics(user_id: str):
         "manifestPreview": manifest_text[:500] if manifest_text else "",
         "probes": {
             "gatewayManifest": gateway_manifest,
-            "skillManifest": skill_manifest,
+            "capabilityManifest": capability_manifest,
             "toolRuntime": tool_runtime,
-            "skillRuntime": skill_runtime,
+            "capabilityRuntime": capability_runtime,
             "aiRuntime": ai_runtime,
         },
     }
@@ -345,9 +359,9 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
         async def image_stream():
             logger.info("[agent] image fast path intent=%s", image_intent)
             yield _sse_frame("status", {"message": "__image_generating__"})
-            async with httpx.AsyncClient(timeout=300.0) as client:
+            async with ai_http_client(timeout=300.0) as client:
                 res = await client.post(
-                    f"{AI_SERVICE_URL}/v1/image/from-chat",
+                    ai_request_url("/v1/image/from-chat"),
                     json={
                         "query": payload.query,
                         "resolved_attachments": payload.resolved_attachments,
@@ -398,6 +412,7 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
         nonlocal plan, tool_results, manifest_text
         t_stream = time.perf_counter()
         rag_block = ""
+        yield _sse_frame("status", {"message": "__thinking__"})
 
         if route.run_planner:
             yield _sse_frame("status", {"message": "Checking integrations…"})
@@ -441,6 +456,12 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
                 )
                 timings["plan_tools_ms"] = (time.perf_counter() - t_plan) * 1000
                 timings["planner"] = plan.get("planner", "")
+                if plan.get("model_used"):
+                    timings["planner_model"] = plan.get("model_used")
+                from orchestration.types import planner_trace_in_sse
+
+                if planner_trace_in_sse() and plan.get("trace"):
+                    timings["planner_trace"] = plan.get("trace")
 
                 work_items = plan.get("tools") or plan.get("capabilities") or []
                 if work_items and route.run_tools:
@@ -462,22 +483,9 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
                     ]
 
                     if pending_confirm and not payload.confirmed:
-                        for pending in pending_confirm:
-                            if pending.get("tool") == "whatsapp.send_message":
-                                args = pending.setdefault("args", {})
-                                if "@" not in str(args.get("to", "")):
-                                    for done in completed:
-                                        if done.get("tool") != "whatsapp.search_chats":
-                                            continue
-                                        result = done.get("result") or {}
-                                        chats = (
-                                            result.get("chats", [])
-                                            if isinstance(result, dict)
-                                            else []
-                                        )
-                                        if chats:
-                                            args["to"] = chats[0].get("jid", args.get("to"))
-                                            break
+                        from orchestration.contacts import enrich_whatsapp_send_to
+
+                        enrich_whatsapp_send_to(pending_confirm, completed)
 
                         yield _sse_frame(
                             "action_confirm",
@@ -523,7 +531,7 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
                 else manifest_block
             )
 
-        async with httpx.AsyncClient(timeout=ORCHESTRATOR_STREAM_TIMEOUT) as client:
+        async with ai_http_client(timeout=ORCHESTRATOR_STREAM_TIMEOUT) as client:
             tool_context = ""
             if tool_results:
                 from orchestration.tool_results import format_tool_results_for_context
@@ -581,7 +589,7 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
             }
             async with client.stream(
                 "POST",
-                f"{AI_SERVICE_URL}/v1/chat/stream",
+                ai_request_url("/v1/chat/stream"),
                 json=body,
             ) as response:
                 if response.status_code >= 400:
@@ -592,9 +600,16 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
                         response.status_code,
                         snippet,
                     )
+                    hint = ""
+                    if response.status_code == 404:
+                        hint = (
+                            " Start ai-runtime on INTELLIGENCE_UPSTREAM_URL (Tilt: ai-runtime on "
+                            ":8000). cognitive-runtime alone does not expose "
+                            "/v1/chat/stream."
+                        )
                     message = (
                         f"AI service error ({response.status_code}): "
-                        f"{snippet[:200] or 'no body'}"
+                        f"{snippet[:200] or 'no body'}.{hint}"
                     )
                     yield _sse_frame("error", {"message": message})
                     yield _sse_frame("done", {})

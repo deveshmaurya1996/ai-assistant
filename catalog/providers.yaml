@@ -1,0 +1,29 @@
+version: 1
+providers:
+  - id: google
+    name: Google Workspace
+    displayName: Google Workspace (Gmail, Calendar, Drive)
+    authType: oauth2
+    scopes: [gmail, calendar, drive]
+    implementation: GoogleConnector
+    integrationModule: google
+    toolNamespaces: [gmail, calendar, email, drive]
+    enabled: true
+  - id: whatsapp
+    name: WhatsApp
+    displayName: WhatsApp
+    authType: device_link
+    scopes: [messages]
+    implementation: WhatsAppConnector
+    integrationModule: whatsapp
+    toolNamespaces: [whatsapp]
+    enabled: true
+  - id: platform
+    name: Platform
+    displayName: Platform
+    authType: internal
+    scopes: []
+    implementation: null
+    integrationModule: null
+    toolNamespaces: [resources, contacts, reminder, automation, image]
+    enabled: true

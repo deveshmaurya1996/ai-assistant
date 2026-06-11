@@ -5,7 +5,7 @@ load(
     'SERVICE_BUILD_IGNORE',
     'PORTS',
     'port_url',
-    'port_env',
+    'active_port_env',
 )
 
 SERVICE_LABELS = ['services']
@@ -26,7 +26,8 @@ def api():
             'scripts/with-env.mjs',
             '.env',
             'services/gateway',
-            'services/api',
+            'services/tool-runtime',
+            'services/capability-runtime',
             'packages/config',
             'packages/database',
             'packages/auth',
@@ -34,10 +35,10 @@ def api():
             'packages/telemetry',
             'packages/events',
         ],
-        env=port_env(),
+        env=active_port_env(),
         ignore=SERVICE_BUILD_IGNORE,
         allow_parallel=True,
         labels=SERVICE_LABELS,
-        resource_deps=['db-setup', 'redis', 'tool-runtime', 'skill-runtime', 'cognitive-runtime'],
+        resource_deps=['db-setup', 'redis', 'ai-runtime'],
         links=[link(port_url('api'), 'API :' + str(PORTS['api']))],
     )

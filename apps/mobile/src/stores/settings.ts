@@ -37,10 +37,6 @@ export { ASSISTANT_NAME_MAX_LENGTH };
 export const PERSONALITY_PRESETS = ASSISTANT_PERSONALITIES;
 export type PersonalityId = string;
 
-/** @deprecated Use PERSONALITY_PRESETS */
-export const AGENT_PRESETS = ASSISTANT_PERSONALITIES.map((p) => ({ id: p.id, name: p.name }));
-export type AgentId = PersonalityId;
-
 export function formatGenderLabel(gender: PersonalityGender): string {
   return formatPersonalityGender(gender);
 }

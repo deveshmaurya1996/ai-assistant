@@ -1,0 +1,10 @@
+{
+  "id": "calendar",
+  "name": "Google Calendar",
+  "version": "1.0.0",
+  "providerIds": ["google"],
+  "domains": ["calendar"],
+  "description": "List, create, and cancel Google Calendar events",
+  "implementation": "GoogleConnector",
+  "integrationModule": "google"
+}

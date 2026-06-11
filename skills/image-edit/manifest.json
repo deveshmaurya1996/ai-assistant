@@ -1,8 +1,0 @@
-{
-  "id": "image-edit",
-  "name": "Image Edit",
-  "version": "1.0.0",
-  "connector": "files",
-  "capabilities": ["image.edit"],
-  "description": "Generate or edit images via dedicated image models (not chat attachments)"
-}

@@ -3,18 +3,34 @@
   "version": "1.0.0",
   "description": "Dedicated tool execution runtime",
   "main": "dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./routes": {
+      "types": "./dist/routes.d.ts",
+      "default": "./dist/routes.js"
+    },
+    "./tool-adapter": {
+      "types": "./dist/tool-adapter.d.ts",
+      "default": "./dist/tool-adapter.js"
+    },
+    "./executor": {
+      "types": "./dist/executor.d.ts",
+      "default": "./dist/executor.js"
+    }
+  },
   "scripts": {
-    "dev": "node ../../node_modules/typescript/bin/tsc && node dist/index.js",
-    "build": "node ../../node_modules/typescript/bin/tsc",
-    "start": "node dist/index.js"
+    "build": "node ../../node_modules/typescript/bin/tsc"
   },
   "dependencies": {
     "@ai-assistant/config": "workspace:*",
     "@ai-assistant/database": "workspace:*",
     "@ai-assistant/events": "workspace:*",
-    "@ai-assistant/contacts": "workspace:*",
-    "@ai-assistant/integrations": "workspace:*",
-    "@ai-assistant/resources": "workspace:*",
+    "@ai-assistant/integration-runtime": "workspace:*",
+    "@ai-assistant/platform": "workspace:*",
     "@ai-assistant/permissions": "workspace:*",
     "@ai-assistant/tool-schema": "workspace:*",
     "@ai-assistant/types": "workspace:*",

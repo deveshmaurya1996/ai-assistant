@@ -72,4 +72,4 @@ for (const { example, env } of targets) {
 
 console.log('\nLocal dev:  .env + apps/mobile/.env');
 console.log('Production: .env.production (local test) or Render env vars');
-console.log('On Render:  paste from .env.production into each service dashboard');
+console.log('On Render:  paste from .env.production.example into the single web service');

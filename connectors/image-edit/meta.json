@@ -1,0 +1,11 @@
+{
+  "id": "image-edit",
+  "name": "Image Edit",
+  "version": "1.0.0",
+  "providerIds": ["platform"],
+  "domains": ["image"],
+  "alwaysInclude": true,
+  "description": "Generate or edit images via dedicated image models",
+  "implementation": "platform",
+  "integrationModule": null
+}

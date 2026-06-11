@@ -267,8 +267,3 @@ export function tokenizeCode(source: string, language?: string): CodeToken[] {
   if (family === 'json') return tokenizeJson(source);
   return tokenizeWithProfile(source, FAMILY_PROFILES[family]);
 }
-
-/** @deprecated Use formatCodeLanguageLabel for UI; resolveLanguageFamily for tokenizing. */
-export function normalizeCodeLanguage(language?: string): string {
-  return resolveLanguageFamily(language);
-}

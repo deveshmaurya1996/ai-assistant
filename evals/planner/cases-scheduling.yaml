@@ -1,0 +1,19 @@
+- id: scheduling_reminder_detect
+  connected: []
+  query: remind me at 9pm to call mom
+  expect:
+    planner: llm-scheduling-empty
+    tools: []
+
+- id: scheduling_timezone_followup
+  connected: []
+  query: Asia/Kolkata
+  routing_query: Asia/Kolkata
+  chat_history:
+    - role: user
+      content: remind me at 9pm to call mom
+    - role: assistant
+      content: What timezone should I use?
+  expect:
+    planner: llm-scheduling-empty
+    tools: []

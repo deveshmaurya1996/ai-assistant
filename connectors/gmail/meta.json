@@ -1,0 +1,10 @@
+{
+  "id": "gmail",
+  "name": "Gmail",
+  "version": "1.0.0",
+  "providerIds": ["google"],
+  "domains": ["email"],
+  "description": "Read, search, send, reply, draft, and star Gmail messages",
+  "implementation": "GoogleConnector",
+  "integrationModule": "google"
+}

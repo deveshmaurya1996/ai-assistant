@@ -312,6 +312,12 @@ importers:
         specifier: ~6.0.3
         version: 6.0.3
 
+  packages/catalog-codegen:
+    dependencies:
+      yaml:
+        specifier: ^2.8.0
+        version: 2.9.0
+
   packages/config:
     dependencies:
       dotenv:
@@ -325,11 +331,14 @@ importers:
         specifier: ~6.0.3
         version: 6.0.3
 
-  packages/contacts:
+  packages/connectors:
     dependencies:
-      '@ai-assistant/database':
+      '@ai-assistant/capabilities':
         specifier: workspace:*
-        version: link:../database
+        version: link:../capabilities
+      yaml:
+        specifier: ^2.8.0
+        version: 2.9.0
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
@@ -361,22 +370,6 @@ importers:
         version: 6.19.3(typescript@6.0.3)
       typescript:
         specifier: latest
-        version: 6.0.3
-
-  packages/domains:
-    dependencies:
-      '@ai-assistant/capabilities':
-        specifier: workspace:*
-        version: link:../capabilities
-      '@ai-assistant/integrations':
-        specifier: workspace:*
-        version: link:../integrations
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.0
-        version: 22.19.19
-      typescript:
-        specifier: ~6.0.3
         version: 6.0.3
 
   packages/events:
@@ -435,7 +428,7 @@ importers:
         specifier: ~6.0.3
         version: 6.0.3
 
-  packages/integrations:
+  packages/integration-runtime:
     dependencies:
       '@ai-assistant/database':
         specifier: workspace:*
@@ -460,15 +453,6 @@ importers:
         specifier: ~6.0.3
         version: 6.0.3
 
-  packages/memory:
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.0
-        version: 22.19.19
-      typescript:
-        specifier: ~6.0.3
-        version: 6.0.3
-
   packages/permissions:
     dependencies:
       '@ai-assistant/tool-schema':
@@ -485,7 +469,7 @@ importers:
         specifier: ~6.0.3
         version: 6.0.3
 
-  packages/resources:
+  packages/platform:
     dependencies:
       '@ai-assistant/database':
         specifier: workspace:*
@@ -507,19 +491,6 @@ importers:
         specifier: ^4.8.3
         version: 4.8.3
     devDependencies:
-      typescript:
-        specifier: ~6.0.3
-        version: 6.0.3
-
-  packages/skills:
-    dependencies:
-      '@ai-assistant/capabilities':
-        specifier: workspace:*
-        version: link:../capabilities
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.0
-        version: 22.19.19
       typescript:
         specifier: ~6.0.3
         version: 6.0.3
@@ -603,19 +574,47 @@ importers:
         specifier: ~6.0.3
         version: 6.0.3
 
-  services/ai: {}
-
-  services/ai-orchestrator: {}
-
   services/ai-runtime: {}
-
-  services/api: {}
 
   services/browser-runtime:
     dependencies:
       fastify:
         specifier: ^5.8.5
         version: 5.8.5
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.19
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+
+  services/capability-runtime:
+    dependencies:
+      '@ai-assistant/capabilities':
+        specifier: workspace:*
+        version: link:../../packages/capabilities
+      '@ai-assistant/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@ai-assistant/connectors':
+        specifier: workspace:*
+        version: link:../../packages/connectors
+      '@ai-assistant/tool-runtime':
+        specifier: workspace:*
+        version: link:../tool-runtime
+      '@ai-assistant/tool-schema':
+        specifier: workspace:*
+        version: link:../../packages/tool-schema
+      fastify:
+        specifier: ^5.8.5
+        version: 5.8.5
+      prom-client:
+        specifier: ^15.1.3
+        version: 15.1.3
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
@@ -653,9 +652,15 @@ importers:
       '@ai-assistant/capabilities':
         specifier: workspace:*
         version: link:../../packages/capabilities
+      '@ai-assistant/capability-runtime':
+        specifier: workspace:*
+        version: link:../capability-runtime
       '@ai-assistant/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@ai-assistant/connectors':
+        specifier: workspace:*
+        version: link:../../packages/connectors
       '@ai-assistant/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -668,15 +673,18 @@ importers:
       '@ai-assistant/file-processing':
         specifier: workspace:*
         version: link:../../packages/file-processing
-      '@ai-assistant/integrations':
+      '@ai-assistant/integration-runtime':
         specifier: workspace:*
-        version: link:../../packages/integrations
+        version: link:../../packages/integration-runtime
       '@ai-assistant/storage':
         specifier: workspace:*
         version: link:../../packages/storage
       '@ai-assistant/telemetry':
         specifier: workspace:*
         version: link:../../packages/telemetry
+      '@ai-assistant/tool-runtime':
+        specifier: workspace:*
+        version: link:../tool-runtime
       '@ai-assistant/tool-schema':
         specifier: workspace:*
         version: link:../../packages/tool-schema
@@ -719,6 +727,9 @@ importers:
       file-type:
         specifier: ^22.0.1
         version: 22.0.1
+      ioredis:
+        specifier: ^5.6.1
+        version: 5.10.1
       luxon:
         specifier: ^3.6.1
         version: 3.7.2
@@ -754,62 +765,6 @@ importers:
         specifier: ~6.0.3
         version: 6.0.3
 
-  services/ingestion-engine:
-    dependencies:
-      '@ai-assistant/config':
-        specifier: workspace:*
-        version: link:../../packages/config
-      '@ai-assistant/database':
-        specifier: workspace:*
-        version: link:../../packages/database
-      '@ai-assistant/events':
-        specifier: workspace:*
-        version: link:../../packages/events
-      '@ai-assistant/file-processing':
-        specifier: workspace:*
-        version: link:../../packages/file-processing
-      '@ai-assistant/integrations':
-        specifier: workspace:*
-        version: link:../../packages/integrations
-      '@ai-assistant/storage':
-        specifier: workspace:*
-        version: link:../../packages/storage
-      bullmq:
-        specifier: ^5.77.1
-        version: 5.77.1(redis@5.12.1(@opentelemetry/api@1.9.1))
-      fastify:
-        specifier: ^5.8.5
-        version: 5.8.5
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.0
-        version: 22.19.19
-      typescript:
-        specifier: ~6.0.3
-        version: 6.0.3
-
-  services/policy-engine:
-    dependencies:
-      '@ai-assistant/capabilities':
-        specifier: workspace:*
-        version: link:../../packages/capabilities
-      '@ai-assistant/permissions':
-        specifier: workspace:*
-        version: link:../../packages/permissions
-      '@ai-assistant/types':
-        specifier: workspace:*
-        version: link:../../packages/types
-      fastify:
-        specifier: ^5.8.5
-        version: 5.8.5
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.0
-        version: 22.19.19
-      typescript:
-        specifier: ~6.0.3
-        version: 6.0.3
-
   services/reflection-engine:
     dependencies:
       fastify:
@@ -823,60 +778,26 @@ importers:
         specifier: ~6.0.3
         version: 6.0.3
 
-  services/skill-runtime:
-    dependencies:
-      '@ai-assistant/capabilities':
-        specifier: workspace:*
-        version: link:../../packages/capabilities
-      '@ai-assistant/config':
-        specifier: workspace:*
-        version: link:../../packages/config
-      '@ai-assistant/skills':
-        specifier: workspace:*
-        version: link:../../packages/skills
-      '@ai-assistant/tool-schema':
-        specifier: workspace:*
-        version: link:../../packages/tool-schema
-      fastify:
-        specifier: ^5.8.5
-        version: 5.8.5
-      prom-client:
-        specifier: ^15.1.3
-        version: 15.1.3
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.0
-        version: 22.19.19
-      typescript:
-        specifier: ~6.0.3
-        version: 6.0.3
-
   services/tool-runtime:
     dependencies:
       '@ai-assistant/config':
         specifier: workspace:*
         version: link:../../packages/config
-      '@ai-assistant/contacts':
-        specifier: workspace:*
-        version: link:../../packages/contacts
       '@ai-assistant/database':
         specifier: workspace:*
         version: link:../../packages/database
       '@ai-assistant/events':
         specifier: workspace:*
         version: link:../../packages/events
-      '@ai-assistant/integrations':
+      '@ai-assistant/integration-runtime':
         specifier: workspace:*
-        version: link:../../packages/integrations
+        version: link:../../packages/integration-runtime
       '@ai-assistant/permissions':
         specifier: workspace:*
         version: link:../../packages/permissions
-      '@ai-assistant/resources':
+      '@ai-assistant/platform':
         specifier: workspace:*
-        version: link:../../packages/resources
+        version: link:../../packages/platform
       '@ai-assistant/tool-schema':
         specifier: workspace:*
         version: link:../../packages/tool-schema
@@ -901,22 +822,6 @@ importers:
         version: 6.0.3
 
   services/workflow-engine:
-    dependencies:
-      '@ai-assistant/config':
-        specifier: workspace:*
-        version: link:../../packages/config
-      fastify:
-        specifier: ^5.8.5
-        version: 5.8.5
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.0
-        version: 22.19.19
-      typescript:
-        specifier: ~6.0.3
-        version: 6.0.3
-
-  services/world-state:
     dependencies:
       '@ai-assistant/config':
         specifier: workspace:*

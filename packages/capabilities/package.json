@@ -12,9 +12,7 @@
     }
   },
   "scripts": {
-    "build": "node ../../node_modules/typescript/bin/tsc",
-    "generate:manifest": "node scripts/generate-manifest.mjs",
-    "postbuild": "node scripts/generate-manifest.mjs"
+    "build": "node ../../node_modules/typescript/bin/tsc"
   },
   "dependencies": {
     "@ai-assistant/tool-schema": "workspace:*"

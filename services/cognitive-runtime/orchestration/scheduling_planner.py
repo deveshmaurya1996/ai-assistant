@@ -14,9 +14,11 @@ except ImportError:
 
 import httpx
 
-from env_loader import resolve_public_api_url
+from ai_http import ai_http_client, ai_request_url
+from cognitive_env_loader import resolve_public_api_url
 from orchestration.platform_capabilities import platform_capabilities_block
 from orchestration.scheduling_relative_time import resolve_one_shot_next_fire_at
+from orchestration.llm.json_parse import parse_llm_json as _parse_json
 from orchestration.scheduling_timezone import (
     resolve_effective_timezone,
     resolve_timezone_hint,
@@ -24,7 +26,6 @@ from orchestration.scheduling_timezone import (
 
 logger = logging.getLogger(__name__)
 
-AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://localhost:8000")
 GATEWAY_URL = resolve_public_api_url()
 INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev-internal-token")
 SCHEDULING_TIMEOUT = float(os.getenv("SCHEDULING_PLANNER_TIMEOUT", "20"))
@@ -42,37 +43,12 @@ _SCHEDULING_TOOLS = frozenset(
 )
 
 
-def _parse_json(raw: str) -> Dict[str, Any]:
-    text = (raw or "").strip()
-    if not text:
-        return {}
-
-    fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
-    if fence:
-        text = fence.group(1).strip()
-
-    candidates = [text]
-    obj_match = re.search(r"\{[\s\S]*\}", text)
-    if obj_match and obj_match.group(0) != text:
-        candidates.append(obj_match.group(0))
-
-    for candidate in candidates:
-        try:
-            data = json.loads(candidate)
-            if isinstance(data, dict):
-                return data
-        except Exception:
-            continue
-    return {}
-
-
 def _coerce_reminder_from_alt_shape(
     parsed: Dict[str, Any],
     *,
     user_prompt: str,
     effective_tz: Optional[str],
 ) -> List[Dict[str, Any]]:
-    """Handle models that return {type: reminder, content: {date, time}} instead of actions."""
     if str(parsed.get("type") or "").lower() != "reminder":
         return []
     content = parsed.get("content")
@@ -281,60 +257,18 @@ def _build_system_prompt(
     pending_block: str,
     automations_block: str,
 ) -> str:
+    from orchestration.prompt_loader import load_scheduling_system_prompt
+
     tz_note = (
         f"Device timezone: {device_timezone}. Use this IANA timezone in all schedule args unless the user explicitly overrides."
         if device_timezone
         else "Device timezone was not provided — ask for timezone via clarification if needed."
     )
-    caps = platform_capabilities_block()
-    return (
-        "You are the scheduling planner for a personal AI assistant.\n"
-        "Decide whether the user wants to create/update/cancel reminders, list reminder status, "
-        "or create a recurring inbox digest automation.\n"
-        f"Current time (device timezone): {now_iso}\n"
-        f"{tz_note}\n\n"
-        f"User pending reminders:\n{pending_block}\n\n"
-        f"User active automations:\n{automations_block}\n\n"
-        f"{caps}\n\n"
-        "CRITICAL: respond with ONLY a single JSON object — no markdown, no prose.\n"
-        "Schema:\n"
-        '{"actions":[{"tool":"reminder.create","args":{...}}],"clarification":null,"schedulingIntent":false}\n'
-        "Supported tools: reminder.create, reminder.update, reminder.cancel, reminder.list, "
-        "automation.create, automation.update, automation.cancel\n\n"
-        "DECISION RULES — reminder vs automation:\n"
-        "- reminder.create: user wants a NOTIFICATION ONLY at a time (call mom, drink water, take medicine). "
-        "No agent work, no inbox checks, no recurring tasks that fetch data.\n"
-        "- automation.create: user wants the assistant to DO WORK on a schedule and POST RESULTS in chat "
-        "(check inbox, summarize email, monitor something, digest, recurring task reports).\n"
-        "- NEVER use reminder.create for inbox/digest/monitor/check-every-X-hours requests.\n"
-        "- NEVER use automation.create for simple remind-me-at-9pm style nudges.\n\n"
-        "For reminder.create / reminder.update you MUST supply structured args:\n"
-        "- title: short human label\n"
-        "- userPrompt: original user scheduling text\n"
-        "- nextFireAt: ISO 8601 with offset (e.g. 2026-06-06T21:00:00+05:30)\n"
-        "- recurrence: NONE | HOURLY | DAILY | WEEKLY | MONTHLY | CUSTOM\n"
-        "- cronExpression: required when recurring (e.g. hourly window 9 AM–5 PM → 0 9-17 * * *)\n"
-        "- timezone: IANA timezone string\n\n"
-        "For automation.create supply: cronExpression, timezone, query (plain English describing what to check — "
-        "NEVER capability or tool IDs like email.list_unread), optional name/pushTitle.\n"
-        "For automation.update / automation.cancel match by name or automationId from active automations list.\n"
-        "For reminder.list use when user asks how long until next reminder or wants status.\n"
-        "For reminder.cancel / reminder.update match by title or reminderId from pending list.\n\n"
-        "Examples:\n"
-        '- "remind me at 9pm to call mom" → reminder.create with nextFireAt tonight 9pm, recurrence NONE\n'
-        '- "every hour" / "every hour from 9 AM to 5 PM" → CUSTOM + cron 0 * * * * or 0 9-17 * * *\n'
-        '- user confirms "yes set it" after clarification → merge full history into one reminder.create args\n'
-        '- user replies "ist" or "Asia/Kolkata" after timezone question → merge history and reminder.create\n'
-        '- "check my inbox every morning at 8" → automation.create (NOT reminder.create)\n'
-        '- "check my inbox every 2 hours" → automation.create with cronExpression every 2 hours\n'
-        '- "how long until my next water reminder?" → reminder.list with title filter "water"\n'
-        '- "pause my inbox digest" → automation.update with isActive false, match name\n'
-        '- "delete the inbox digest automation" → automation.cancel by name\n\n'
-        "If critical info is missing (time, timezone, recurrence), set clarification to ONE short question "
-        "and actions to [].\n"
-        "If the message is NOT about scheduling/notifications/automations, return actions: [] and clarification: null.\n"
-        'Set schedulingIntent:true when the user is trying to schedule but you cannot produce actions.\n'
-        "Never use calendar.create_event for push reminders."
+    return load_scheduling_system_prompt(
+        now_iso=now_iso,
+        timezone_note=tz_note,
+        pending_block=pending_block,
+        automations_block=automations_block,
     )
 
 
@@ -349,6 +283,7 @@ _SCHEDULING_SIGNAL = re.compile(
 
 _AUTOMATION_SIGNAL = re.compile(
     r"\b(inbox|digest|check\s+my|monitor|summarize\s+my|scan\s+my|"
+    r"every\s+(?:\d+\s+)?(?:hours?|morning|day|evening)\b|"
     r"every\s+(?:\d+\s+)?hours?\s+(?:for|to\s+check)|automation)\b",
     re.IGNORECASE,
 )
@@ -413,14 +348,18 @@ def _looks_like_scheduling_query(
     query: str,
     chat_history: Optional[List[Dict[str, str]]] = None,
 ) -> bool:
-    if _SCHEDULING_SIGNAL.search(query or ""):
+    if _SCHEDULING_SIGNAL.search(query or "") or _AUTOMATION_SIGNAL.search(query or ""):
         return True
     for msg in reversed(chat_history or []):
-        if msg.get("role") == "user" and _SCHEDULING_SIGNAL.search(
-            str(msg.get("content") or "")
-        ):
+        if msg.get("role") != "user":
+            continue
+        content = str(msg.get("content") or "")
+        if _SCHEDULING_SIGNAL.search(content) or _AUTOMATION_SIGNAL.search(content):
             return True
     return False
+
+
+looks_like_scheduling_query = _looks_like_scheduling_query
 
 
 def should_run_scheduling_planner(
@@ -523,9 +462,9 @@ async def plan_scheduling_actions(
 
     raw_text = ""
     try:
-        async with httpx.AsyncClient(timeout=SCHEDULING_TIMEOUT) as client:
+        async with ai_http_client(timeout=SCHEDULING_TIMEOUT) as client:
             res = await client.post(
-                f"{AI_SERVICE_URL}/v1/chat/complete",
+                ai_request_url("/v1/chat/complete"),
                 json={
                     "query": f"{user_content}\n\nReturn ONLY valid JSON:",
                     "rag_enabled": False,

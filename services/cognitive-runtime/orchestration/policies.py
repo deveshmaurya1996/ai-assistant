@@ -1,4 +1,4 @@
-"""AI safety — hallucinated tools, injection, dangerous chains."""
+
 import re
 from typing import Any, Dict, List
 

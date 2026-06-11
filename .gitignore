@@ -23,16 +23,13 @@ packages/database/prisma/.schema.staging.prisma
 services/whatsapp-bridge/data/
 data/uploads/
 data/wa-auth/
-services/api/data/wa-auth/
 services/gateway/data/wa-auth/
+services/gateway/data/uploads/
+
+services/ai-runtime/**/__pycache__/
 
 packages/database/prisma/dev.db
 packages/database/prisma/dev.db-journal
-
-services/ai/venv/
-services/ai/__pycache__/
-services/ai/**/__pycache__/
-services/ai/qdrant_db/
 
 *.pyc
 .pytest_cache/

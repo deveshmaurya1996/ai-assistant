@@ -88,7 +88,7 @@ export async function ensureDocker(options = {}) {
 
   if (!startDockerDesktop()) {
     throw new Error(
-      'Could not start Docker Desktop automatically. Start it manually, then run pnpm tilt:up again.\n' +
+      'Could not start Docker Desktop automatically. Start it manually, then run pnpm dev again.\n' +
         'On Windows, set DOCKER_DESKTOP_PATH to your Docker Desktop.exe if it is installed elsewhere.',
     );
   }
@@ -109,6 +109,6 @@ export async function ensureDocker(options = {}) {
   process.stdout.write('\n');
   throw new Error(
     `Docker did not become ready within ${Math.round(timeoutMs / 1000)}s. ` +
-      'Open Docker Desktop, wait until it shows "running", then run pnpm tilt:up again.',
+      'Open Docker Desktop, wait until it shows "running", then run pnpm dev again.',
   );
 }
