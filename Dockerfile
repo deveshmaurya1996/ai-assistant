@@ -27,25 +27,7 @@ COPY --from=node_deps /app/node_modules ./node_modules
 COPY --from=node_deps /app/patches ./patches
 COPY . .
 RUN pnpm catalog:generate && pnpm catalog:validate \
- && pnpm exec turbo run build \
-    --filter=@ai-assistant/config \
-    --filter=@ai-assistant/types \
-    --filter=@ai-assistant/telemetry \
-    --filter=@ai-assistant/events \
-    --filter=@ai-assistant/tool-schema \
-    --filter=@ai-assistant/permissions \
-    --filter=@ai-assistant/capabilities \
-    --filter=@ai-assistant/connectors \
-    --filter=@ai-assistant/platform \
-    --filter=@ai-assistant/workflows \
-    --filter=@ai-assistant/integration-runtime \
-    --filter=@ai-assistant/feature-flags \
-    --filter=@ai-assistant/database \
-    --filter=@ai-assistant/auth \
-    --filter=@ai-assistant/gateway \
-    --filter=@ai-assistant/sdk \
-    --filter=@ai-assistant/tool-runtime \
-    --filter=@ai-assistant/capability-runtime
+ && pnpm exec turbo run build --filter=@ai-assistant/gateway...
 
 FROM python:3.11-slim-bookworm AS python_deps
 WORKDIR /app
