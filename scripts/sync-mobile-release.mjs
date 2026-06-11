@@ -26,7 +26,9 @@ function readManifest() {
 
 function parseAppConfig() {
   const src = readFileSync(appConfigPath, 'utf8');
-  const version = src.match(/^\s*version:\s*['"]([^'"]+)['"]/m)?.[1];
+  const version =
+    src.match(/const\s+APP_VERSION\s*=\s*['"]([^'"]+)['"]/)?.[1] ??
+    src.match(/^\s*version:\s*['"]([^'"]+)['"]/m)?.[1];
   const versionCode = src.match(/versionCode:\s*(\d+)/)?.[1];
   if (!version) throw new Error('Could not parse version from app.config.ts');
   return {

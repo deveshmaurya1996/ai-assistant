@@ -16,7 +16,7 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://ai-assistant-462r.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://ai-assistant-v1-2jli.onrender.com"
       }
     },
     "production": {
@@ -26,7 +26,7 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://ai-assistant-462r.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://ai-assistant-v1-2jli.onrender.com"
       }
     }
   },
