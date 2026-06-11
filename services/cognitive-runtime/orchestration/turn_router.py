@@ -16,8 +16,8 @@ from orchestration.context import (
 )
 from orchestration.attachment_intent import attachment_turn_needs_tools
 from orchestration.image_intent import classify_image_intent
-from orchestration.planner import is_likely_tool_query
-from orchestration.scheduling_planner import _looks_like_scheduling_query
+from orchestration.scheduling_planner import looks_like_scheduling_query
+from orchestration.signals import is_likely_tool_query
 
 
 class TurnIntent(str, Enum):
@@ -149,7 +149,7 @@ def classify_turn(
             history_limit=history_limit,
         )
 
-    if _looks_like_scheduling_query(route_q, history):
+    if looks_like_scheduling_query(route_q, history):
         return TurnRoute(
             intent=TurnIntent.TOOL,
             stream_task="auto",

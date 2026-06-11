@@ -2,7 +2,7 @@ import { Queue, Worker } from 'bullmq';
 import { config } from '@ai-assistant/config';
 import { prisma, Prisma } from '@ai-assistant/database';
 import { WorkflowSchema, executeWorkflow, type WorkflowAction } from '@ai-assistant/workflows';
-import { toolRuntimeFetch, skillRuntimeFetch } from '../lib/runtime-clients';
+import { capabilityRuntimeFetch, toolRuntimeFetch } from '../lib/runtime-clients';
 
 let workflowQueue: Queue | null = null;
 let workflowWorker: Worker | null = null;
@@ -74,7 +74,7 @@ export function startWorkflowWorker(): Worker | null {
               provider?: string;
             };
             if (capAction.capability) {
-              const res = await skillRuntimeFetch('/v1/execute', {
+              const res = await capabilityRuntimeFetch('/v1/execute', {
                 method: 'POST',
                 body: JSON.stringify({
                   userId: ctx.userId,
@@ -112,7 +112,10 @@ export function startWorkflowWorker(): Worker | null {
           },
         });
       },
-      { connection: getConnection() }
+      {
+        connection: getConnection(),
+        concurrency: config.workflowConcurrency,
+      }
     );
     console.log('[workflow-worker] started');
     return workflowWorker;
@@ -120,4 +123,11 @@ export function startWorkflowWorker(): Worker | null {
     console.warn('[workflow-worker] disabled:', err);
     return null;
   }
+}
+
+export async function closeWorkflowWorker(): Promise<void> {
+  await workflowWorker?.close();
+  await workflowQueue?.close();
+  workflowWorker = null;
+  workflowQueue = null;
 }

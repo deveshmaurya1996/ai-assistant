@@ -1,26 +1,22 @@
 import pytest
 
-from orchestration.planner import (
-    _capability_allowed,
-    _filter_caps_for_providers,
-    _heuristic_connected_apps_query,
-    _is_connected_apps_query,
-    is_likely_tool_query,
-    plan_tools,
-)
+from orchestration.capability_llm import _capability_allowed
+from orchestration.heuristics.connected_apps import heuristic_connected_apps_query
+from orchestration.integration_intent import is_connected_apps_query
+from orchestration.plan_helpers import filter_caps_for_providers
+from orchestration.planner import is_likely_tool_query, plan_tools
 
 
 def test_capability_allowed_requires_manifest_cap():
     caps = {"messaging.list_unread"}
-    connected = {"whatsapp", "google"}
-    assert _capability_allowed("messaging.list_unread", "whatsapp", caps, connected)
-    assert not _capability_allowed("email.list_unread", "google", caps, connected)
+    assert _capability_allowed("messaging.list_unread", caps)
+    assert not _capability_allowed("email.list_unread", caps)
 
 
 def test_filter_caps_for_providers_respects_healthy_set():
     caps = {"messaging.list_unread", "email.list_unread", "resources.search"}
     healthy = {"whatsapp"}
-    filtered = _filter_caps_for_providers(caps, healthy)
+    filtered = filter_caps_for_providers(caps, healthy)
     assert "messaging.list_unread" in filtered
     assert "email.list_unread" not in filtered
     assert "resources.search" in filtered
@@ -28,7 +24,7 @@ def test_filter_caps_for_providers_respects_healthy_set():
 
 def test_filter_caps_empty_when_no_healthy_providers():
     caps = {"messaging.list_unread"}
-    assert _filter_caps_for_providers(caps, set()) == set()
+    assert filter_caps_for_providers(caps, set()) == set()
 
 
 @pytest.mark.parametrize(
@@ -40,7 +36,7 @@ def test_filter_caps_empty_when_no_healthy_providers():
     ],
 )
 def test_is_connected_apps_query(query):
-    assert _is_connected_apps_query(query)
+    assert is_connected_apps_query(query)
 
 
 def test_is_likely_tool_query_catch_up_phrases():
@@ -50,7 +46,7 @@ def test_is_likely_tool_query_catch_up_phrases():
 
 
 def test_heuristic_connected_apps_query():
-    assert _heuristic_connected_apps_query("what apps are connected")
+    assert heuristic_connected_apps_query("what apps are connected")
 
 
 @pytest.mark.asyncio
@@ -68,6 +64,7 @@ async def test_plan_tools_connected_apps_returns_no_tools():
     assert result["planner"] == "connected-apps-info"
     assert result["tools"] == []
     assert result["capabilities"] == []
+    assert "trace" in result
 
 
 @pytest.mark.asyncio
@@ -242,6 +239,38 @@ async def test_plan_tools_inbox_plans_email_and_whatsapp_when_connected():
     tool_names = [t.get("tool") for t in result["tools"]]
     assert "whatsapp.list_unread" in tool_names
     assert "email.list_unread" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_plan_tools_calendar_cancel_lists_before_cancel():
+    result = await plan_tools(
+        "cancel my meeting with Sarah tomorrow",
+        "Ready for AI: google.",
+        "user-1",
+        manifest_caps={"calendar.list_upcoming", "calendar.cancel_event"},
+        manifest_connections=[{"id": "google_user-1", "providerId": "google"}],
+        manifest_connection_states=[{"providerId": "google", "state": "ready"}],
+    )
+    assert result["planner"] == "heuristic"
+    tool_names = [t.get("tool") for t in result["tools"]]
+    assert "calendar.list_upcoming" in tool_names
+    assert "calendar.cancel_event" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_plan_tools_drive_read_plans_search_and_content():
+    result = await plan_tools(
+        "summarize my budget spreadsheet in google drive",
+        "Ready for AI: google.",
+        "user-1",
+        manifest_caps={"drive.search", "drive.get_content"},
+        manifest_connections=[{"id": "google_user-1", "providerId": "google"}],
+        manifest_connection_states=[{"providerId": "google", "state": "ready"}],
+    )
+    assert result["planner"] == "heuristic"
+    tool_names = [t.get("tool") for t in result["tools"]]
+    assert "drive.search" in tool_names
+    assert "drive.get_content" in tool_names
 
 
 @pytest.mark.asyncio

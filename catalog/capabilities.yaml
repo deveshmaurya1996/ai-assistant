@@ -1,0 +1,347 @@
+version: 1
+capabilities:
+  - id: messaging.list_unread
+    domain: messaging
+    description: List unread WhatsApp (or messaging) conversations with message previews
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: true
+    resultSchema: MessagingUnreadList
+    bindings:
+      - providerId: whatsapp
+        tool: whatsapp.list_unread
+        adapterAction: list_unread
+        permissions:
+          - whatsapp.read
+  - id: messaging.read_chat
+    domain: messaging
+    description: Read recent messages in a chat conversation
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: true
+    resultSchema: MessagingConversation
+    bindings:
+      - providerId: whatsapp
+        tool: whatsapp.read_chat
+        adapterAction: read_chat
+        permissions:
+          - whatsapp.read
+  - id: messaging.send_message
+    domain: messaging
+    description: Send an instant message
+    risk: high
+    requiresConfirmation: true
+    plannerVisible: true
+    resultSchema: MessagingSendResult
+    bindings:
+      - providerId: whatsapp
+        tool: whatsapp.send_message
+        adapterAction: send_message
+        permissions:
+          - whatsapp.send
+  - id: email.list_unread
+    domain: email
+    description: List unread emails with subject and preview
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: true
+    resultSchema: EmailUnreadList
+    bindings:
+      - providerId: google
+        tool: email.list_unread
+        adapterAction: list_unread
+        permissions:
+          - gmail.read
+  - id: email.read_email
+    domain: email
+    description: Read a single email by id or the latest unread
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: true
+    resultSchema: EmailMessage
+    bindings:
+      - providerId: google
+        tool: email.read_email
+        adapterAction: read_email
+        permissions:
+          - gmail.read
+  - id: email.send_email
+    domain: email
+    description: Send an email
+    risk: high
+    requiresConfirmation: true
+    plannerVisible: true
+    resultSchema: EmailSendResult
+    bindings:
+      - providerId: google
+        tool: email.send_email
+        adapterAction: send_email
+        permissions:
+          - gmail.send
+  - id: email.search
+    domain: email
+    description: Search Gmail by query (from, subject, keywords)
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: true
+    resultSchema: EmailSearchResult
+    bindings:
+      - providerId: google
+        tool: email.search
+        adapterAction: search_email
+        permissions:
+          - gmail.read
+  - id: email.reply_email
+    domain: email
+    description: Reply to an email in the same thread
+    risk: high
+    requiresConfirmation: true
+    plannerVisible: true
+    resultSchema: EmailReplyResult
+    bindings:
+      - providerId: google
+        tool: email.reply_email
+        adapterAction: reply_email
+        permissions:
+          - gmail.send
+  - id: email.compose_draft
+    domain: email
+    description: Compose and save an email draft without sending
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: true
+    resultSchema: EmailDraftResult
+    bindings:
+      - providerId: google
+        tool: email.compose_draft
+        adapterAction: compose_draft
+        permissions:
+          - gmail.compose
+  - id: email.draft_reply
+    domain: email
+    description: Save a reply draft without sending
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: true
+    resultSchema: EmailDraftResult
+    bindings:
+      - providerId: google
+        tool: email.draft_reply
+        adapterAction: draft_reply
+        permissions:
+          - gmail.compose
+  - id: email.mark_starred
+    domain: email
+    description: Star or unstar an email
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: true
+    resultSchema: EmailStarResult
+    bindings:
+      - providerId: google
+        tool: email.mark_starred
+        adapterAction: mark_starred
+        permissions:
+          - gmail.modify
+  - id: calendar.list_upcoming
+    domain: calendar
+    description: List upcoming calendar events
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: true
+    resultSchema: CalendarEventList
+    bindings:
+      - providerId: google
+        tool: calendar.list_upcoming
+        adapterAction: list_upcoming
+        permissions:
+          - calendar.read
+  - id: calendar.create_event
+    domain: calendar
+    description: Create a Google Calendar event
+    risk: high
+    requiresConfirmation: true
+    plannerVisible: true
+    resultSchema: CalendarCreateResult
+    bindings:
+      - providerId: google
+        tool: calendar.create_event
+        adapterAction: create_event
+        permissions:
+          - calendar.write
+  - id: calendar.cancel_event
+    domain: calendar
+    description: Cancel a calendar event
+    risk: high
+    requiresConfirmation: true
+    plannerVisible: true
+    resultSchema: CalendarCancelResult
+    bindings:
+      - providerId: google
+        tool: calendar.cancel_event
+        adapterAction: cancel_event
+        permissions:
+          - calendar.write
+  - id: drive.search
+    domain: files
+    description: Search Google Drive by file name or content
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: true
+    resultSchema: DriveSearchResult
+    bindings:
+      - providerId: google
+        tool: drive.search
+        adapterAction: search_drive
+        permissions:
+          - drive.read
+  - id: drive.get_content
+    domain: files
+    description: Read a Google Drive file and return text for summarization
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: true
+    resultSchema: DriveContentResult
+    bindings:
+      - providerId: google
+        tool: drive.get_content
+        adapterAction: read_drive_file
+        permissions:
+          - drive.read
+  - id: messaging.search_messages
+    domain: messaging
+    description: Search stored WhatsApp message history
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: true
+    resultSchema: MessagingSearchResult
+    bindings:
+      - providerId: whatsapp
+        tool: whatsapp.search_messages
+        adapterAction: search_messages
+        permissions:
+          - whatsapp.read
+  - id: messaging.search_chats
+    domain: messaging
+    description: Search WhatsApp chats by contact name or phone number
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: true
+    resultSchema: MessagingChatSearchResult
+    bindings:
+      - providerId: whatsapp
+        tool: whatsapp.search_chats
+        adapterAction: search_chats
+        permissions:
+          - whatsapp.read
+  - id: resources.search
+    domain: files
+    description: Search across WhatsApp, email index, and Google Drive
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: true
+    resultSchema: ResourceSearchResult
+    bindings:
+      - providerId: platform
+        tool: resources.search
+        adapterAction: search
+  - id: contacts.resolve_person
+    domain: contacts
+    description: Resolve a person name to preferred messaging or email address
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: false
+    resultSchema: ContactResolveResult
+    bindings:
+      - providerId: platform
+        tool: contacts.resolve
+        adapterAction: resolve
+  - id: communication.email.search
+    domain: email
+    description: Search email (legacy)
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: false
+    resultSchema: Legacy
+    bindings:
+      - providerId: google
+        tool: gmail.search
+        adapterAction: search
+        permissions:
+          - gmail.read
+  - id: communication.email.send
+    domain: email
+    description: Send email (legacy)
+    risk: high
+    requiresConfirmation: true
+    plannerVisible: false
+    resultSchema: Legacy
+    bindings:
+      - providerId: google
+        tool: gmail.send
+        adapterAction: send
+        permissions:
+          - gmail.send
+  - id: communication.message.send
+    domain: messaging
+    description: Send message (legacy)
+    risk: high
+    requiresConfirmation: true
+    plannerVisible: false
+    resultSchema: Legacy
+    bindings:
+      - providerId: whatsapp
+        tool: whatsapp.send_message
+        adapterAction: send_message
+        permissions:
+          - whatsapp.send
+  - id: communication.chat.search
+    domain: messaging
+    description: Search chats (legacy)
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: true
+    resultSchema: Legacy
+    bindings:
+      - providerId: whatsapp
+        tool: whatsapp.search_chats
+        adapterAction: search_chats
+        permissions:
+          - whatsapp.read
+  - id: productivity.calendar.create
+    domain: calendar
+    description: Create event (legacy)
+    risk: high
+    requiresConfirmation: true
+    plannerVisible: false
+    resultSchema: Legacy
+    bindings:
+      - providerId: google
+        tool: calendar.create_event
+        adapterAction: create_event
+        permissions:
+          - calendar.write
+  - id: productivity.calendar.list
+    domain: calendar
+    description: List events (legacy)
+    risk: low
+    requiresConfirmation: false
+    plannerVisible: false
+    resultSchema: Legacy
+    bindings:
+      - providerId: google
+        tool: calendar.list
+        adapterAction: list
+        permissions:
+          - calendar.read
+  - id: image.edit
+    domain: image
+    description: Generate or edit an image from a text prompt (optional source image)
+    risk: medium
+    requiresConfirmation: true
+    plannerVisible: true
+    resultSchema: ImageEditResult
+    bindings:
+      - providerId: platform
+        tool: image.edit
+        adapterAction: edit_image

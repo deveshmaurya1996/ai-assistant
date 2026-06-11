@@ -10,11 +10,11 @@ import httpx
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from env_loader import load_service_env
+from cognitive_env_loader import load_service_env
 
 load_service_env()
 
-COGNITIVE = os.getenv("COGNITIVE_RUNTIME_URL", "http://localhost:3013")
+COGNITIVE = os.getenv("INTELLIGENCE_UPSTREAM_URL", "http://127.0.0.1:8000")
 GATEWAY = os.getenv("API_PUBLIC_URL", "http://localhost:3000")
 USER_ID = os.getenv("E2E_USER_ID", "0aZyi8WK7UHdA2rVCRgxul38YVvdWTK9")
 TZ = "Asia/Kolkata"

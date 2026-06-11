@@ -37,9 +37,8 @@ Backend must be running before you use the app (API on **3000**, AI on **8000**)
 ### 1. Monorepo install (from repo root)
 
 ```bash
-pnpm env:setup          # copies .env.example → .env (root + packages)
-pnpm install
-pnpm docker:up
+pnpm install            # creates .env files, builds workspace, validates connectors/planner
+pnpm docker up
 pnpm db:migrate
 ```
 
@@ -158,13 +157,13 @@ Use **four terminals** from the repo root (or combine API + AI if you prefer).
 ### Terminal 1 — Infrastructure
 
 ```bash
-pnpm docker:up
+pnpm docker up
 ```
 
 ### Terminal 2 — API (port 3000)
 
 ```bash
-pnpm dev:api
+pnpm dev:gateway
 ```
 
 Check: http://localhost:3000/health → `{"status":"ok","service":"api"}`
@@ -188,7 +187,7 @@ Minimum for classic voice: **OpenAI or Pollinations** for STT+TTS, plus a chat k
 
 **Troubleshooting — voice does nothing:**
 
-1. `pnpm dev:api` and `pnpm dev:ai` running
+1. `pnpm dev:gateway` and `pnpm dev:ai-runtime-runtime` running
 2. Root `.env` has at least one of `OPENAI_API_KEY`, `POLLINATIONS_API_KEY`, `GEMINI_API_KEY`
 3. `apps/mobile/.env` → `EXPO_PUBLIC_API_URL=http://localhost:3000` (or your LAN IP)
 4. Custom **dev build** (not Expo Go) for the overlay native module
@@ -222,7 +221,7 @@ pnpm mobile:android
 ### Terminal 3 — AI service (port 8000, optional for chat/voice)
 
 ```bash
-pnpm dev:ai
+pnpm dev:ai-runtime
 ```
 
 ### Terminal 4 — Metro + open on Android
@@ -431,7 +430,7 @@ Config lives in [`app.config.ts`](app.config.ts) and [`eas.json`](eas.json). Run
 From repo root:
 
 ```bash
-pnpm mobile:eas:build:android
+pnpm mobile:eas build
 ```
 
 Or from `apps/mobile`: `pnpm eas:build:android:prod` (AAB, `production` channel).
@@ -446,7 +445,7 @@ eas submit -p android --profile production
 ### JS-only changes (OTA, no reinstall)
 
 ```bash
-pnpm mobile:eas:update
+pnpm mobile:eas update
 # or: cd apps/mobile && eas update --channel production --message "your message"
 ```
 
@@ -455,7 +454,7 @@ Production builds check for updates on launch and reload automatically.
 ### Native changes (permissions, native modules, SDK)
 
 1. Bump `version` in `app.config.ts` (EAS `autoIncrement` bumps Android `versionCode` on cloud builds).
-2. `pnpm mobile:eas:build:android`
+2. `pnpm mobile:eas build`
 3. Commit the updated [`release-manifest.json`](release-manifest.json) (auto-written after EAS build) and redeploy the gateway so `/mobile/version` picks up the new minimums.
 
 To **force** older native installs to update, run after a release build:

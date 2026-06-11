@@ -15,6 +15,7 @@ import {
   THINKING_FUNNY_AFTER_MS,
   THINKING_PHRASE_INTERVAL_MS,
 } from '@/features/chat/buildThinkingPhrases';
+import { THINKING_STATUS } from '@/features/chat/isImageGenerationTurn';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/tokens';
 
@@ -43,16 +44,21 @@ export function ChatThinkingIndicator({
   const labelOpacity = useSharedValue(0.7);
   const enterOpacity = useSharedValue(0);
 
+  const statusOverrideText =
+    statusOverride?.trim() && statusOverride.trim() !== THINKING_STATUS
+      ? statusOverride.trim()
+      : undefined;
+
   useEffect(() => {
-    if (statusOverride?.trim()) {
-      setStatusText(statusOverride.trim());
+    if (statusOverrideText) {
+      setStatusText(statusOverrideText);
       return;
     }
     startedAt.current = Date.now();
     phraseIndex.current = 0;
     recentFunny.current.clear();
     setStatusText(phrases[0] ?? 'Thinking');
-  }, [phrases, userMessage, statusOverride]);
+  }, [phrases, userMessage, statusOverrideText]);
 
   useEffect(() => {
     enterOpacity.value = 0;
@@ -88,7 +94,7 @@ export function ChatThinkingIndicator({
   }, [scaleY, translateY]);
 
   useEffect(() => {
-    if (statusOverride?.trim()) return;
+    if (statusOverrideText) return;
     const id = setInterval(() => {
       const elapsed = Date.now() - startedAt.current;
 
@@ -104,7 +110,7 @@ export function ChatThinkingIndicator({
     }, THINKING_PHRASE_INTERVAL_MS);
 
     return () => clearInterval(id);
-  }, [phrases, statusOverride]);
+  }, [phrases, statusOverrideText]);
 
   useEffect(() => {
     labelOpacity.value = withRepeat(

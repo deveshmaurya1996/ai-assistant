@@ -3,11 +3,6 @@ import { config } from '@ai-assistant/config';
 
 const PORT = parseInt(process.env.WORKFLOW_ENGINE_PORT ?? '3020', 10);
 
-/**
- * Temporal worker entrypoint (Phase 3).
- * Set TEMPORAL_ADDRESS and TEMPORAL_NAMESPACE to enable a real worker.
- * Until then, exposes health and workflow registration stubs.
- */
 async function main() {
   const app = Fastify({ logger: true });
   const temporalAddress = process.env.TEMPORAL_ADDRESS ?? 'localhost:7233';
@@ -18,7 +13,7 @@ async function main() {
     service: 'workflow-engine',
     temporal: temporalEnabled ? 'configured' : 'stub',
     temporalAddress,
-    skillRuntimeUrl: config.skillRuntimeUrl,
+    capabilityRuntimeUrl: config.capabilityRuntimeUrl,
   }));
 
   app.post('/v1/workflows/register', async (request) => {

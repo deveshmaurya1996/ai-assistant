@@ -29,6 +29,8 @@ export {
   buildIntegrationManifest,
   capabilityIdsFromManifest,
   formatManifestForPlanner,
+  KNOWN_PROVIDER_IDS,
+  PROVIDER_DISPLAY,
   type ConnectedProviderInfo,
   type ConnectionStateKind,
   type IntegrationManifest,

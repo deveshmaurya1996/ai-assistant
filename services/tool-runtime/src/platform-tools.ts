@@ -1,11 +1,12 @@
-import { contactDomainResolvePerson } from '@ai-assistant/contacts';
-import { getConnector, type ToolResult } from '@ai-assistant/integrations';
+import { getConnector, type ToolResult } from '@ai-assistant/integration-runtime';
 import {
+  contactDomainResolvePerson,
   mergeResourceHits,
   resourceDomainSearch,
   searchMessagingMessages,
   type ResourceHit,
-} from '@ai-assistant/resources';
+} from '@ai-assistant/platform';
+import { getAiServiceUrl } from '@ai-assistant/config';
 import { decryptCredentials } from './encryption';
 import { gatewayInternalFetch } from './gateway-internal';
 
@@ -32,6 +33,51 @@ export async function executePlatformTool(
       return {
         success: true,
         data: { type: 'contacts.resolve_result', name, matches },
+      };
+    }
+    case 'image.edit': {
+      const prompt = String(args.prompt ?? '');
+      if (!prompt.trim()) {
+        return { success: false, error: 'prompt is required' };
+      }
+      const sourceB64 = args.sourceImageBase64 ? String(args.sourceImageBase64) : '';
+      const width = Number(args.width ?? 1024);
+      const height = Number(args.height ?? 1024);
+      const mimeType = String(args.mimeType ?? 'image/jpeg');
+      const endpoint = sourceB64 ? '/v1/image/edit' : '/v1/image/generate';
+      const body = sourceB64
+        ? {
+            prompt,
+            source_image_base64: sourceB64,
+            mime_type: mimeType,
+            width,
+            height,
+            user_id: userId,
+          }
+        : { prompt, width, height, user_id: userId };
+      const res = await fetch(getAiServiceUrl(endpoint), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        try {
+          const parsed = JSON.parse(text) as { error?: string };
+          return { success: false, error: parsed.error ?? 'Image edit failed' };
+        } catch {
+          return { success: false, error: text || 'Image edit failed' };
+        }
+      }
+      const buffer = Buffer.from(await res.arrayBuffer());
+      const outMime = res.headers.get('content-type') ?? 'image/jpeg';
+      return {
+        success: true,
+        data: {
+          type: 'image.edit_result',
+          mimeType: outMime,
+          imageBase64: buffer.toString('base64'),
+        },
       };
     }
     case 'whatsapp.search_messages': {

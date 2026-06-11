@@ -1,5 +1,5 @@
 import type { ChatAttachmentRef, ResolvedAttachment } from '@ai-assistant/types';
-import { orchestratorFetch } from '../lib/runtime-clients';
+import { aiClient } from '../lib/ai-client';
 import {
   parseSseBuffer,
   type ChatErrorPayload,
@@ -110,10 +110,8 @@ export async function runAgentTurn(
 
   let orchRes: Response;
   try {
-    orchRes = await orchestratorFetch('/v1/agent/turn', {
-      method: 'POST',
-      signal,
-      body: JSON.stringify({
+    orchRes = await aiClient.agent.turn(
+      {
         query: input.query,
         routing_query: input.routingQuery ?? input.query.slice(0, 512),
         user_id: input.userId,
@@ -130,8 +128,9 @@ export async function runAgentTurn(
         file_retrieval_context: input.fileRetrievalContext ?? '',
         session_context: input.sessionContext ?? '',
         timezone: input.timezone,
-      }),
-    });
+      },
+      { signal }
+    );
   } catch (err) {
     if (signal?.aborted || (err instanceof Error && err.name === 'AbortError')) {
       throw new ChatTurnAbortedError(accumulated);

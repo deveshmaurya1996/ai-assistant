@@ -1,25 +1,12 @@
 import { prisma, Prisma } from '@ai-assistant/database';
 import { EventNames, publishEvent } from '@ai-assistant/events';
-import { getConnectorForTool } from '@ai-assistant/integrations';
+import { getConnectorForTool } from '@ai-assistant/integration-runtime';
 import { checkToolPermission, recordToolExecution } from '@ai-assistant/permissions';
-import { getToolDefinition, validateToolArgs } from '@ai-assistant/tool-schema';
+import { getToolDefinition, isPlatformTool, validateToolArgs } from '@ai-assistant/tool-schema';
 import type { ToolSource } from '@ai-assistant/types';
 import { decryptCredentials, encryptCredentials } from './encryption';
-import { executeNotesTool } from './notes-executor';
 import { executePlatformTool } from './platform-tools';
 
-const PLATFORM_TOOLS = new Set([
-  'resources.search',
-  'contacts.resolve',
-  'whatsapp.search_messages',
-  'reminder.create',
-  'reminder.update',
-  'reminder.cancel',
-  'reminder.list',
-  'automation.create',
-  'automation.update',
-  'automation.cancel',
-]);
 import {
   createExecution,
   updateExecution,
@@ -69,15 +56,14 @@ export async function startExecution(input: StartExecutionInput): Promise<Execut
     throw err;
   }
 
-  const isNotesTool = input.tool.startsWith('notes.');
-  const isPlatformTool = PLATFORM_TOOLS.has(input.tool);
+  const platformTool = isPlatformTool(input.tool);
 
-  const connector = isNotesTool || isPlatformTool ? null : getConnectorForTool(input.tool);
-  if (!isNotesTool && !isPlatformTool && !connector) {
+  const connector = platformTool ? null : getConnectorForTool(input.tool);
+  if (!platformTool && !connector) {
     throw new Error(`No connector for tool: ${input.tool}`);
   }
 
-  const connection = isNotesTool || isPlatformTool
+  const connection = platformTool
     ? null
     : input.connectionId
       ? await prisma.userConnection.findFirst({
@@ -85,7 +71,7 @@ export async function startExecution(input: StartExecutionInput): Promise<Execut
         })
       : await resolveConnection(input.userId, connector!.providerId);
 
-  if (!isNotesTool && !isPlatformTool && !connection) {
+  if (!platformTool && !connection) {
     throw new Error(
       `No active ${connector!.providerId} connection. Connect it in Connect Apps first.`
     );
@@ -97,7 +83,7 @@ export async function startExecution(input: StartExecutionInput): Promise<Execut
     executionId,
     userId: input.userId,
     tool: input.tool,
-    connector: isNotesTool ? 'notes' : isPlatformTool ? 'platform' : connector!.providerId,
+    connector: platformTool ? 'platform' : connector!.providerId,
     args: input.args,
     source: input.source,
     confirmed: input.confirmed,
@@ -128,7 +114,7 @@ export async function startExecution(input: StartExecutionInput): Promise<Execut
     userId: input.userId,
     executionId,
     tool: input.tool,
-    connector: isNotesTool ? 'notes' : isPlatformTool ? 'platform' : connector!.providerId,
+    connector: platformTool ? 'platform' : connector!.providerId,
     status: 'started',
     source: input.source,
   });
@@ -137,8 +123,7 @@ export async function startExecution(input: StartExecutionInput): Promise<Execut
     record,
     connection?.encryptedCredentials ?? null,
     connection?.metadata as Record<string, unknown> | null,
-    isNotesTool,
-    isPlatformTool
+    platformTool
   );
 
   return record;
@@ -148,13 +133,12 @@ async function runExecution(
   record: ExecutionRecord,
   encryptedCredentials: string | null,
   connectionMetadata: Record<string, unknown> | null,
-  isNotesTool = false,
-  isPlatformTool = false
+  platformTool = false
 ): Promise<void> {
   updateExecution(record.executionId, { status: 'running' });
 
   try {
-    if (isPlatformTool) {
+    if (platformTool) {
       const result = await executePlatformTool(record.userId, record.tool, record.args);
       if (!result.success) throw new Error(result.error ?? 'Platform tool failed');
       updateExecution(record.executionId, {
@@ -171,49 +155,6 @@ async function runExecution(
         },
       });
       recordToolExecution(record.userId, record.tool);
-      await publishEvent(EventNames.TOOL_COMPLETED, {
-        userId: record.userId,
-        executionId: record.executionId,
-        tool: record.tool,
-        status: 'completed',
-        result: result.data,
-      });
-      return;
-    }
-
-    if (isNotesTool) {
-      await publishEvent(EventNames.TOOL_PROGRESS, {
-        userId: record.userId,
-        executionId: record.executionId,
-        tool: record.tool,
-        status: 'progress',
-        message: `Saving note...`,
-        progress: 10,
-      });
-
-      const result = await executeNotesTool(record.userId, record.tool, record.args);
-
-      if (!result.success) {
-        throw new Error(result.error ?? 'Note save failed');
-      }
-
-      updateExecution(record.executionId, {
-        status: 'completed',
-        result: result.data,
-        progress: 100,
-      });
-
-      await prisma.toolInvocation.updateMany({
-        where: { executionId: record.executionId },
-        data: {
-          status: 'COMPLETED',
-          result: result.data as object,
-          completedAt: new Date(),
-        },
-      });
-
-      recordToolExecution(record.userId, record.tool);
-
       await publishEvent(EventNames.TOOL_COMPLETED, {
         userId: record.userId,
         executionId: record.executionId,

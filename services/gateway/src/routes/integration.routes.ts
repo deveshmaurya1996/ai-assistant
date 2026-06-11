@@ -4,7 +4,7 @@ import {
   getConnector,
   integrationsDeepLink,
   listConnectors,
-} from '@ai-assistant/integrations';
+} from '@ai-assistant/integration-runtime';
 import { listToolsForConnector } from '@ai-assistant/tool-schema';
 import { buildUserIntegrationManifest } from '../services/integration-manifest.service';
 import { isFeatureEnabled } from '@ai-assistant/feature-flags';

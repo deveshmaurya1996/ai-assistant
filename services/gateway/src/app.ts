@@ -7,6 +7,12 @@ import { prisma } from '@ai-assistant/database';
 import { registerBetterAuth } from './plugins/better-auth';
 import { registerRateLimit } from './plugins/rate-limit';
 import { registerInternalAuth } from './plugins/internal-auth';
+import { registerRequestId } from './plugins/request-id.plugin';
+import { registerIntelligenceProxy } from './plugins/intelligence-proxy.plugin';
+import { registerToolRuntimePlugin } from './plugins/tool-runtime.plugin';
+import { registerCapabilityRuntimePlugin } from './plugins/capability-runtime.plugin';
+import { healthRoutes } from './routes/health.routes';
+import { internalIngestionRoutes } from './routes/internal-ingestion.routes';
 import { chatRoutes } from './routes/chat.routes';
 import { agentRoutes } from './routes/agent.routes';
 import { memoryRoutes } from './routes/memory.routes';
@@ -40,8 +46,13 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(multipart);
 
+  await registerRequestId(app);
   await registerRateLimit(app);
   await registerInternalAuth(app);
+  await registerIntelligenceProxy(app);
+
+  await app.register(registerToolRuntimePlugin, { prefix: '/internal/tools' });
+  await app.register(registerCapabilityRuntimePlugin, { prefix: '/internal/capabilities' });
 
   await app.register(cors, {
     origin: true,
@@ -59,7 +70,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   const register = new client.Registry();
   client.collectDefaultMetrics({ register });
 
-  app.get('/health', async () => ({ status: 'ok', service: 'api' }));
+  await app.register(healthRoutes);
 
   app.register(mobileRoutes, { prefix: '/mobile' });
 
@@ -104,6 +115,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(whatsappRoutes, { prefix: '/internal/whatsapp' });
   app.register(internalIntegrationRoutes, { prefix: '/internal' });
   app.register(internalMemoryRoutes, { prefix: '/internal' });
+  app.register(internalIngestionRoutes, { prefix: '/internal' });
 
   setupSocketIO(app);
   startAllWorkers();

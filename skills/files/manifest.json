@@ -1,8 +1,0 @@
-{
-  "id": "files",
-  "name": "Google Drive",
-  "version": "1.0.0",
-  "connector": "google",
-  "capabilities": ["drive.search", "drive.get_content"],
-  "description": "Search and read Google Drive files for summarization"
-}

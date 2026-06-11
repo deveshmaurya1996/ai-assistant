@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { Prisma, prisma } from '@ai-assistant/database';
-import { getConnectorForTool } from '@ai-assistant/integrations';
+import { getConnectorForTool } from '@ai-assistant/integration-runtime';
 import { isAgentDigestAction, type ToolExecutionAction } from '@ai-assistant/types';
 import { authenticateRequest } from '../utils/auth.middleware';
 import { requireUserId } from '../lib/auth';

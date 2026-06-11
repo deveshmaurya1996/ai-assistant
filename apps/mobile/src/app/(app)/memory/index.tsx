@@ -109,7 +109,7 @@ export default function MemoryScreen() {
               title={loadError ? 'Could not load memories' : 'No saved memories yet'}
               description={
                 loadError
-                  ? `${loadError}\n\nAPI: ${API_URL}\nStart the stack (pnpm tilt:up), sign in, then pull to refresh.`
+                  ? `${loadError}\n\nAPI: ${API_URL}\nStart the stack (pnpm dev), sign in, then pull to refresh.`
                   : 'Memories appear when you say “Remember: …” or when the assistant learns something durable from chat. Pull to refresh after messaging.'
               }
               action={

@@ -39,6 +39,32 @@ function envInt(key: string, fallback: number): number {
 
 const nodeEnv = envOptional('NODE_ENV', 'development');
 
+function resolvePublicApiUrl(): string {
+  const fromEnv =
+    process.env.API_PUBLIC_URL?.trim() ||
+    process.env.GATEWAY_URL?.trim() ||
+    process.env.BETTER_AUTH_URL?.trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, '');
+  return `http://localhost:${envInt('API_PORT', 3000)}`;
+}
+
+function resolveIntelligenceUpstreamUrl(): string {
+  const fromEnv =
+    process.env.INTELLIGENCE_UPSTREAM_URL?.trim() ||
+    process.env.AI_SERVICE_URL?.trim();
+  if (fromEnv) return fromEnv.replace(/\/$/, '');
+  return 'http://localhost:8000';
+}
+
+const publicApiUrl = resolvePublicApiUrl();
+
+const capabilityRuntimeUrl =
+  process.env.CAPABILITY_RUNTIME_URL?.trim() ||
+  `${publicApiUrl}/internal/capabilities`;
+
+const toolRuntimeUrl =
+  process.env.TOOL_RUNTIME_URL?.trim() || `${publicApiUrl}/internal/tools`;
+
 export interface AppConfig {
   nodeEnv: string;
   isDev: boolean;
@@ -57,10 +83,7 @@ export interface AppConfig {
   groqApiKey: string | undefined;
   pollinationsApiKey: string | undefined;
   toolRuntimeUrl: string;
-  skillRuntimeUrl: string;
-  aiOrchestratorUrl: string;
-  cognitiveRuntimeUrl: string;
-  ingestionEngineUrl: string;
+  capabilityRuntimeUrl: string;
   whatsappBridgeUrl: string;
   integrationEncryptionKey: string;
   mobileLatestVersion: string;
@@ -69,29 +92,25 @@ export interface AppConfig {
   mobileAndroidPlayStoreUrl: string | undefined;
   mobileAndroidApkUrl: string | undefined;
   mobileUpdateUrlMode: 'play' | 'apk' | 'auto';
+  intelligenceUpstreamUrl: string;
+  ingestionConcurrency: number;
+  workflowConcurrency: number;
+  schedulerConcurrency: number;
+  memoryConcurrency: number;
 }
 
 export const config: AppConfig = {
   nodeEnv,
   isDev: nodeEnv !== 'production',
   apiPort: envInt('API_PORT', 3000),
-  gatewayUrl: envOptional(
-    'GATEWAY_URL',
-    envOptional(
-      'API_PUBLIC_URL',
-      `http://127.0.0.1:${envInt('API_PORT', 3000)}`
-    )
-  ),
-  aiServiceUrl: envOptional('AI_SERVICE_URL', 'http://localhost:8000'),
+  gatewayUrl: publicApiUrl,
+  aiServiceUrl: resolveIntelligenceUpstreamUrl(),
   databaseUrl: envOptional(
     'DATABASE_URL',
     'postgresql://ai_assistant:ai_assistant@localhost:5432/ai_assistant'
   ),
   betterAuthSecret: envOptional('BETTER_AUTH_SECRET', 'dev-secret-change-in-production'),
-  betterAuthUrl: envOptional(
-    'API_PUBLIC_URL',
-    envOptional('BETTER_AUTH_URL', 'http://localhost:3000')
-  ),
+  betterAuthUrl: publicApiUrl,
   redisUrl: envOptional('REDIS_URL', 'redis://localhost:6379'),
   googleClientId: process.env.GOOGLE_CLIENT_ID,
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -100,21 +119,9 @@ export const config: AppConfig = {
   nvidiaApiKey: process.env.NVIDIA_API_KEY,
   groqApiKey: process.env.GROQ_API_KEY,
   pollinationsApiKey: process.env.POLLINATIONS_API_KEY,
-  toolRuntimeUrl: envOptional('TOOL_RUNTIME_URL', 'http://localhost:3011'),
-  skillRuntimeUrl: envOptional('SKILL_RUNTIME_URL', 'http://localhost:3014'),
-  aiOrchestratorUrl: envOptional(
-    'AI_ORCHESTRATOR_URL',
-    envOptional('COGNITIVE_RUNTIME_URL', 'http://localhost:3013')
-  ),
-  cognitiveRuntimeUrl: envOptional(
-    'COGNITIVE_RUNTIME_URL',
-    envOptional('AI_ORCHESTRATOR_URL', 'http://localhost:3013')
-  ),
-  ingestionEngineUrl: envOptional('INGESTION_ENGINE_URL', 'http://localhost:3012'),
-  whatsappBridgeUrl: envOptional(
-    'WHATSAPP_BRIDGE_URL',
-    `${envOptional('API_PUBLIC_URL', envOptional('BETTER_AUTH_URL', `http://localhost:${envInt('API_PORT', 3000)}`))}/internal/whatsapp`
-  ),
+  toolRuntimeUrl,
+  capabilityRuntimeUrl,
+  whatsappBridgeUrl: `${publicApiUrl}/internal/whatsapp`,
   integrationEncryptionKey: envOptional(
     'INTEGRATION_ENCRYPTION_KEY',
     'dev-integration-key-change-me'
@@ -141,6 +148,11 @@ export const config: AppConfig = {
     if (raw === 'play' || raw === 'apk') return raw;
     return 'auto';
   })(),
+  intelligenceUpstreamUrl: resolveIntelligenceUpstreamUrl(),
+  ingestionConcurrency: envInt('INGESTION_CONCURRENCY', 2),
+  workflowConcurrency: envInt('WORKFLOW_CONCURRENCY', 2),
+  schedulerConcurrency: envInt('SCHEDULER_CONCURRENCY', 2),
+  memoryConcurrency: envInt('MEMORY_CONCURRENCY', 2),
 };
 
 export function getAiServiceUrl(path: string): string {
@@ -151,4 +163,10 @@ export function getAiServiceUrl(path: string): string {
 
 export function getAiChatStreamUrl(): string {
   return getAiServiceUrl('/v1/chat/stream');
+}
+
+export function getIntelligenceUrl(path: string): string {
+  const base = config.intelligenceUpstreamUrl.replace(/\/$/, '');
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${normalized}`;
 }

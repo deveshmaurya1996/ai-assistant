@@ -1,0 +1,11 @@
+{
+  "id": "drive",
+  "name": "Google Drive",
+  "version": "1.0.0",
+  "providerIds": ["google"],
+  "domains": ["files"],
+  "capabilityIds": ["drive.search", "drive.get_content"],
+  "description": "Search and read Google Drive files",
+  "implementation": "GoogleConnector",
+  "integrationModule": "google"
+}

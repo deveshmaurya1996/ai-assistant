@@ -10,11 +10,14 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://localhost:8000")
-from env_loader import resolve_public_api_url
+from ai_http import ai_http_client, ai_request_url
+from cognitive_env_loader import (
+    resolve_capability_runtime_url,
+    resolve_public_api_url,
+)
 
 GATEWAY_URL = resolve_public_api_url()
-SKILL_RUNTIME_URL = os.getenv("SKILL_RUNTIME_URL", "http://localhost:3014")
+CAPABILITY_RUNTIME_URL = resolve_capability_runtime_url()
 INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev-internal-token")
 MAX_HISTORY = 20
 RAG_TIMEOUT = float(os.getenv("RAG_TIMEOUT_SECONDS", "5"))
@@ -81,9 +84,9 @@ async def _should_retrieve_via_llm(query: str) -> Optional[bool]:
     if not q:
         return False
     try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
+        async with ai_http_client(timeout=8.0) as client:
             res = await client.post(
-                f"{AI_SERVICE_URL}/v1/memory/should-retrieve",
+                ai_request_url("/v1/memory/should-retrieve"),
                 json={"query": q},
             )
             if res.status_code != 200:
@@ -120,7 +123,7 @@ def is_smalltalk_query(query: str) -> bool:
     lower = q.lower()
     if len(q) < 48 and "?" not in q:
         if not any(signal in lower for signal in _MEMORY_SIGNALS):
-            from orchestration.planner import is_likely_tool_query
+            from orchestration.signals import is_likely_tool_query
 
             if not is_likely_tool_query(q):
                 return True
@@ -181,7 +184,7 @@ def should_retrieve_rag_context(
 
     # Attachment turns: file excerpt is primary; skip RAG unless memory is explicit.
     if has_file_context and not any(signal in lower for signal in _MEMORY_SIGNALS):
-        from orchestration.planner import is_likely_tool_query
+        from orchestration.signals import is_likely_tool_query
 
         if is_likely_tool_query(q):
             return False
@@ -191,7 +194,7 @@ def should_retrieve_rag_context(
         ):
             return False
 
-    from orchestration.planner import is_likely_tool_query
+    from orchestration.signals import is_likely_tool_query
 
     if is_likely_tool_query(q):
         return False
@@ -404,11 +407,11 @@ async def fetch_integration_manifest(
         )
         return text, caps, connections, connection_states
 
-    skill_result = await _fetch_manifest_endpoint(
-        SKILL_RUNTIME_URL, "/v1/integrations/manifest", user_id, {}
+    capability_result = await _fetch_manifest_endpoint(
+        CAPABILITY_RUNTIME_URL, "/v1/integrations/manifest", user_id, {}
     )
-    if skill_result is not None:
-        text, caps, connections, connection_states = skill_result
+    if capability_result is not None:
+        text, caps, connections, connection_states = capability_result
         _manifest_cache[user_id] = (
             now + MANIFEST_CACHE_TTL_SECONDS,
             text,
@@ -438,9 +441,9 @@ async def fetch_rag_context(
         }
         if chat_session_id:
             params["session_id"] = chat_session_id
-        async with httpx.AsyncClient(timeout=RAG_TIMEOUT) as client:
+        async with ai_http_client(timeout=RAG_TIMEOUT) as client:
             res = await client.get(
-                f"{AI_SERVICE_URL}/v1/memory/search",
+                ai_request_url("/v1/memory/search"),
                 params=params,
             )
             if res.status_code != 200:

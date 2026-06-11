@@ -1,0 +1,31 @@
+- id: whatsapp_unread
+  query: check my whatsapp unread messages
+  output: '{"capabilities":[{"capability":"messaging.list_unread","args":{"limit":20},"provider":"whatsapp"}]}'
+
+- id: send_to_contact
+  query: send message to John saying hello
+  output: '{"capabilities":[{"capability":"communication.chat.search","args":{"query":"John"},"provider":"whatsapp"},{"capability":"messaging.send_message","args":{"to":"John","message":"hello"},"provider":"whatsapp"}]}'
+
+- id: gmail_unread
+  query: check my gmail unread
+  output: '{"capabilities":[{"capability":"email.list_unread","args":{"maxResults":15},"provider":"google"}]}'
+
+- id: calendar_yesterday
+  query: what meetings did I have yesterday
+  output: '{"capabilities":[{"capability":"calendar.list_upcoming","args":{"maxResults":25},"provider":"google"}]}'
+
+- id: drive_search
+  query: find my budget spreadsheet in google drive
+  output: '{"capabilities":[{"capability":"drive.search","args":{"query":"budget spreadsheet","maxResults":10},"provider":"google"}]}'
+
+- id: conversational_no_tools
+  query: how are you doing today
+  output: '{"capabilities":[]}'
+
+- id: scheduling_handoff
+  query: remind me tomorrow at 8am to stand up
+  output: '{"capabilities":[]}'
+
+- id: disconnected_no_plan
+  query: check my gmail unread
+  output: '{"capabilities":[]}'

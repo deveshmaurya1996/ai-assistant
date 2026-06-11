@@ -6,6 +6,7 @@ export {
   rehydrateAll,
   startScheduler,
   stopScheduler,
+  closeScheduler,
 } from './scheduler.service';
 export {
   compilePresetCron,

@@ -105,10 +105,10 @@ async function runTest() {
   sessionId = chatSession.id;
   console.log(`Chat session: ${sessionId}`);
 
-  console.log('\n3.1 Creating ACTIVE notes connection (test fixture)...');
+  console.log('\n3.1 Creating ACTIVE google connection (test fixture)...');
   await prisma.userConnection.upsert({
-    where: { id: `notes_${userId}` },
-    create: { id: `notes_${userId}`, userId, providerId: 'notes', status: 'ACTIVE', scopes: [] },
+    where: { id: `google_${userId}` },
+    create: { id: `google_${userId}`, userId, providerId: 'google', status: 'ACTIVE', scopes: [] },
     update: { status: 'ACTIVE' },
   });
 
@@ -121,8 +121,11 @@ async function runTest() {
   const toolNames = (toolsData.tools ?? [])
     .map((t) => t.function?.name)
     .filter(Boolean) as string[];
-  if (!toolNames.includes('notes.create')) {
-    throw new Error('Expected notes.create to be available for ACTIVE notes connection');
+  if (!toolNames.includes('gmail.read_inbox')) {
+    throw new Error('Expected gmail.read_inbox to be available for ACTIVE google connection');
+  }
+  if (toolNames.includes('notes.create')) {
+    throw new Error('notes.create should not be in the tool catalog');
   }
 
   console.log('\n4. WebSocket streaming...');
@@ -191,8 +194,8 @@ async function runTest() {
   const userId2 = sessionData2.user?.id ?? '';
   if (!userId2) throw new Error('Failed to obtain second user');
   const otherConn = await prisma.userConnection.upsert({
-    where: { id: `notes_${userId2}` },
-    create: { id: `notes_${userId2}`, userId: userId2, providerId: 'notes', status: 'ACTIVE', scopes: [] },
+    where: { id: `google_${userId2}` },
+    create: { id: `google_${userId2}`, userId: userId2, providerId: 'google', status: 'ACTIVE', scopes: [] },
     update: { status: 'ACTIVE' },
   });
 
@@ -201,8 +204,8 @@ async function runTest() {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       userId,
-      tool: 'notes.create',
-      args: { title: 'x', content: 'y' },
+      tool: 'gmail.read_inbox',
+      args: { maxResults: 1 },
       source: 'manual',
       confirmed: true,
       connectionId: otherConn.id,
@@ -210,7 +213,7 @@ async function runTest() {
     }),
   });
   if (execRes.ok) {
-    throw new Error('Expected tool-runtime to reject other user connectionId');
+    throw new Error('Expected internal tools to reject other user connectionId');
   }
 
   console.log('\nEnd-to-end integration test SUCCEEDED.');

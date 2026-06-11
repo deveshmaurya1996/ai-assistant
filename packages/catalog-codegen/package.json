@@ -1,0 +1,14 @@
+{
+  "name": "@ai-assistant/catalog-codegen",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Generate capabilities, tools, permissions, and provider registries from catalog/",
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "validate": "node scripts/validate.mjs",
+    "migrate": "node scripts/migrate-from-legacy.mjs"
+  },
+  "dependencies": {
+    "yaml": "^2.8.0"
+  }
+}

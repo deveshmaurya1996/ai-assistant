@@ -5,7 +5,7 @@ import { WorkflowSchema, executeWorkflow, type WorkflowAction } from '@ai-assist
 import { authenticateRequest } from '../utils/auth.middleware';
 import { requireUserId } from '../lib/auth';
 import { sendError } from '../lib/errors';
-import { toolRuntimeFetch, skillRuntimeFetch } from '../lib/runtime-clients';
+import { capabilityRuntimeFetch, toolRuntimeFetch } from '../lib/runtime-clients';
 import { scheduleWorkflow, unscheduleWorkflow } from '../workers/workflow.worker';
 import { EventNames, publishEvent } from '@ai-assistant/events';
 
@@ -117,7 +117,7 @@ export async function workflowRoutes(fastify: FastifyInstance) {
             provider?: string;
           };
           if (capAction.capability) {
-            const res = await skillRuntimeFetch('/v1/execute', {
+            const res = await capabilityRuntimeFetch('/v1/execute', {
               method: 'POST',
               body: JSON.stringify({
                 userId: ctx.userId,

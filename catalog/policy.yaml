@@ -1,0 +1,28 @@
+version: 1
+blockedTools:
+  - email.delete
+  - gmail.delete
+  - gmail.trash
+  - whatsapp.delete_message
+  - whatsapp.delete_chat
+  - messaging.delete_message
+dangerousChains:
+  - [gmail.send, whatsapp.send_message]
+  - [email.send_email, whatsapp.send_message]
+defaultAllowedSources: [chat, voice, automation, workflow, manual]
+overrides:
+  gmail.send:
+    cooldownSeconds: 30
+    maxExecutionsPerHour: 20
+    automationRequiresPreApproval: true
+  whatsapp.send_message:
+    cooldownSeconds: 10
+    automationRequiresPreApproval: true
+  calendar.create_event:
+    automationRequiresPreApproval: true
+  email.send_email:
+    automationRequiresPreApproval: true
+  email.reply_email:
+    automationRequiresPreApproval: true
+  calendar.cancel_event:
+    automationRequiresPreApproval: true

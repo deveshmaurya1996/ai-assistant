@@ -5,7 +5,7 @@ load(
     'SERVICE_BUILD_IGNORE',
     'PORTS',
     'port_url',
-    'port_env',
+    'active_port_env',
 )
 
 SERVICE_LABELS = ['services']
@@ -13,147 +13,24 @@ DEV_SCRIPT = 'scripts/dev.mjs'
 
 def ai_service():
     enabled = enabled_services()
-    if not is_enabled('ai', enabled):
+    if not is_enabled('ai-runtime', enabled):
         return
 
     local_resource(
-        'ai',
-        serve_cmd='node ' + DEV_SCRIPT + ' serve ai',
+        'ai-runtime',
+        serve_cmd='node ' + DEV_SCRIPT + ' serve ai-runtime',
         deps=[
             DEV_SCRIPT,
             'tilt_config.json',
             'scripts/with-env.mjs',
             '.env',
             'services/ai-runtime',
-            'services/ai',
+            'services/cognitive-runtime',
         ],
-        env=port_env(),
+        env=active_port_env(),
         ignore=SERVICE_BUILD_IGNORE,
         allow_parallel=True,
         labels=SERVICE_LABELS,
         resource_deps=['qdrant', 'redis'],
-        links=[link(port_url('ai'), 'AI :' + str(PORTS['ai']))],
+        links=[link(port_url('ai'), 'Intelligence :' + str(PORTS['ai']))],
     )
-
-def tool_runtime_service():
-    enabled = enabled_services()
-    if not is_enabled('tool-runtime', enabled):
-        return
-
-    local_resource(
-        'tool-runtime',
-        'node ' + DEV_SCRIPT + ' build tool-runtime',
-        serve_cmd='node ' + DEV_SCRIPT + ' serve tool-runtime',
-        deps=[
-            DEV_SCRIPT,
-            'tilt_config.json',
-            'scripts/with-env.mjs',
-            '.env',
-            'services/tool-runtime',
-            'packages/integrations',
-            'packages/tool-schema',
-            'packages/permissions',
-            'packages/database',
-            'packages/resources',
-            'packages/contacts',
-            'packages/domains',
-            'packages/config',
-        ],
-        env=port_env(),
-        ignore=SERVICE_BUILD_IGNORE,
-        allow_parallel=True,
-        labels=SERVICE_LABELS,
-        resource_deps=['db-setup', 'redis'],
-        links=[link(port_url('tool-runtime'), 'Tool Runtime :' + str(PORTS['tool-runtime']))],
-    )
-
-def skill_runtime_service():
-    enabled = enabled_services()
-    if not is_enabled('skill-runtime', enabled):
-        return
-
-    local_resource(
-        'skill-runtime',
-        'node ' + DEV_SCRIPT + ' build skill-runtime',
-        serve_cmd='node ' + DEV_SCRIPT + ' serve skill-runtime',
-        deps=[
-            DEV_SCRIPT,
-            'tilt_config.json',
-            'scripts/with-env.mjs',
-            '.env',
-            'services/skill-runtime',
-            'packages/capabilities',
-            'packages/skills',
-            'packages/capabilities/generated',
-            'services/cognitive-runtime/capability_manifest.json',
-            'skills',
-            'packages/config',
-        ],
-        env=port_env(),
-        ignore=SERVICE_BUILD_IGNORE,
-        allow_parallel=True,
-        labels=SERVICE_LABELS,
-        resource_deps=['tool-runtime'],
-        links=[link(port_url('skill-runtime'), 'Skill Runtime :' + str(PORTS['skill-runtime']))],
-    )
-
-
-def cognitive_runtime_service():
-    enabled = enabled_services()
-    if not is_enabled('cognitive-runtime', enabled) and not is_enabled('ai-orchestrator', enabled):
-        return
-
-    local_resource(
-        'cognitive-runtime',
-        serve_cmd='node ' + DEV_SCRIPT + ' serve cognitive-runtime',
-        deps=[
-            DEV_SCRIPT,
-            'tilt_config.json',
-            'scripts/with-env.mjs',
-            '.env',
-            'services/cognitive-runtime',
-            'services/cognitive-runtime/capability_manifest.json',
-            'skills',
-        ],
-        env=port_env(),
-        ignore=SERVICE_BUILD_IGNORE,
-        allow_parallel=True,
-        labels=SERVICE_LABELS,
-        resource_deps=['tool-runtime', 'skill-runtime', 'ai'],
-        links=[link(port_url('ai-orchestrator'), 'Cognitive Runtime :' + str(PORTS['ai-orchestrator']))],
-    )
-
-
-def ingestion_engine_service():
-    enabled = enabled_services()
-    if not is_enabled('ingestion-engine', enabled):
-        return
-
-    local_resource(
-        'ingestion-engine',
-        'node ' + DEV_SCRIPT + ' build ingestion-engine',
-        serve_cmd='node ' + DEV_SCRIPT + ' serve ingestion-engine',
-        deps=[
-            DEV_SCRIPT,
-            'tilt_config.json',
-            'scripts/with-env.mjs',
-            '.env',
-            'services/ingestion-engine',
-            'packages/database',
-            'packages/config',
-            'packages/events',
-            'packages/integrations',
-            'packages/storage',
-            'packages/file-processing',
-        ],
-        env=port_env(),
-        ignore=SERVICE_BUILD_IGNORE,
-        allow_parallel=True,
-        labels=SERVICE_LABELS,
-        resource_deps=['db-setup', 'redis'],
-        links=[link(port_url('ingestion-engine'), 'Ingestion :' + str(PORTS['ingestion-engine']))],
-    )
-
-
-def ai_orchestrator_service():
-    cognitive_runtime_service()

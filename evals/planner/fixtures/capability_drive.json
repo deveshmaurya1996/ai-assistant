@@ -1,0 +1,3 @@
+{
+  "text": "{\"capabilities\":[{\"capability\":\"drive.search\",\"args\":{\"query\":\"quarterly report last month\",\"maxResults\":5},\"provider\":\"google\"}]}"
+}

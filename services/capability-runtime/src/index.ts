@@ -1,0 +1,1 @@
+export { registerCapabilityRuntimeRoutes } from './routes';

@@ -37,18 +37,24 @@ class TraceContextMiddleware:
             await self.app(scope, receive, send)
 
 from api.router import router as api_router
+from cognitive_integration import mount_cognitive_routes
 from memory.rag_service import RAGService
+from request_id_middleware import RequestIdLogFilter, RequestIdMiddleware
 from models.config_loader import get_rag_config, load_ai_models_config
 from models.voice import FFMPEG_INSTALL_HINT, ensure_ffmpeg_on_path, ffmpeg_available
 from models.registry import get_models_catalog, log_startup_summary
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="AI Assistant Orchestration Layer")
+app = FastAPI(title="AI Assistant Intelligence Runtime")
+app.add_middleware(RequestIdMiddleware)
 app.add_middleware(TraceContextMiddleware)
 instrument_fastapi(app)
 
 app.include_router(api_router, prefix="/v1")
+mount_cognitive_routes(app)
+
+logging.getLogger().addFilter(RequestIdLogFilter())
 
 
 @app.on_event("startup")
@@ -81,7 +87,12 @@ def read_root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "ai"}
+    return {"status": "ok", "service": "intelligence", "ai": True, "cognitive": True}
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    logger.info("[intelligence] shutdown complete")
 
 
 @app.get("/health/ready")
@@ -109,4 +120,6 @@ def health_ready():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    host = os.getenv("INTELLIGENCE_HOST", "localhost")
+    port = int(os.getenv("AI_PORT", os.getenv("PORT", "8000")))
+    uvicorn.run("main:app", host=host, port=port, reload=True)

@@ -1,10 +1,4 @@
-#!/usr/bin/env node
-/**
- * Port allocation for Tilt (tilt_config.json).
- *
- *   node scripts/ports.mjs ensure   → write tilt_config.json
- *   node scripts/ports.mjs up       → ensure Docker, ensure ports, then `tilt up --port …`
- */
+
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -82,6 +76,42 @@ function writeTiltConfig(config) {
   fs.writeFileSync(tiltConfigPath, next);
 }
 
+function upsertEnvLine(content, key, value) {
+  const line = `${key}=${value}`;
+  const pattern = new RegExp(`^${key}=.*$`, 'm');
+  if (pattern.test(content)) {
+    return content.replace(pattern, line);
+  }
+  return `${content.replace(/\n?$/, '\n')}${line}\n`;
+}
+
+function syncDevEnvPorts(config) {
+  const apiPort = config[PORT_KEYS.api];
+  const aiPort = config[PORT_KEYS.ai];
+  if (!apiPort || !aiPort) return;
+
+  const rootEnvPath = path.join(root, '.env');
+  if (fs.existsSync(rootEnvPath)) {
+    let rootEnv = fs.readFileSync(rootEnvPath, 'utf8');
+    rootEnv = upsertEnvLine(rootEnv, 'API_PORT', apiPort);
+    rootEnv = upsertEnvLine(rootEnv, 'API_PUBLIC_URL', `http://localhost:${apiPort}`);
+    rootEnv = upsertEnvLine(rootEnv, 'INTELLIGENCE_UPSTREAM_URL', `http://localhost:${aiPort}`);
+    fs.writeFileSync(rootEnvPath, rootEnv);
+  }
+
+  const mobileEnvPath = path.join(root, 'apps', 'mobile', '.env');
+  if (fs.existsSync(mobileEnvPath)) {
+    let mobileEnv = fs.readFileSync(mobileEnvPath, 'utf8');
+    mobileEnv = upsertEnvLine(mobileEnv, 'EXPO_PUBLIC_API_PORT', apiPort);
+    mobileEnv = upsertEnvLine(
+      mobileEnv,
+      'EXPO_PUBLIC_API_URL',
+      `http://localhost:${apiPort}`
+    );
+    fs.writeFileSync(mobileEnvPath, mobileEnv);
+  }
+}
+
 function ensure() {
   loadDotEnv();
   const offset = (hash(path.resolve(root)) % 50) * 10;
@@ -113,6 +143,7 @@ function tiltPortFromConfig(config) {
 async function up() {
   await ensureDocker();
   const config = ensure();
+  syncDevEnvPorts(config);
   const tiltPort = tiltPortFromConfig(config);
   const tiltfileArgs = process.argv.slice(3).filter((a) => a !== '--');
   const args = ['up', '--port', String(tiltPort)];

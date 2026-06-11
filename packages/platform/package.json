@@ -1,0 +1,35 @@
+{
+  "name": "@ai-assistant/platform",
+  "version": "1.0.0",
+  "description": "Platform tool helpers (contacts, resources)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./contacts": {
+      "types": "./dist/contacts.d.ts",
+      "require": "./dist/contacts.js",
+      "default": "./dist/contacts.js"
+    },
+    "./resources": {
+      "types": "./dist/resources.d.ts",
+      "require": "./dist/resources.js",
+      "default": "./dist/resources.js"
+    }
+  },
+  "scripts": {
+    "prebuild": "pnpm --filter @ai-assistant/database db:generate",
+    "build": "node ../../node_modules/typescript/bin/tsc"
+  },
+  "dependencies": {
+    "@ai-assistant/database": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "~6.0.3"
+  }
+}

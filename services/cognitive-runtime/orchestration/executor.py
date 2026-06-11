@@ -1,26 +1,33 @@
-"""Tool execution dispatch — WhatsApp via gateway Baileys; others via skill-runtime."""
+
 import asyncio
+import logging
 import os
-import re
 from typing import Any, Dict, List, Optional
 
 import httpx
 
-from env_loader import resolve_public_api_url
-
-GATEWAY_URL = resolve_public_api_url()
-INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev-internal-token")
-SKILL_RUNTIME_URL = os.getenv("SKILL_RUNTIME_URL", "http://localhost:3014")
-TOOL_RUNTIME_URL = os.getenv("TOOL_RUNTIME_URL", "http://localhost:3011")
-
+from cognitive_env_loader import (
+    resolve_capability_runtime_url,
+    resolve_public_api_url,
+    resolve_tool_runtime_url,
+)
 from orchestration.capability_map import (
     default_provider_for_capability,
     normalize_planned_item,
 )
+from orchestration.contacts import (
+    looks_like_jid,
+    looks_like_phone,
+    resolve_whatsapp_jid_from_search,
+)
+from orchestration.gateway_client import internal_headers
+from orchestration.policies import sanitize_tool_args, validate_tool_chain
 
+logger = logging.getLogger(__name__)
 
-def _internal_headers() -> Dict[str, str]:
-    return {"X-Internal-Token": INTERNAL_SERVICE_TOKEN}
+GATEWAY_URL = resolve_public_api_url()
+CAPABILITY_RUNTIME_URL = resolve_capability_runtime_url()
+TOOL_RUNTIME_URL = resolve_tool_runtime_url()
 
 
 def _resolve_connection_id(tool: str, connections: List[Dict[str, Any]]) -> Optional[str]:
@@ -32,22 +39,12 @@ def _resolve_connection_id(tool: str, connections: List[Dict[str, Any]]) -> Opti
         "drive": "google",
         "whatsapp": "whatsapp",
         "files": "files",
-        "notes": "notes",
     }
     provider_id = provider_map.get(prefix, prefix)
     for conn in connections:
         if conn.get("providerId") == provider_id:
             return conn.get("id")
     return None
-
-
-def _looks_like_jid(value: str) -> bool:
-    return "@" in value
-
-
-def _looks_like_phone(value: str) -> bool:
-    digits = re.sub(r"\D", "", value)
-    return len(digits) >= 10
 
 
 async def _poll_execution(
@@ -90,7 +87,7 @@ async def _execute_whatsapp_via_gateway(
             "connectionId": connection_id,
             "chatSessionId": chat_session_id,
         },
-        headers=_internal_headers(),
+        headers=internal_headers(),
     )
     if res.status_code == 428:
         body = res.json()
@@ -128,6 +125,20 @@ async def execute_planned_tools(
     connections = connections or []
     resolved_jid: Optional[str] = None
 
+    tool_names = [
+        normalize_planned_item(dict(raw)).get("tool")
+        for raw in tools
+        if normalize_planned_item(dict(raw)).get("tool")
+    ]
+    if len(tool_names) > 1 and not validate_tool_chain(tool_names):
+        logger.warning("[executor] blocked dangerous tool chain: %s", tool_names)
+        return [
+            {
+                "status": "failed",
+                "error": "This combination of tools is not allowed for safety reasons.",
+            }
+        ]
+
     async with httpx.AsyncClient(timeout=120.0) as client:
         for raw in tools:
             item = normalize_planned_item(dict(raw))
@@ -140,7 +151,7 @@ async def execute_planned_tools(
                     }
                 )
                 continue
-            args = dict(item.get("args", {}))
+            args = sanitize_tool_args(dict(item.get("args", {})))
             connection_id = _resolve_connection_id(tool_name, connections)
 
             if tool_name in ("whatsapp.send_message", "whatsapp.read_chat"):
@@ -151,23 +162,15 @@ async def execute_planned_tools(
                     target_key = "chatId"
                     target_val = str(args.get("chatId") or args.get("jid") or "")
 
-                if resolved_jid and not _looks_like_jid(target_val):
-                    args[target_key] = resolved_jid
-                elif not _looks_like_jid(target_val) and not _looks_like_phone(target_val):
-                    found_jid = None
-                    for prev in results:
-                        if prev.get("tool") != "whatsapp.search_chats":
-                            continue
-                        if prev.get("error"):
-                            continue
-                        chats = (prev.get("result") or {}).get("chats", [])
-                        if chats and chats[0].get("jid"):
-                            found_jid = chats[0]["jid"]
-                            break
-                    if found_jid:
-                        args[target_key] = found_jid
+                found_jid = resolve_whatsapp_jid_from_search(
+                    target_val, results, resolved_jid
+                )
+                if found_jid:
+                    args[target_key] = found_jid
+                    if looks_like_jid(found_jid):
                         resolved_jid = found_jid
-                    elif tool_name == "whatsapp.read_chat":
+                elif not looks_like_jid(target_val) and not looks_like_phone(target_val):
+                    if tool_name == "whatsapp.read_chat":
                         contact_label = target_val or "that contact"
                         results.append(
                             {
@@ -180,7 +183,7 @@ async def execute_planned_tools(
                             }
                         )
                         continue
-                elif _looks_like_phone(target_val) and not _looks_like_jid(target_val):
+                elif looks_like_phone(target_val) and not looks_like_jid(target_val):
                     args[target_key] = target_val
 
             if tool_name.startswith("reminder."):
@@ -247,7 +250,7 @@ async def execute_planned_tools(
                 if connection_id:
                     exec_body["connectionId"] = connection_id
 
-            res = await client.post(f"{SKILL_RUNTIME_URL}/v1/execute", json=exec_body)
+            res = await client.post(f"{CAPABILITY_RUNTIME_URL}/v1/execute", json=exec_body)
             if res.status_code == 428:
                 body = res.json()
                 results.append(

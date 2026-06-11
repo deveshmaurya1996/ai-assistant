@@ -10,10 +10,6 @@ config.define_string('web-port')
 config.define_string('postgres-port')
 config.define_string('redis-port')
 config.define_string('qdrant-port')
-config.define_string('tool-runtime-port')
-config.define_string('ai-orchestrator-port')
-config.define_string('skill-runtime-port')
-config.define_string('ingestion-engine-port')
 
 # Single config.parse() for the whole run (https://docs.tilt.dev/tiltfile_config.html).
 TILT_CFG = config.parse()
@@ -52,18 +48,11 @@ PROFILE_APPS = [
 
 PROFILE_SERVICES = [
     'api',
-    'gateway',
-    'ai',
     'ai-runtime',
-    'tool-runtime',
-    'skill-runtime',
-    'cognitive-runtime',
-    'ai-orchestrator',
-    'ingestion-engine',
 ]
 
-# Default tilt up: core infra + api + ai + mobile (Expo web, fresh cache).
-PROFILE_API_AI = PROFILE_CORE + PROFILE_DATABASE_TOOLS + PROFILE_SERVICES + ['mobile']
+# Default tilt up: gateway + intelligence + mobile (tool/capability/ingestion in-process).
+PROFILE_PLATFORM = PROFILE_CORE + PROFILE_DATABASE_TOOLS + PROFILE_SERVICES + ['mobile']
 
 PROFILE_FULL = (
     PROFILE_CORE
@@ -108,7 +97,7 @@ def any_langfuse_selected(out_set):
 
 def expand_services(selected):
     if not selected:
-        return PROFILE_API_AI
+        return PROFILE_PLATFORM
 
     out = []
     for item in selected:
@@ -148,6 +137,9 @@ def enabled_services():
     selected = TILT_CFG.get('services', [])
     return expand_services(selected)
 
+def active_port_env():
+    return port_env()
+
 def is_enabled(name, enabled):
     return name in enabled
 
@@ -159,7 +151,6 @@ SERVICE_BUILD_IGNORE = [
     '**/tsconfig.tsbuildinfo',
     'data/wa-auth',
     'services/gateway/data/wa-auth',
-    'services/whatsapp-bridge/data',
 ]
 
 def _port_int(key, default):
@@ -178,10 +169,6 @@ PORTS = {
     'postgres': _port_int('postgres-port', 5432),
     'redis': _port_int('redis-port', 6379),
     'qdrant': _port_int('qdrant-port', 6333),
-    'tool-runtime': _port_int('tool-runtime-port', 3011),
-    'ai-orchestrator': _port_int('ai-orchestrator-port', 3013),
-    'skill-runtime': _port_int('skill-runtime-port', 3014),
-    'ingestion-engine': _port_int('ingestion-engine-port', 3012),
 }
 
 def port_url(key, path=''):
@@ -191,14 +178,11 @@ def port_env():
     api = str(PORTS['api'])
     ai = str(PORTS['ai'])
     pg = str(PORTS['postgres'])
-    toolrt = str(PORTS['tool-runtime'])
-    orch = str(PORTS['ai-orchestrator'])
-    skillrt = str(PORTS['skill-runtime'])
-    ingestion = str(PORTS['ingestion-engine'])
     return {
         'API_PORT': api,
         'AI_PORT': ai,
-        'AI_SERVICE_URL': 'http://localhost:' + ai,
+        'API_PUBLIC_URL': 'http://localhost:' + api,
+        'INTELLIGENCE_UPSTREAM_URL': 'http://localhost:' + ai,
         'PRISMA_STUDIO_PORT': str(PORTS['studio']),
         'EXPO_DEV_PORT': str(PORTS['mobile']),
         'WEB_PORT': str(PORTS['web']),
@@ -209,23 +193,15 @@ def port_env():
         'DATABASE_URL': 'postgresql://ai_assistant:ai_assistant@localhost:' + pg + '/ai_assistant',
         'REDIS_URL': 'redis://localhost:' + str(PORTS['redis']),
         'QDRANT_URL': 'http://localhost:' + str(PORTS['qdrant']),
-        'TOOL_RUNTIME_PORT': toolrt,
-        'AI_ORCHESTRATOR_PORT': orch,
-        'TOOL_RUNTIME_URL': 'http://localhost:' + toolrt,
-        'AI_ORCHESTRATOR_URL': 'http://localhost:' + orch,
-        'COGNITIVE_RUNTIME_URL': 'http://localhost:' + orch,
-        'SKILL_RUNTIME_PORT': skillrt,
-        'SKILL_RUNTIME_URL': 'http://localhost:' + skillrt,
-        'INGESTION_ENGINE_PORT': ingestion,
-        'INGESTION_ENGINE_URL': 'http://localhost:' + ingestion,
-        'SKILLS_ROOT': 'skills',
-        'WHATSAPP_BRIDGE_URL': 'http://localhost:' + api + '/internal/whatsapp',
+        'CONNECTORS_ROOT': 'connectors',
         'WHATSAPP_AUTH_DIR': 'data/wa-auth',
         'INTERNAL_SERVICE_TOKEN': 'dev-internal-token',
         'NEXT_PUBLIC_API_URL': 'http://localhost:' + api,
         'EXPO_PUBLIC_API_URL': 'http://localhost:' + api,
-        'API_PUBLIC_URL': 'http://localhost:' + api,
-        'GATEWAY_URL': 'http://localhost:' + api,
+        'INGESTION_CONCURRENCY': '2',
+        'WORKFLOW_CONCURRENCY': '2',
+        'SCHEDULER_CONCURRENCY': '2',
+        'MEMORY_CONCURRENCY': '2',
     }
 
 def apply_compose_env():

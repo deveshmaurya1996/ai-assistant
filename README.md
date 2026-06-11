@@ -4,7 +4,7 @@ AI-native assistant with streaming chat, memory, multi-agent orchestration, voic
 
 For full AI implementation context (chat, tools, voice, RAG, models, file map), see **[docs/CORE_AI_README.md](docs/CORE_AI_README.md)**.
 
-For the AI OS evolution roadmap (capabilities, skills, renames), see **[docs/AI_OS_EVOLUTION.md](docs/AI_OS_EVOLUTION.md)**.
+For the AI OS evolution roadmap (capabilities, connectors, renames), see **[docs/AI_OS_EVOLUTION.md](docs/AI_OS_EVOLUTION.md)**.
 
 ## Architecture
 
@@ -18,8 +18,8 @@ Mobile / Web  →  API Gateway (Fastify)  →  PostgreSQL
 |-------|------|
 | Runtime orchestration | [Tilt](https://tilt.dev) |
 | Containers | Docker Compose |
-| API | Fastify (`services/gateway`, shim `services/api`) |
-| AI | FastAPI (`services/ai-runtime`, shim `services/ai`) |
+| API | Fastify (`services/gateway`) |
+| AI | FastAPI (`services/ai-runtime`) |
 | Database | PostgreSQL |
 | Cache / events | Redis |
 | Vector DB | Qdrant |
@@ -41,26 +41,24 @@ Mobile / Web  →  API Gateway (Fastify)  →  PostgreSQL
 Tilt is the recommended dev orchestrator (closest equivalent to Aspire for this stack).
 
 ```powershell
-# One-time setup
-pnpm env:setup
+# One-time: pnpm install creates .env files, builds workspace, validates connectors/planner
 pnpm install
-pnpm db:migrate
 
-# Default: core infra + API + AI (starts Docker Desktop if needed, then Tilt)
-pnpm tilt:up
+# Default: core infra + API + AI (starts Docker Desktop if needed, then Tilt + db-setup)
+pnpm dev
 
 # Or explicit profiles
-pnpm tilt:up -- --services=core            # postgres, redis, qdrant only
-pnpm tilt:up -- --services=api,ai          # lean app stack (default)
-pnpm tilt:up -- --services=monitoring      # core + prometheus/grafana/loki/otel-collector
-pnpm tilt:up -- --services=observability   # core + monitoring + Langfuse (no api/ai)
-pnpm tilt:up -- --services=full            # core + api + ai + monitoring + Langfuse + web
-pnpm tilt:up -- --services=apps            # core + api + web (+ mobile manual trigger)
+pnpm dev -- --services=core            # postgres, redis, qdrant only
+pnpm dev -- --services=api,ai-runtime   # lean app stack (default)
+pnpm dev -- --services=monitoring      # core + prometheus/grafana/loki/otel-collector
+pnpm dev -- --services=observability   # core + monitoring + Langfuse (no api/ai)
+pnpm dev -- --services=full            # core + api + ai + monitoring + Langfuse + web
+pnpm dev -- --services=apps            # core + api + web (+ mobile manual trigger)
 
-pnpm tilt:down
+pnpm dev:down
 ```
 
-Open the Tilt dashboard at the URL printed on start (port is in `tilt_config.json` as `tilt-port`, default **10350** if free). Use **Ctrl+C** in the `tilt:up` terminal to exit Tilt; `pnpm tilt:down` deletes Docker resources ([docs](https://docs.tilt.dev/cli/tilt_down.html)).
+Open the Tilt dashboard at the URL printed on start (port is in `tilt_config.json` as `tilt-port`, default **10350** if free). Use **Ctrl+C** in the `pnpm dev` terminal to exit Tilt; `pnpm dev:down` deletes Docker resources ([docs](https://docs.tilt.dev/cli/tilt_down.html)).
 
 | Resource | Notes |
 |----------|--------|
@@ -69,13 +67,13 @@ Open the Tilt dashboard at the URL printed on start (port is in `tilt_config.jso
 
 ### Ports
 
-Ports are stored in **`tilt_config.json`** (gitignored). `pnpm tilt:up` waits for Docker (starting Docker Desktop on Windows/macOS if needed), then runs `node scripts/ports.mjs ensure` to pick free ports per clone (see [Tiltfile config](https://docs.tilt.dev/tiltfile_config.html)). Override in that file or via `tilt up -- --api-port=3100`, etc. Set `SKIP_DOCKER_ENSURE=1` to skip auto-start (e.g. CI); set `DOCKER_DESKTOP_PATH` if Docker is installed in a non-default location.
+Ports are stored in **`tilt_config.json`** (gitignored). `pnpm dev` waits for Docker (starting Docker Desktop on Windows/macOS if needed), then runs `node scripts/ports.mjs ensure` to pick free ports per clone (see [Tiltfile config](https://docs.tilt.dev/tiltfile_config.html)). Override in that file or via `pnpm dev -- --api-port=3100`, etc. Set `SKIP_DOCKER_ENSURE=1` to skip auto-start (e.g. CI); set `DOCKER_DESKTOP_PATH` if Docker is installed in a non-default location.
 
 | Service | Default |
 |---------|---------|
 | Tilt UI | 10350 (`tilt up --port` / `TILT_PORT`) |
 | API Gateway | 3000 |
-| AI Orchestrator | 8000 |
+| Intelligence (ai-runtime) | 8000 |
 | Prisma Studio | 5556 |
 | Web dashboard | 3002 |
 | PostgreSQL | 5432 |
@@ -94,13 +92,13 @@ For CI or environments without Tilt:
 All Docker commands use project name `ai-assistant` (same as Tilt) so CLI and Tilt do not spawn duplicate containers.
 
 ```bash
-pnpm docker:up              # core only (postgres, redis, qdrant)
-pnpm docker:up:monitoring   # core + prometheus/grafana/loki
-pnpm docker:up:full         # everything including Langfuse
-pnpm docker:down            # tears down full stack
+pnpm docker up              # core only (postgres, redis, qdrant)
+pnpm docker up monitoring   # core + prometheus/grafana/loki
+pnpm docker up full         # everything including Langfuse
+pnpm docker down            # tears down full stack
 
-pnpm dev:api                # terminal 1
-pnpm dev:ai                 # terminal 2
+pnpm dev:gateway            # terminal 1
+pnpm dev:ai-runtime         # terminal 2
 pnpm dev:web                # optional
 pnpm --filter @ai-assistant/mobile dev   # optional
 ```
@@ -108,11 +106,13 @@ pnpm --filter @ai-assistant/mobile dev   # optional
 ## Verification
 
 ```bash
-pnpm docker:up
+pnpm docker up
 pnpm db:migrate
-pnpm dev:api
-pnpm dev:ai
+pnpm dev:gateway
+pnpm dev:ai-runtime
 pnpm test:integration   # must print SUCCEEDED
+pnpm verify planner     # connectors sync + planner heuristic eval (also runs on install)
+pnpm catalog:validate   # catalog YAML consistency
 ```
 
 ## Monorepo layout
@@ -120,11 +120,19 @@ pnpm test:integration   # must print SUCCEEDED
 ```
 apps/mobile          Expo React Native client
 apps/web             Next.js dashboard
-services/gateway     Fastify API + Socket.IO + Better Auth (shim: services/api)
-services/ai-runtime  FastAPI RAG + agents + voice (shim: services/ai)
-services/cognitive-runtime  Planner + tool execution (shim: services/ai-orchestrator)
-services/skill-runtime      Capability/skill execution layer
-services/tool-runtime       Tool connectors + permissions
+services/gateway            Fastify API + Socket.IO + workers
+services/ai-runtime         Intelligence — models, RAG, voice
+services/cognitive-runtime  Planner + executor (Python library, mounted in ai-runtime)
+services/capability-runtime Capability execution (in-process in gateway)
+services/tool-runtime       Tool executor library (in-process in gateway)
+catalog/             Single source of truth (providers, capabilities, tools, policy)
+planner-config/      Planner prompts and AI model YAML
+connectors/          Connector playbooks (meta.json + PLAYBOOK.md per app)
+packages/catalog-codegen  Generates registries from catalog/
+packages/capabilities     Generated capability registry + planner manifest
+packages/tool-schema      Tool definitions (Zod in tool-schemas.ts, metadata from catalog)
+packages/integration-runtime  OAuth/API runtime (Google, WhatsApp)
+packages/platform           Platform tools (contacts, resources)
 packages/types       Shared API & client TypeScript types
 packages/database    Prisma + PostgreSQL
 packages/auth        Better Auth configuration
@@ -172,10 +180,11 @@ Configure providers via root `.env`: `TRANSCRIPTION_*`, `TEXT_MODEL`, `OPENAI_AP
 Full setup: **[apps/mobile/README.md](apps/mobile/README.md)**.
 
 ```bash
-pnpm env:setup && pnpm install && pnpm docker:up && pnpm db:migrate
-cp apps/mobile/.env.example apps/mobile/.env
-pnpm dev:api
-pnpm dev:ai
+pnpm install          # creates .env files + builds + validates
+pnpm docker up
+pnpm db:migrate
+pnpm dev:gateway
+pnpm dev:ai-runtime
 pnpm --filter @ai-assistant/mobile dev
 ```
 

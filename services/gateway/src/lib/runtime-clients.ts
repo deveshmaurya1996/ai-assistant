@@ -1,4 +1,17 @@
 import { config } from '@ai-assistant/config';
+import { correlationHeaders } from './request-context';
+import { enqueueIngestionJob as enqueueIngestionJobDirect } from '../workers/ingestion.worker';
+
+function withCorrelation(init?: RequestInit): RequestInit {
+  return {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...correlationHeaders(),
+      ...init?.headers,
+    },
+  };
+}
 
 export async function toolRuntimeFetch(
   path: string,
@@ -6,74 +19,16 @@ export async function toolRuntimeFetch(
 ): Promise<Response> {
   const base = config.toolRuntimeUrl.replace(/\/$/, '');
   const normalized = path.startsWith('/') ? path : `/${path}`;
-  return fetch(`${base}${normalized}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...init?.headers,
-    },
-  });
+  return fetch(`${base}${normalized}`, withCorrelation(init));
 }
 
-export async function skillRuntimeFetch(
+export async function capabilityRuntimeFetch(
   path: string,
   init?: RequestInit
 ): Promise<Response> {
-  const base = config.skillRuntimeUrl.replace(/\/$/, '');
+  const base = config.capabilityRuntimeUrl.replace(/\/$/, '');
   const normalized = path.startsWith('/') ? path : `/${path}`;
-  return fetch(`${base}${normalized}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...init?.headers,
-    },
-  });
-}
-
-export async function orchestratorFetch(
-  path: string,
-  init?: RequestInit
-): Promise<Response> {
-  const base = config.cognitiveRuntimeUrl.replace(/\/$/, '');
-  const normalized = path.startsWith('/') ? path : `/${path}`;
-  const timeoutMs = Number(process.env.ORCHESTRATOR_TIMEOUT_MS ?? 30_000);
-  const signal =
-    init?.signal ??
-    (typeof AbortSignal.timeout === 'function'
-      ? AbortSignal.timeout(timeoutMs)
-      : undefined);
-  return fetch(`${base}${normalized}`, {
-    ...init,
-    signal,
-    headers: {
-      'Content-Type': 'application/json',
-      ...init?.headers,
-    },
-  });
-}
-
-export async function ingestionFetch(
-  path: string,
-  init?: RequestInit
-): Promise<Response> {
-  const base = config.ingestionEngineUrl.replace(/\/$/, '');
-  const normalized = path.startsWith('/') ? path : `/${path}`;
-  const url = `${base}${normalized}`;
-
-  try {
-    return await fetch(url, {
-      ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        ...init?.headers,
-      },
-    });
-  } catch (cause) {
-    throw new Error(
-      `Ingestion service is not reachable at ${base}. Start ingestion-engine or set INGESTION_ENGINE_URL.`,
-      { cause }
-    );
-  }
+  return fetch(`${base}${normalized}`, withCorrelation(init));
 }
 
 export function enqueueIngestionJob(
@@ -81,42 +36,22 @@ export function enqueueIngestionJob(
   body?: Record<string, unknown>,
   logLabel = 'ingestion'
 ): void {
-  void ingestionFetch(path, {
-    method: 'POST',
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  }).catch((err) => {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn(
-      `[${logLabel}] enqueue failed (${config.ingestionEngineUrl}): ${message}`
-    );
-  });
-}
-
-export async function whatsappBridgeFetch(
-  path: string,
-  init?: RequestInit
-): Promise<Response> {
-  const base = config.whatsappBridgeUrl.replace(/\/$/, '');
-  const normalized = path.startsWith('/') ? path : `/${path}`;
-  const url = `${base}${normalized}`;
-
-  try {
-    return await fetch(url, {
-      ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        ...init?.headers,
-      },
-      body:
-        init?.body ??
-        (init?.method === 'POST' || init?.method === 'PUT' || init?.method === 'PATCH'
-          ? '{}'
-          : undefined),
-    });
-  } catch (cause) {
-    throw new Error(
-      `WhatsApp service is not reachable at ${base}. Ensure the API is running.`,
-      { cause }
-    );
-  }
+  void (async () => {
+    try {
+      if (path.includes('/files/index') && body?.userId && body?.fileAssetId) {
+        await enqueueIngestionJobDirect('index-file', {
+          userId: body.userId,
+          fileAssetId: body.fileAssetId,
+        });
+        return;
+      }
+      const match = path.match(/\/sync\/([^/]+)/);
+      if (match?.[1]) {
+        await enqueueIngestionJobDirect('sync', { connectionId: match[1] });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[${logLabel}] enqueue failed: ${message}`);
+    }
+  })();
 }
