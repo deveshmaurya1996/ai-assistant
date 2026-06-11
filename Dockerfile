@@ -2,7 +2,7 @@
 FROM node:22-bookworm AS node_deps
 WORKDIR /app
 RUN corepack enable
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 COPY patches ./patches
 COPY packages ./packages
 
@@ -77,7 +77,7 @@ COPY connectors ./connectors
 COPY catalog ./catalog
 COPY planner-config ./planner-config
 COPY infra/supervisor/supervisord.conf ./infra/supervisor/supervisord.conf
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
 
 ENV NODE_ENV=production
 ENV INTELLIGENCE_UPSTREAM_URL=http://127.0.0.1:8000
