@@ -139,6 +139,57 @@ async def test_plan_tools_disconnected_gmail_blocks_tools():
 
 
 @pytest.mark.asyncio
+async def test_plan_tools_read_personal_whatsapp_messages():
+    result = await plan_tools(
+        "read whatsapp messages from Rahul",
+        "Ready for AI: whatsapp.",
+        "user-1",
+        manifest_caps={"messaging.search_chats", "messaging.read_chat"},
+        manifest_connections=[{"id": "whatsapp_user-1", "providerId": "whatsapp"}],
+        manifest_connection_states=[{"providerId": "whatsapp", "state": "ready"}],
+    )
+    assert result["planner"] == "heuristic"
+    tool_names = [t.get("tool") for t in result["tools"]]
+    assert "whatsapp.search_chats" in tool_names
+    assert "whatsapp.read_chat" in tool_names
+    assert "whatsapp.list_unread" not in tool_names
+
+
+@pytest.mark.asyncio
+async def test_plan_tools_check_msg_from_dad():
+    result = await plan_tools(
+        "check msg from Dad",
+        "Ready for AI: whatsapp.",
+        "user-1",
+        manifest_caps={"messaging.search_chats", "messaging.read_chat", "messaging.list_unread"},
+        manifest_connections=[{"id": "whatsapp_user-1", "providerId": "whatsapp"}],
+        manifest_connection_states=[{"providerId": "whatsapp", "state": "ready"}],
+    )
+    assert result["planner"] == "heuristic"
+    tool_names = [t.get("tool") for t in result["tools"]]
+    assert "whatsapp.search_chats" in tool_names
+    assert "whatsapp.read_chat" in tool_names
+    assert "whatsapp.list_unread" not in tool_names
+    read_tool = next(t for t in result["tools"] if t.get("tool") == "whatsapp.read_chat")
+    assert read_tool["args"]["chatId"] == "Dad"
+
+
+@pytest.mark.asyncio
+async def test_plan_tools_list_all_unread_msg_uses_higher_limit():
+    result = await plan_tools(
+        "list all unread msg",
+        "Ready for AI: whatsapp.",
+        "user-1",
+        manifest_caps={"messaging.list_unread"},
+        manifest_connections=[{"id": "whatsapp_user-1", "providerId": "whatsapp"}],
+        manifest_connection_states=[{"providerId": "whatsapp", "state": "ready"}],
+    )
+    assert result["planner"] == "heuristic"
+    wa = next(t for t in result["tools"] if t.get("tool") == "whatsapp.list_unread")
+    assert wa["args"]["limit"] == 50
+
+
+@pytest.mark.asyncio
 async def test_plan_tools_yesterday_calendar_includes_time_range():
     result = await plan_tools(
         "what meetings did I have yesterday",

@@ -495,16 +495,21 @@ export class AssistantClient {
     return this.request(`/integrations/connections/${connectionId}/whatsapp/session`);
   }
 
-  async requestWhatsAppPairing(connectionId: string, phoneNumber: string) {
-    return this.request<{
-      sessionId: string;
-      pairingCode?: string;
-      pairingPhone?: string;
+  async requestWhatsAppPairing(
+    connectionId: string,
+    phoneNumber: string,
+    options?: { countryCode?: string; forceRefresh?: boolean }
+  ) {
+    return this.request<WhatsAppSessionStatus & {
+      connectionId: string;
       pairingPhoneDisplay?: string;
-      status: string;
     }>(`/integrations/connections/${connectionId}/whatsapp/pairing`, {
       method: 'POST',
-      body: JSON.stringify({ phoneNumber }),
+      body: JSON.stringify({
+        phoneNumber,
+        countryCode: options?.countryCode,
+        forceRefresh: options?.forceRefresh,
+      }),
     });
   }
 

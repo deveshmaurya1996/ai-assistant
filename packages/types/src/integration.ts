@@ -52,7 +52,15 @@ export interface WhatsAppSessionStatus {
   status: 'pending' | 'active' | 'disconnected';
   qrData?: string;
   pairingCode?: string;
+  pairingCodeRaw?: string;
   pairingPhone?: string;
+  pairingCodeIssuedAt?: string;
+  pairingCodeExpiresAt?: string;
+  pairingExpired?: boolean;
+  pairingInvalidated?: boolean;
+  pairingReconnecting?: boolean;
+  pairingAccepted?: boolean;
+  connectionPhase?: string;
   updatedAt?: string;
 }
 

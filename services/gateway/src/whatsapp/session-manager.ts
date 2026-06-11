@@ -16,8 +16,11 @@ import {
 import { getWhatsAppAuthRoot } from './auth-paths';
 import {
   authDirExists,
+  drainAuthPersistence,
   ensureAuthDirLocal,
+  persistBaileysCredentials,
   pushAuthDirToRemote,
+  resetLinkingAuthStore,
 } from './auth-remote';
 import { markConnectionActive, markWhatsAppDisconnectedForUser } from './connection-lifecycle';
 import { repairWhatsAppConnectionMetadata } from './session-resolve';
@@ -36,9 +39,24 @@ export interface SessionState {
   pairingPhone?: string;
   pairingInProgress?: boolean;
   pairingCodeIssuedAt?: string;
+  pairingInvalidatedAt?: string;
+  pairingAccepted?: boolean;
   historySyncComplete?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export const PAIRING_CODE_TTL_MS = 120_000;
+export const PAIRING_REQUEST_TIMEOUT_MS = 45_000;
+
+export function isPairingCodeExpired(issuedAt?: string): boolean {
+  if (!issuedAt) return true;
+  return Date.now() - new Date(issuedAt).getTime() >= PAIRING_CODE_TTL_MS;
+}
+
+export function pairingCodeExpiresAt(issuedAt?: string): string | undefined {
+  if (!issuedAt) return undefined;
+  return new Date(new Date(issuedAt).getTime() + PAIRING_CODE_TTL_MS).toISOString();
 }
 
 export interface ChatEntry {
@@ -100,6 +118,12 @@ function authDirFor(sessionId: string): string {
   return path.join(AUTH_ROOT, sessionId);
 }
 
+function getDisconnectStatusCode(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const err = error as { output?: { statusCode?: number }; statusCode?: number };
+  return err.output?.statusCode ?? err.statusCode;
+}
+
 export class SessionManager {
   private sessions = new Map<string, SessionState>();
   private sockets = new Map<string, BaileysSocket>();
@@ -110,6 +134,9 @@ export class SessionManager {
   private messageCache = new Map<string, Map<string, CachedMessage[]>>();
   private unreadCounts = new Map<string, Map<string, number>>();
   private rawMessageCache = new Map<string, Map<string, unknown>>();
+  private qrSignaled = new Set<string>();
+  private authEpoch = new Map<string, number>();
+  private reconnecting = new Set<string>();
 
   getSession(sessionId: string): SessionState | undefined {
     return this.sessions.get(sessionId);
@@ -119,30 +146,213 @@ export class SessionManager {
     return this.sockets.get(sessionId);
   }
 
-  async getOrRestoreSession(sessionId: string): Promise<SessionState> {
-    const existing = this.sessions.get(sessionId);
-    if (existing) {
-      await this.ensureSocket(sessionId);
-      return existing;
+  getConnectionPhase(sessionId: string): string | undefined {
+    return this.connectionPhases.get(sessionId);
+  }
+
+  isReconnecting(sessionId: string): boolean {
+    return this.reconnecting.has(sessionId);
+  }
+
+  private async waitForReconnect(sessionId: string, timeoutMs = 90_000): Promise<void> {
+    const started = Date.now();
+    while (this.reconnecting.has(sessionId) && Date.now() - started < timeoutMs) {
+      await new Promise((r) => setTimeout(r, 200));
     }
+  }
+
+  private isLinking(session: SessionState): boolean {
+    return session.status === 'pending';
+  }
+
+  private isActivePhonePairing(session: SessionState): boolean {
+    return !!(
+      session.pairingInProgress ||
+      (session.pairingCode && !isPairingCodeExpired(session.pairingCodeIssuedAt))
+    );
+  }
+
+  private bumpAuthEpoch(sessionId: string): void {
+    this.authEpoch.set(sessionId, (this.authEpoch.get(sessionId) ?? 0) + 1);
+  }
+
+  private teardownSocket(sessionId: string): void {
+    const socket = this.sockets.get(sessionId);
+    if (socket) {
+      try {
+        socket.end(undefined);
+      } catch {
+        /* ignore */
+      }
+      this.sockets.delete(sessionId);
+    }
+    this.connectionPhases.delete(sessionId);
+    this.qrSignaled.delete(sessionId);
+  }
+
+  private async loadSessionRecord(sessionId: string): Promise<SessionState> {
+    const existing = this.sessions.get(sessionId);
+    if (existing) return existing;
 
     const authDir = authDirFor(sessionId);
-    if (await authDirExists(sessionId, authDir)) {
-      await ensureAuthDirLocal(sessionId, authDir);
-      const metaPath = path.join(authDir, 'session.json');
-      try {
-        const raw = await readFile(metaPath, 'utf8');
-        const saved = JSON.parse(raw) as SessionState;
-        this.sessions.set(sessionId, { ...saved, sessionId });
-        await this.ensureSocket(sessionId);
-        const restored = this.sessions.get(sessionId);
-        if (restored) return restored;
-      } catch {
-        /* recreate from baileys auth files */
-      }
+    if (!(await authDirExists(sessionId, authDir))) {
+      throw new Error('Session not found');
     }
 
-    throw new Error('Session not found');
+    await ensureAuthDirLocal(sessionId, authDir);
+    const metaPath = path.join(authDir, 'session.json');
+    try {
+      const raw = await readFile(metaPath, 'utf8');
+      const saved = JSON.parse(raw) as SessionState;
+      const session = { ...saved, sessionId };
+      this.sessions.set(sessionId, session);
+      if (!this.chatCache.has(sessionId)) {
+        this.chatCache.set(sessionId, []);
+      }
+      void repairWhatsAppConnectionMetadata(saved.userId, sessionId);
+      void this.hydrateFromDatabase(sessionId);
+      return session;
+    } catch {
+      throw new Error('Session not found');
+    }
+  }
+
+  private async assertLinkingSession(sessionId: string): Promise<SessionState> {
+    const session = await this.loadSessionRecord(sessionId);
+
+    if (session.status === 'active') {
+      return session;
+    }
+
+    if (session.status === 'disconnected') {
+      session.status = 'pending';
+      this.clearPairingState(session, false);
+      session.updatedAt = new Date().toISOString();
+      await this.persistSessionMetaNow(session);
+    }
+
+    if (session.status !== 'pending') {
+      throw new Error('WhatsApp session expired. Go back and tap Connect again.');
+    }
+
+    return session;
+  }
+
+  private async resetLinkingAuth(sessionId: string): Promise<void> {
+    const authDir = authDirFor(sessionId);
+    await ensureAuthDirLocal(sessionId, authDir);
+    await drainAuthPersistence(sessionId);
+    this.bumpAuthEpoch(sessionId);
+    await resetLinkingAuthStore(sessionId, authDir);
+  }
+
+  private async ensureLinkingSocket(
+    sessionId: string,
+    options?: { resetAuth?: boolean; fromReconnect?: boolean }
+  ): Promise<BaileysSocket> {
+    await this.assertLinkingSession(sessionId);
+
+    if (options?.resetAuth) {
+      this.teardownSocket(sessionId);
+      await this.resetLinkingAuth(sessionId);
+    }
+
+    const existing = this.sockets.get(sessionId);
+    if (existing) return existing;
+
+    return this.ensureSocket(sessionId, { fromReconnect: options?.fromReconnect });
+  }
+
+  private recoverLinkingAfterClose(
+    sessionId: string,
+    options: { resetAuth?: boolean; invalidatePairing?: boolean }
+  ): void {
+    const current = this.sessions.get(sessionId);
+    if (!current) return;
+    if (this.reconnecting.has(sessionId)) return;
+
+    if (options.invalidatePairing && current.pairingCode) {
+      this.clearPairingState(current, true);
+      void this.persistSessionMetaNow(current);
+    }
+
+    this.reconnecting.add(sessionId);
+
+    const reconnect = async () => {
+      try {
+        await drainAuthPersistence(sessionId);
+        this.teardownSocket(sessionId);
+        if (options.resetAuth) {
+          await this.resetLinkingAuth(sessionId);
+        }
+        if (this.isLinking(current)) {
+          await this.ensureLinkingSocket(sessionId, { fromReconnect: true });
+        } else {
+          await this.ensureSocket(sessionId, { fromReconnect: true });
+        }
+      } finally {
+        this.reconnecting.delete(sessionId);
+      }
+    };
+
+    void reconnect().catch((err) => {
+      logger.warn({ err, sessionId }, 'WhatsApp reconnect after close failed');
+    });
+  }
+
+  private clearPairingState(session: SessionState, invalidated: boolean): void {
+    const hadCode = !!session.pairingCode;
+    session.pairingCode = undefined;
+    session.pairingPhone = undefined;
+    session.pairingInProgress = false;
+    session.pairingCodeIssuedAt = undefined;
+    if (invalidated && hadCode) {
+      session.pairingInvalidatedAt = new Date().toISOString();
+      session.pairingAccepted = false;
+    } else if (!invalidated) {
+      session.pairingInvalidatedAt = undefined;
+    }
+    session.updatedAt = new Date().toISOString();
+  }
+
+  async getOrRestoreSession(sessionId: string): Promise<SessionState> {
+    const session = await this.loadSessionRecord(sessionId);
+
+    if (session.status === 'active') {
+      await this.ensureSocket(sessionId);
+      return session;
+    }
+
+    await this.ensureLinkingSocket(sessionId);
+    return this.sessions.get(sessionId) ?? session;
+  }
+
+  async getLinkingSessionState(sessionId: string): Promise<SessionState> {
+    const session = await this.assertLinkingSession(sessionId);
+    const live = this.sessions.get(sessionId) ?? session;
+
+    if (live.status === 'active') {
+      return live;
+    }
+
+    if (this.reconnecting.has(sessionId) || live.pairingAccepted) {
+      return this.sessions.get(sessionId) ?? live;
+    }
+
+    if (!this.sockets.has(sessionId) && !this.starting.has(sessionId)) {
+      void this.ensureLinkingSocket(sessionId).catch((err) => {
+        logger.warn({ err, sessionId }, 'WhatsApp background linking socket start failed');
+      });
+    }
+
+    return this.sessions.get(sessionId) ?? live;
+  }
+
+  async getLinkingSession(sessionId: string): Promise<SessionState> {
+    const session = await this.assertLinkingSession(sessionId);
+    await this.waitForReconnect(sessionId);
+    await this.ensureLinkingSocket(sessionId);
+    return this.sessions.get(sessionId) ?? session;
   }
 
   async disconnectSession(sessionId: string): Promise<void> {
@@ -195,52 +405,65 @@ export class SessionManager {
     this.sessions.set(sessionId, session);
     this.chatCache.set(sessionId, []);
     await this.persistSessionMetaNow(session);
-    void this.ensureSocket(sessionId).catch((err) => {
+    void this.ensureLinkingSocket(sessionId).catch((err) => {
       logger.warn({ err, sessionId }, 'WhatsApp socket start failed');
     });
     return session;
   }
 
   async restartPendingSession(sessionId: string): Promise<SessionState> {
-    const session = await this.getOrRestoreSession(sessionId);
+    const session = await this.loadSessionRecord(sessionId);
     if (session.status === 'active') return session;
 
-    const socket = this.sockets.get(sessionId);
-    if (socket) {
-      try {
-        socket.end(undefined);
-      } catch {
-        /* ignore */
-      }
-      this.sockets.delete(sessionId);
-    }
-    this.connectionPhases.delete(sessionId);
-    this.starting.delete(sessionId);
+    session.status = 'pending';
+    session.updatedAt = new Date().toISOString();
+    await this.persistSessionMetaNow(session);
 
-    await this.ensureSocket(sessionId);
+    this.teardownSocket(sessionId);
+    await this.resetLinkingAuth(sessionId);
+    await this.ensureLinkingSocket(sessionId);
+
     const refreshed = this.sessions.get(sessionId);
     if (!refreshed) throw new Error('WhatsApp session could not be restarted');
     return refreshed;
   }
 
-  async requestPairingCode(sessionId: string, phoneNumber: string): Promise<SessionState> {
-    const session = await this.getOrRestoreSession(sessionId);
-    const sock = await this.ensureSocket(sessionId);
-
-    if (session.status === 'active') {
-      return session;
-    }
+  async requestPairingCode(
+    sessionId: string,
+    phoneNumber: string,
+    options?: { countryCode?: string; forceRefresh?: boolean }
+  ): Promise<SessionState> {
+    const countryCode = options?.countryCode?.replace(/\D/g, '') || '91';
+    const forceRefresh = options?.forceRefresh ?? false;
 
     let normalized: string;
     try {
-      normalized = normalizeWhatsAppPairingPhone(phoneNumber);
+      normalized = normalizeWhatsAppPairingPhone(phoneNumber, countryCode);
     } catch {
       normalized = normalizePhone(phoneNumber);
       if (normalized.length < 10) {
         throw new Error('Enter a valid phone number with country code (digits only)');
       }
     }
+
+    const session = await this.assertLinkingSession(sessionId);
+    if (session.status === 'active') {
+      return session;
+    }
+
     logger.info({ sessionId, pairingPhone: normalized }, 'Requesting WhatsApp pairing code');
+
+    const existingSock = this.sockets.get(sessionId);
+    const needsAuthReset =
+      forceRefresh ||
+      session.pairingPhone !== normalized ||
+      !!existingSock?.authState.creds.registered;
+
+    if (forceRefresh || session.pairingPhone !== normalized) {
+      this.clearPairingState(session, false);
+    }
+
+    const sock = await this.ensureLinkingSocket(sessionId, { resetAuth: needsAuthReset });
 
     if (sock.authState.creds.registered) {
       throw new Error('Session already registered — disconnect WhatsApp and tap Connect again');
@@ -254,7 +477,15 @@ export class SessionManager {
 
     let code: string;
     try {
-      code = await sock.requestPairingCode(normalized);
+      code = await Promise.race([
+        sock.requestPairingCode(normalized),
+        new Promise<string>((_, reject) => {
+          setTimeout(
+            () => reject(new Error('Pairing timed out — tap Get new code')),
+            PAIRING_REQUEST_TIMEOUT_MS
+          );
+        }),
+      ]);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Pairing code request failed';
       throw new Error(
@@ -266,6 +497,7 @@ export class SessionManager {
     session.pairingCode = formatPairingCode(code);
     session.pairingInProgress = true;
     session.pairingCodeIssuedAt = new Date().toISOString();
+    session.pairingInvalidatedAt = undefined;
     session.updatedAt = session.pairingCodeIssuedAt;
     await this.persistSessionMetaNow(session);
     return session;
@@ -436,7 +668,14 @@ export class SessionManager {
       const unread = unreadMap.get(chat.jid) ?? chat.unreadCount ?? 0;
       if (unread <= 0) continue;
       const messages = msgByJid.get(chat.jid) ?? [];
-      const last = messages[messages.length - 1];
+      let last = messages[messages.length - 1];
+      if (!last) {
+        const fromDb = await loadMessagesFromDb(sessionId, chat.jid, 1);
+        if (fromDb.length > 0) {
+          last = fromDb[fromDb.length - 1];
+          this.storeMessages(sessionId, chat.jid, fromDb);
+        }
+      }
       items.push({
         chatId: chat.jid,
         sender: chat.name || chat.jid.split('@')[0] || 'Unknown',
@@ -478,6 +717,7 @@ export class SessionManager {
   ): Promise<{
     type: string;
     chatId: string;
+    displayName: string;
     messages: Array<{
       id: string;
       sender: string;
@@ -539,12 +779,10 @@ export class SessionManager {
       fromMe: m.fromMe,
     }));
 
-    const unreadMap = this.unreadCounts.get(sessionId);
-    if (unreadMap) unreadMap.set(jid, 0);
-
     return {
       type: 'messaging.conversation',
       chatId: jid,
+      displayName: chatName,
       messages,
     };
   }
@@ -774,7 +1012,14 @@ export class SessionManager {
     });
   }
 
-  private async ensureSocket(sessionId: string): Promise<BaileysSocket> {
+  private async ensureSocket(
+    sessionId: string,
+    options?: { fromReconnect?: boolean }
+  ): Promise<BaileysSocket> {
+    if (!options?.fromReconnect) {
+      await this.waitForReconnect(sessionId);
+    }
+
     const existing = this.sockets.get(sessionId);
     if (existing) return existing;
 
@@ -784,26 +1029,8 @@ export class SessionManager {
       if (sock) return sock;
     }
 
-    const authDir = authDirFor(sessionId);
-    if (!this.sessions.get(sessionId) && (await authDirExists(sessionId, authDir))) {
-      await ensureAuthDirLocal(sessionId, authDir);
-      const metaPath = path.join(authDir, 'session.json');
-      try {
-        const raw = await readFile(metaPath, 'utf8');
-        const saved = JSON.parse(raw) as SessionState;
-        this.sessions.set(sessionId, { ...saved, sessionId });
-        if (!this.chatCache.has(sessionId)) {
-          this.chatCache.set(sessionId, []);
-        }
-        void repairWhatsAppConnectionMetadata(saved.userId, sessionId);
-        void this.hydrateFromDatabase(sessionId);
-      } catch {
-        throw new Error('Session not found');
-      }
-    }
-
     if (!this.sessions.get(sessionId)) {
-      throw new Error('Session not found');
+      await this.loadSessionRecord(sessionId);
     }
 
     this.starting.add(sessionId);
@@ -833,6 +1060,8 @@ export class SessionManager {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
+    this.qrSignaled.delete(sessionId);
+
     const previous = this.sockets.get(sessionId);
     if (previous) {
       try {
@@ -852,14 +1081,18 @@ export class SessionManager {
 
     const baileys = await getBaileys();
     const { state: authState, saveCreds } = await baileys.useMultiFileAuthState(authDir);
-    const persistBaileysAuth = async () => {
-      await saveCreds();
-      await pushAuthDirToRemote(sessionId, authDir);
-    };
+    const authEpoch = this.authEpoch.get(sessionId) ?? 0;
+    const isAuthEpochValid = () => (this.authEpoch.get(sessionId) ?? 0) === authEpoch;
+    const persistBaileysAuth = () =>
+      persistBaileysCredentials(sessionId, authDir, saveCreds, isAuthEpochValid);
     const { version } = await baileys.fetchLatestBaileysVersion();
 
     const syncedThreads = await countSyncedThreads(sessionId);
-    const isLinking = session.status === 'pending';
+    const isLinking = this.isLinking(session);
+    if (isLinking && session.pairingCode && !this.isActivePhonePairing(session)) {
+      this.clearPairingState(session, false);
+      void this.persistSessionMetaNow(session);
+    }
     const wantsFullHistory =
       !isLinking && (!session.historySyncComplete || syncedThreads < 25);
 
@@ -892,8 +1125,8 @@ export class SessionManager {
     this.sockets.set(sessionId, sock);
     this.connectionPhases.set(sessionId, 'connecting');
 
-    sock.ev.on('creds.update', async () => {
-      await persistBaileysAuth();
+    sock.ev.on('creds.update', () => {
+      void persistBaileysAuth();
       void this.persistSessionMeta(session);
     });
 
@@ -1013,25 +1246,35 @@ export class SessionManager {
       }
 
       if (update.qr) {
-        try {
-          current.qrData = await QRCode.toDataURL(update.qr, {
-            margin: 2,
-            width: 320,
-            color: { dark: '#128C7E', light: '#FFFFFF' },
-          });
-          current.updatedAt = new Date().toISOString();
-          void this.persistSessionMeta(current);
-        } catch (err) {
-          logger.error({ err }, 'QR encode failed');
+        this.qrSignaled.add(sessionId);
+        if (!this.isActivePhonePairing(current)) {
+          try {
+            current.qrData = await QRCode.toDataURL(update.qr, {
+              margin: 2,
+              width: 320,
+              color: { dark: '#128C7E', light: '#FFFFFF' },
+            });
+            current.updatedAt = new Date().toISOString();
+            void this.persistSessionMeta(current);
+          } catch (err) {
+            logger.error({ err }, 'QR encode failed');
+          }
         }
+      }
+
+      if (update.isNewLogin) {
+        logger.info({ sessionId }, 'WhatsApp pairing accepted — saving credentials before restart');
+        current.pairingInProgress = true;
+        current.pairingAccepted = true;
+        current.updatedAt = new Date().toISOString();
+        void this.persistSessionMeta(current, true);
+        await persistBaileysAuth();
       }
 
       if (update.connection === 'open') {
         current.status = 'active';
-        current.pairingInProgress = false;
-        current.pairingCode = undefined;
-        current.pairingPhone = undefined;
-        current.pairingCodeIssuedAt = undefined;
+        current.pairingAccepted = false;
+        this.clearPairingState(current, false);
         current.updatedAt = new Date().toISOString();
         void this.persistSessionMeta(current, true);
         void this.hydrateFromDatabase(sessionId);
@@ -1058,36 +1301,74 @@ export class SessionManager {
       }
 
       if (update.connection === 'close') {
-        const statusCode = (update.lastDisconnect?.error as { output?: { statusCode?: number } })
-          ?.output?.statusCode;
+        const statusCode = getDisconnectStatusCode(update.lastDisconnect?.error);
+        const wasLinking = this.isLinking(current);
         const conflictReplaced = statusCode === 440;
+
         if (conflictReplaced) {
-          current.status = 'disconnected';
-          current.updatedAt = new Date().toISOString();
-          this.sockets.delete(sessionId);
-          this.connectionPhases.delete(sessionId);
-          void this.hydrateFromDatabase(sessionId);
-          void this.persistSessionMeta(current, true);
-          logger.warn({ sessionId }, 'WhatsApp session replaced by another linked device');
+          if (wasLinking) {
+            logger.warn({ sessionId }, 'WhatsApp link conflict during pairing — recovering');
+            this.recoverLinkingAfterClose(sessionId, { resetAuth: true, invalidatePairing: true });
+          } else {
+            current.status = 'disconnected';
+            current.updatedAt = new Date().toISOString();
+            this.teardownSocket(sessionId);
+            void this.hydrateFromDatabase(sessionId);
+            void this.persistSessionMeta(current, true);
+            logger.warn({ sessionId }, 'WhatsApp session replaced by another linked device');
+          }
           return;
         }
+
         if (statusCode === baileys.DisconnectReason.loggedOut) {
-          current.status = 'disconnected';
-          current.updatedAt = new Date().toISOString();
-          this.sockets.delete(sessionId);
-          this.connectionPhases.delete(sessionId);
-          void this.persistSessionMeta(current, true);
-          void markWhatsAppDisconnectedForUser(current.userId).catch((err) => {
-            logger.warn({ err, userId: current.userId }, 'Failed to mark WhatsApp disconnected in DB');
+          if (wasLinking) {
+            logger.info({ sessionId }, 'WhatsApp logged out during link — resetting auth');
+            this.recoverLinkingAfterClose(sessionId, { resetAuth: true, invalidatePairing: true });
+          } else {
+            current.status = 'disconnected';
+            current.updatedAt = new Date().toISOString();
+            this.teardownSocket(sessionId);
+            void this.persistSessionMeta(current, true);
+            void markWhatsAppDisconnectedForUser(current.userId).catch((err) => {
+              logger.warn({ err, userId: current.userId }, 'Failed to mark WhatsApp disconnected in DB');
+            });
+          }
+          return;
+        }
+
+        if (statusCode === baileys.DisconnectReason.restartRequired) {
+          logger.info({ sessionId }, 'WhatsApp restart required after pairing — reconnecting');
+          this.recoverLinkingAfterClose(sessionId, {
+            resetAuth: false,
+            invalidatePairing: false,
           });
           return;
         }
-        if (current.status !== 'active' && !this.starting.has(sessionId)) {
-          this.sockets.delete(sessionId);
-          this.connectionPhases.delete(sessionId);
-          void this.ensureSocket(sessionId).catch((err) => {
-            logger.warn({ err, sessionId }, 'WhatsApp reconnect failed');
+
+        if (wasLinking && this.isActivePhonePairing(current)) {
+          logger.info(
+            { sessionId, statusCode },
+            'WhatsApp transient disconnect during pairing — recovering'
+          );
+          this.recoverLinkingAfterClose(sessionId, {
+            resetAuth: false,
+            invalidatePairing: false,
           });
+          return;
+        }
+
+        if (current.status !== 'active' && !this.starting.has(sessionId)) {
+          if (wasLinking) {
+            this.recoverLinkingAfterClose(sessionId, {
+              resetAuth: false,
+              invalidatePairing: false,
+            });
+          } else {
+            this.teardownSocket(sessionId);
+            void this.ensureSocket(sessionId).catch((err) => {
+              logger.warn({ err, sessionId }, 'WhatsApp reconnect failed');
+            });
+          }
         }
       }
     });

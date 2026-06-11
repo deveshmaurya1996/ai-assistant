@@ -288,9 +288,6 @@ export default function IntegrationsScreen() {
                 : 'Reconnect'
               : 'Connect';
 
-          const loadingLabel =
-            busy?.action === 'disconnect' ? 'Disconnecting…' : 'Connecting…';
-
           return (
             <FadeIn delay={index * 40} style={styles.cardWrap}>
               <Card style={styles.card}>
@@ -306,7 +303,6 @@ export default function IntegrationsScreen() {
                 <IntegrationActionButton
                   variant={connected && aiReady ? 'disconnect' : 'connect'}
                   label={actionLabel}
-                  loadingLabel={loadingLabel}
                   loading={isBusy}
                   disabled={isBusy}
                   onPress={() => {

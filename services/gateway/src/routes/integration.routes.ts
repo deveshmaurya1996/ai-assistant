@@ -15,7 +15,11 @@ import {
   decryptCredentials,
   encryptCredentials,
 } from '../services/encryption.service';
-import { sessionManager } from '../whatsapp/session-manager';
+import {
+  isPairingCodeExpired,
+  pairingCodeExpiresAt,
+  sessionManager,
+} from '../whatsapp/session-manager';
 import { findLatestActiveBridgeSession } from '../whatsapp/session-resolve';
 import { formatPhoneForDisplay } from '../whatsapp/phone-normalize';
 import {
@@ -32,24 +36,42 @@ function resolveWhatsAppBridgeSessionId(metadata: unknown): string | null {
   return id || null;
 }
 
-function toPublicSession(session: {
-  status: string;
-  qrData?: string;
-  pairingCode?: string;
-  pairingPhone?: string;
-  pairingCodeIssuedAt?: string;
-  updatedAt: string;
-}) {
-  const rawCode = session.pairingCode?.replace(/[^A-Za-z0-9]/g, '').toUpperCase() ?? '';
+function toPublicSession(
+  session: {
+    sessionId?: string;
+    status: string;
+    qrData?: string;
+    pairingCode?: string;
+    pairingPhone?: string;
+    pairingCodeIssuedAt?: string;
+    pairingInvalidatedAt?: string;
+    pairingAccepted?: boolean;
+    updatedAt: string;
+  },
+  connectionPhase?: string
+) {
+  const expired = session.pairingCodeIssuedAt
+    ? isPairingCodeExpired(session.pairingCodeIssuedAt)
+    : false;
+  const showCode = session.pairingCode && !expired;
+  const rawCode =
+    showCode && session.pairingCode
+      ? session.pairingCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+      : '';
   const pairingCodeDisplay =
-    rawCode.length === 8 ? `${rawCode.slice(0, 4)}-${rawCode.slice(4)}` : session.pairingCode;
+    rawCode.length === 8 ? `${rawCode.slice(0, 4)}-${rawCode.slice(4)}` : showCode ? session.pairingCode : undefined;
   return {
     status: session.status,
     qrData: session.qrData,
     pairingCode: pairingCodeDisplay,
     pairingCodeRaw: rawCode || undefined,
-    pairingPhone: session.pairingPhone,
-    pairingCodeIssuedAt: session.pairingCodeIssuedAt,
+    pairingPhone: showCode ? session.pairingPhone : undefined,
+    pairingCodeIssuedAt: showCode ? session.pairingCodeIssuedAt : undefined,
+    pairingCodeExpiresAt: showCode ? pairingCodeExpiresAt(session.pairingCodeIssuedAt) : undefined,
+    pairingExpired: expired && !!session.pairingCode,
+    pairingInvalidated: !!(session.pairingInvalidatedAt && !showCode),
+    pairingAccepted: !!session.pairingAccepted,
+    connectionPhase,
     updatedAt: session.updatedAt,
   };
 }
@@ -456,7 +478,10 @@ export async function integrationRoutes(fastify: FastifyInstance) {
 
       let session;
       try {
-        session = await sessionManager.getOrRestoreSession(bridgeSessionId);
+        session =
+          connection.status === 'PENDING'
+            ? await sessionManager.getLinkingSessionState(bridgeSessionId)
+            : await sessionManager.getOrRestoreSession(bridgeSessionId);
       } catch (err) {
         if (connection.status === 'PENDING') {
           try {
@@ -485,9 +510,12 @@ export async function integrationRoutes(fastify: FastifyInstance) {
         });
       }
 
+      const connectionPhase = sessionManager.getConnectionPhase(bridgeSessionId);
+
       return reply.send({
         connectionId: id,
-        ...toPublicSession(session),
+        ...toPublicSession(session, connectionPhase),
+        pairingReconnecting: sessionManager.isReconnecting(bridgeSessionId),
       });
     } catch (error) {
       return sendError(reply, error);
@@ -498,13 +526,19 @@ export async function integrationRoutes(fastify: FastifyInstance) {
     try {
       const userId = requireUserId(request);
       const { id } = request.params as { id: string };
-      const body = request.body as { phoneNumber?: string | number };
+      const body = request.body as {
+        phoneNumber?: string | number;
+        countryCode?: string;
+        forceRefresh?: boolean;
+      };
       const rawPhone = body.phoneNumber;
       if (rawPhone === undefined || rawPhone === null || String(rawPhone).trim() === '') {
         return reply.code(400).send({ error: 'phoneNumber is required' });
       }
 
       const phoneNumber = String(rawPhone).trim();
+      const countryCode = body.countryCode?.trim();
+      const forceRefresh = body.forceRefresh === true;
 
       const connection = await prisma.userConnection.findFirst({
         where: { id, userId, providerId: 'whatsapp' },
@@ -518,19 +552,39 @@ export async function integrationRoutes(fastify: FastifyInstance) {
         });
       }
 
+      const requestPairing = () =>
+        sessionManager.requestPairingCode(bridgeSessionId, phoneNumber, {
+          countryCode,
+          forceRefresh,
+        });
+
       try {
-        const session = await sessionManager.requestPairingCode(
-          bridgeSessionId,
-          phoneNumber
-        );
+        const session = await requestPairing();
+        const connectionPhase = sessionManager.getConnectionPhase(bridgeSessionId);
         return reply.send({
           connectionId: id,
-          ...toPublicSession(session),
+          ...toPublicSession(session, connectionPhase),
           pairingPhoneDisplay: session.pairingPhone
             ? formatPhoneForDisplay(session.pairingPhone)
             : undefined,
         });
       } catch (err) {
+        if (connection.status === 'PENDING') {
+          try {
+            await sessionManager.restartPendingSession(bridgeSessionId);
+            const session = await requestPairing();
+            const connectionPhase = sessionManager.getConnectionPhase(bridgeSessionId);
+            return reply.send({
+              connectionId: id,
+              ...toPublicSession(session, connectionPhase),
+              pairingPhoneDisplay: session.pairingPhone
+                ? formatPhoneForDisplay(session.pairingPhone)
+                : undefined,
+            });
+          } catch {
+            /* fall through to original error */
+          }
+        }
         const message = err instanceof Error ? err.message : 'Pairing failed';
         return reply.code(400).send({ error: message });
       }

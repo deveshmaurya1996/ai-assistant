@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { forwardRef, useState } from 'react';
 import {
   Dimensions,
   Modal,
   Pressable,
   StyleSheet,
   View,
+  type TextInput,
+  type TextInputProps,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CountryPicker, {
@@ -20,26 +22,31 @@ import {
   DEFAULT_COUNTRY_CODE,
 } from '@/components/integrations/countryCodes';
 
-type Props = {
+export type CountryPhoneFieldProps = {
   countryCode: CountryCode;
   callingCode: string;
   phone: string;
   onCountryChange: (countryCode: CountryCode, callingCode: string) => void;
   onPhoneChange: (phone: string) => void;
   placeholder?: string;
-};
+} & Pick<TextInputProps, 'autoFocus' | 'onFocus'>;
 
 const { height: WINDOW_HEIGHT } = Dimensions.get('window');
 const SHEET_HEIGHT = Math.min(WINDOW_HEIGHT * 0.72, 560);
 
-export function CountryPhoneField({
-  countryCode,
-  callingCode,
-  phone,
-  onCountryChange,
-  onPhoneChange,
-  placeholder = 'Mobile number',
-}: Props) {
+export const CountryPhoneField = forwardRef<TextInput, CountryPhoneFieldProps>(function CountryPhoneField(
+  {
+    countryCode,
+    callingCode,
+    phone,
+    onCountryChange,
+    onPhoneChange,
+    placeholder = 'Mobile number',
+    autoFocus = false,
+    onFocus,
+  },
+  ref
+) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -70,11 +77,15 @@ export function CountryPhoneField({
         </Pressable>
         <View style={styles.phoneInput}>
           <Input
+            ref={ref}
             value={phone}
             onChangeText={onPhoneChange}
             placeholder={placeholder}
             keyboardType="phone-pad"
             autoComplete="tel"
+            autoFocus={autoFocus}
+            returnKeyType="done"
+            onFocus={onFocus}
           />
         </View>
       </View>
@@ -142,7 +153,9 @@ export function CountryPhoneField({
       </Modal>
     </View>
   );
-}
+});
+
+CountryPhoneField.displayName = 'CountryPhoneField';
 
 const styles = StyleSheet.create({
   wrap: { gap: spacing.xs },

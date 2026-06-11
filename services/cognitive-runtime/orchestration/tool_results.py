@@ -110,10 +110,28 @@ def format_scheduling_plan_failure(warnings: List[str]) -> str:
     )
 
 
+_LOOKUP_ONLY_TOOLS = frozenset(
+    {
+        "whatsapp.search_chats",
+        "messaging.search_chats",
+    }
+)
+
+
 def format_tool_results_for_context(tool_results: List[Dict[str, Any]]) -> str:
     lines: List[str] = []
+    has_read_chat = any(
+        str(entry.get("tool") or "").endswith("read_chat")
+        for entry in tool_results
+        if not entry.get("requiresConfirmation")
+    )
     for entry in tool_results:
         if entry.get("requiresConfirmation"):
+            continue
+        tool = str(entry.get("tool") or "")
+        if tool in _LOOKUP_ONLY_TOOLS and has_read_chat:
+            continue
+        if tool in _LOOKUP_ONLY_TOOLS:
             continue
         line = _summarize_tool_entry(entry)
         if line:
@@ -160,6 +178,12 @@ def _summarize_tool_entry(entry: Dict[str, Any]) -> str:
         if tool == "drive.get_content":
             return _format_drive_content(payload)
         return _format_drive_search(payload)
+
+    if tool.startswith(("whatsapp.", "messaging.")):
+        return "WhatsApp: no data returned."
+
+    if tool.startswith(("email.", "gmail.")):
+        return "Gmail: no data returned."
 
     if status in ("completed", "success"):
         return "The requested action completed successfully."
@@ -281,6 +305,8 @@ def _summarize_inbox_tool(entry: Dict[str, Any]) -> str:
         if payload.get("type") == "email.message" or payload.get("subject"):
             return _format_email_message(payload)
         return _format_email_unread(payload)
+    if "read_chat" in tool or payload.get("type") == "messaging.conversation":
+        return _format_whatsapp_read_chat(payload)
     return _format_whatsapp_unread(payload)
 
 
@@ -386,6 +412,29 @@ def _format_drive_content(payload: Dict[str, Any]) -> str:
     return f"Google Drive file '{name}': {content}"
 
 
+def _format_whatsapp_read_chat(payload: Dict[str, Any]) -> str:
+    messages = payload.get("messages")
+    chat_id = str(payload.get("chatId") or "").strip()
+    display_name = str(payload.get("displayName") or "").strip()
+    chat_label = display_name or (chat_id.split("@")[0] if chat_id else "chat")
+    if not isinstance(messages, list) or not messages:
+        return (
+            f"WhatsApp ({chat_label}): chat found but no messages synced yet — "
+            "keep your phone online and try again."
+        )
+
+    lines = [f"WhatsApp messages ({chat_label}, {len(messages)} shown):"]
+    for msg in messages[-15:]:
+        if not isinstance(msg, dict):
+            continue
+        sender = msg.get("sender") or "Unknown"
+        body = str(msg.get("body") or "").strip().replace("\n", " ")[:300]
+        if not body:
+            body = "(empty or media-only message)"
+        lines.append(f"  • {sender}: {body}")
+    return "\n".join(lines)
+
+
 def _format_whatsapp_unread(payload: Dict[str, Any]) -> str:
     items = payload.get("items")
     if not isinstance(items, list) or not items:
@@ -395,15 +444,17 @@ def _format_whatsapp_unread(payload: Dict[str, Any]) -> str:
         return "WhatsApp: no unread chat details returned."
 
     lines = [f"WhatsApp unread ({len(items)} chats):"]
-    for item in items[:10]:
+    for item in items:
         if not isinstance(item, dict):
             continue
-        name = item.get("sender") or item.get("chatName") or item.get("chatId") or "Chat"
+        chat_id = str(item.get("chatId") or "")
+        name = item.get("sender") or item.get("chatName") or chat_id or "Chat"
         preview = (item.get("preview") or item.get("lastMessage") or "")[:120]
         count = item.get("unreadCount")
-        suffix = f" ({count} unread)" if count else ""
+        kind = "group" if "@g.us" in chat_id else "personal"
+        suffix = f" ({count} unread, {kind})" if count else f" ({kind})"
         lines.append(f"  • {name}{suffix}")
-        if preview:
+        if preview and preview != "(no preview yet)":
             lines.append(f"    {preview}")
     return "\n".join(lines)
 

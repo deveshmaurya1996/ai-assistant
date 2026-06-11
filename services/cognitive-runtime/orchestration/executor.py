@@ -143,17 +143,45 @@ async def execute_planned_tools(
             args = dict(item.get("args", {}))
             connection_id = _resolve_connection_id(tool_name, connections)
 
-            if tool_name == "whatsapp.send_message":
-                if resolved_jid:
-                    args["to"] = resolved_jid
-                elif not _looks_like_jid(str(args.get("to", ""))):
+            if tool_name in ("whatsapp.send_message", "whatsapp.read_chat"):
+                if tool_name == "whatsapp.send_message":
+                    target_key = "to"
+                    target_val = str(args.get("to", ""))
+                else:
+                    target_key = "chatId"
+                    target_val = str(args.get("chatId") or args.get("jid") or "")
+
+                if resolved_jid and not _looks_like_jid(target_val):
+                    args[target_key] = resolved_jid
+                elif not _looks_like_jid(target_val) and not _looks_like_phone(target_val):
+                    found_jid = None
                     for prev in results:
-                        if prev.get("tool") == "whatsapp.search_chats" and prev.get("result"):
-                            chats = (prev["result"] or {}).get("chats", [])
-                            if chats and chats[0].get("jid"):
-                                args["to"] = chats[0]["jid"]
-                                resolved_jid = args["to"]
-                                break
+                        if prev.get("tool") != "whatsapp.search_chats":
+                            continue
+                        if prev.get("error"):
+                            continue
+                        chats = (prev.get("result") or {}).get("chats", [])
+                        if chats and chats[0].get("jid"):
+                            found_jid = chats[0]["jid"]
+                            break
+                    if found_jid:
+                        args[target_key] = found_jid
+                        resolved_jid = found_jid
+                    elif tool_name == "whatsapp.read_chat":
+                        contact_label = target_val or "that contact"
+                        results.append(
+                            {
+                                "tool": tool_name,
+                                "status": "failed",
+                                "error": (
+                                    f'Could not find WhatsApp chat for "{contact_label}". '
+                                    "Try the exact contact name or phone number."
+                                ),
+                            }
+                        )
+                        continue
+                elif _looks_like_phone(target_val) and not _looks_like_jid(target_val):
+                    args[target_key] = target_val
 
             if tool_name.startswith("reminder."):
                 from orchestration.reminder_client import execute_reminder_via_gateway

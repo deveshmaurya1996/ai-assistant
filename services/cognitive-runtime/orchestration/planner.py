@@ -276,6 +276,69 @@ def _capability_allowed(
     return cap_id in available_caps
 
 
+def _whatsapp_unread_limit(query: str) -> int:
+    q = query.lower()
+    if re.search(r"\b(all|every|entire|complete)\b", q):
+        return 50
+    return 20
+
+
+def _looks_like_phone(value: str) -> bool:
+    digits = re.sub(r"\D", "", value)
+    return len(digits) >= 10
+
+
+def _extract_whatsapp_read_contact(query: str) -> Optional[str]:
+    q = query.strip()
+    action = r"(?:check|read|show|open|see|view|get|tell|what)"
+    msg_word = r"(?:msg|msgs|message|messages|chat|chats)"
+    patterns = [
+        rf"{action}\s+(?:the\s+)?(?:my\s+)?(?:whatsapp\s+)?(?:personal\s+|private\s+)?{msg_word}\s+(?:from|with)\s+(.+)$",
+        rf"{action}\s+(?:the\s+)?(?:whatsapp\s+)?{msg_word}\s+(?:from|with)\s+(.+)$",
+        rf"{action}\s+(?:the\s+)?(?:whatsapp\s+)?(?:from|with)\s+(.+)$",
+        rf"(?:any\s+)?new\s+{msg_word}\s+(?:from|with)\s+(.+)$",
+        r"(?:personal|private)\s+(?:msg|msgs|message|messages)\s+(?:from|with)\s+(.+)$",
+        rf"{msg_word}\s+(?:from|with)\s+(.+)$",
+    ]
+    skip_contacts = frozenset({"my", "the", "a", "whatsapp", "wa", "unread", "all"})
+    for pattern in patterns:
+        match = re.search(pattern, q, re.IGNORECASE)
+        if not match:
+            continue
+        contact = match.group(1).strip().rstrip("?.!")
+        if contact.lower() not in skip_contacts:
+            return contact
+    return None
+
+
+def _heuristic_whatsapp_read_personal(
+    query: str, available_caps: Set[str]
+) -> List[Dict[str, Any]]:
+    contact = _extract_whatsapp_read_contact(query)
+    if not contact:
+        return []
+
+    out: List[Dict[str, Any]] = []
+    needs_search = not _looks_like_phone(contact) and "@" not in contact
+    if needs_search and "messaging.search_chats" in available_caps:
+        out.append(
+            {
+                "capability": "messaging.search_chats",
+                "provider": "whatsapp",
+                "args": {"query": contact},
+            }
+        )
+    if "messaging.read_chat" in available_caps:
+        out.append(
+            {
+                "capability": "messaging.read_chat",
+                "provider": "whatsapp",
+                "args": {"chatId": contact, "limit": 25},
+            }
+        )
+    return out
+
+
 def _heuristic_whatsapp_read(query: str, available_caps: Set[str]) -> List[Dict[str, Any]]:
     q = query.lower()
     messaging_intent = any(
@@ -286,6 +349,9 @@ def _heuristic_whatsapp_read(query: str, available_caps: Set[str]) -> List[Dict[
             "unread",
             "chats",
             "messages",
+            "message",
+            "msg",
+            "msgs",
             "texts",
             "dm",
             "inbox",
@@ -317,7 +383,7 @@ def _heuristic_whatsapp_read(query: str, available_caps: Set[str]) -> List[Dict[
             {
                 "capability": "messaging.list_unread",
                 "provider": "whatsapp",
-                "args": {"limit": 20},
+                "args": {"limit": _whatsapp_unread_limit(query)},
             }
         ]
     if "communication.chat.search" not in available_caps:
@@ -367,7 +433,9 @@ def _heuristic_inbox_check(
 
     out: List[Dict[str, Any]] = []
     explicit_email = any(w in q for w in ["email", "gmail", "mail"])
-    explicit_whatsapp = any(w in q for w in ["whatsapp", "wa ", "texts", "chats"])
+    explicit_whatsapp = any(
+        w in q for w in ["whatsapp", "wa ", "texts", "chats", "msg", "msgs"]
+    )
     wants_email = explicit_email or (
         generic and "google" in connected and not explicit_whatsapp
     )
@@ -388,7 +456,7 @@ def _heuristic_inbox_check(
             {
                 "capability": "messaging.list_unread",
                 "provider": "whatsapp",
-                "args": {"limit": 20},
+                "args": {"limit": _whatsapp_unread_limit(query)},
             }
         )
     return out
@@ -553,8 +621,12 @@ def _heuristic_capabilities(
     q = query.lower()
     has_whatsapp = "whatsapp" in connected
 
-    out.extend(_heuristic_inbox_check(query, available_caps, connected))
-    out.extend(_heuristic_whatsapp_read(query, available_caps))
+    personal_read = _heuristic_whatsapp_read_personal(query, available_caps)
+    if personal_read:
+        out.extend(personal_read)
+    else:
+        out.extend(_heuristic_inbox_check(query, available_caps, connected))
+        out.extend(_heuristic_whatsapp_read(query, available_caps))
     out.extend(_heuristic_email(query, available_caps))
     out.extend(_heuristic_calendar(query, available_caps, timezone))
     out.extend(_heuristic_drive(query, available_caps, connected))

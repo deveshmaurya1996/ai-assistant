@@ -67,6 +67,74 @@ def test_calendar_list_summary():
     assert "Team standup" in ctx
 
 
+def test_whatsapp_read_chat_summary():
+    ctx = format_tool_results_for_context(
+        [
+            {
+                "tool": "whatsapp.read_chat",
+                "status": "completed",
+                "result": {
+                    "type": "messaging.conversation",
+                    "chatId": "919876543210@s.whatsapp.net",
+                    "displayName": "Rahul",
+                    "messages": [
+                        {
+                            "sender": "Rahul",
+                            "body": "Are we still on for lunch?",
+                            "fromMe": False,
+                        }
+                    ],
+                },
+            }
+        ]
+    )
+    assert "WhatsApp messages (Rahul" in ctx
+    assert "Are we still on for lunch?" in ctx
+
+
+def test_whatsapp_search_chats_skipped_when_read_chat_present():
+    ctx = format_tool_results_for_context(
+        [
+            {
+                "tool": "whatsapp.search_chats",
+                "status": "completed",
+                "result": {"chats": [{"jid": "919876543210@s.whatsapp.net", "name": "Dad"}]},
+            },
+            {
+                "tool": "whatsapp.read_chat",
+                "status": "completed",
+                "result": {
+                    "type": "messaging.conversation",
+                    "chatId": "919876543210@s.whatsapp.net",
+                    "displayName": "Dad",
+                    "messages": [{"sender": "Dad", "body": "Hey, are you coming home?"}],
+                },
+            },
+        ]
+    )
+    assert "completed successfully" not in ctx
+    assert "Hey, are you coming home?" in ctx
+    assert "Dad" in ctx
+
+
+def test_whatsapp_read_chat_empty_uses_display_name():
+    ctx = format_tool_results_for_context(
+        [
+            {
+                "tool": "whatsapp.read_chat",
+                "status": "completed",
+                "result": {
+                    "type": "messaging.conversation",
+                    "chatId": "919876543210@s.whatsapp.net",
+                    "displayName": "Dad",
+                    "messages": [],
+                },
+            }
+        ]
+    )
+    assert "WhatsApp (Dad): chat found but no messages synced yet" in ctx
+
+
 def test_calendar_yesterday_empty_summary():
     ctx = format_tool_results_for_context(
         [

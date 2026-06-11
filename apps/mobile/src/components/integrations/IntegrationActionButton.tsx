@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, ActivityIndicator, View } from 'react-native';
+import { Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import { radii, spacing } from '@/theme/tokens';
 
@@ -7,7 +7,6 @@ type Variant = 'connect' | 'disconnect';
 type Props = {
   variant: Variant;
   label: string;
-  loadingLabel?: string;
   onPress: () => void;
   disabled?: boolean;
   loading?: boolean;
@@ -21,7 +20,6 @@ const COLORS = {
 export function IntegrationActionButton({
   variant,
   label,
-  loadingLabel,
   onPress,
   disabled,
   loading,
@@ -42,12 +40,7 @@ export function IntegrationActionButton({
         },
       ]}>
       {loading ? (
-        <View style={styles.loadingRow}>
-          <ActivityIndicator color={palette.fg} size="small" />
-          <Text variant="label" style={[styles.loadingText, { color: palette.fg }]} numberOfLines={1}>
-            {loadingLabel ?? label}
-          </Text>
-        </View>
+        <ActivityIndicator color={palette.fg} size="small" />
       ) : (
         <Text variant="label" style={{ color: palette.fg }}>
           {label}
@@ -68,16 +61,6 @@ const styles = StyleSheet.create({
     minHeight: 34,
   },
   btnLoading: {
-    minWidth: 118,
-    paddingHorizontal: spacing.xs,
-  },
-  loadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  loadingText: {
-    fontSize: 12,
-    flexShrink: 1,
+    minWidth: 88,
   },
 });
