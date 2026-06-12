@@ -86,7 +86,8 @@ def resolve_chain(task: str) -> List[str]:
     available = [
         m
         for m in candidates
-        if model_is_available(m) and not circuit_breaker.is_open(provider_for_model(m))
+        if model_is_available(m)
+        and not circuit_breaker.is_open(provider_for_model(m), task="*")
     ]
     if task in _VISION_FALLBACK_TASKS:
         for model_id in routing_for_task("fallback"):
@@ -118,7 +119,15 @@ def _litellm_default_params(entry: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def litellm_kwargs(model_id: str, *, stream: bool = True) -> Dict[str, Any]:
+def litellm_kwargs(
+    model_id: str,
+    *,
+    stream: bool = True,
+    task: Optional[str] = None,
+    allow_thinking: Optional[bool] = None,
+) -> Dict[str, Any]:
+    from models.orchestration.param_policy import apply_task_policy
+
     timeout = timeout_for_model(model_id, stream=stream)
     entry = model_def(model_id) or {}
     provider = _infer_provider(model_id, entry)
@@ -146,7 +155,7 @@ def litellm_kwargs(model_id: str, *, stream: bool = True) -> Dict[str, Any]:
                 "extra_headers": headers,
             }
         )
-        return kwargs
+        return apply_task_policy(kwargs, task, allow_thinking=allow_thinking)
 
     if kind == "groq" or provider == "groq" or model_id.startswith("groq/"):
         prov = _provider_cfg("groq")
@@ -159,7 +168,7 @@ def litellm_kwargs(model_id: str, *, stream: bool = True) -> Dict[str, Any]:
                 "api_key": _api_key(prov.get("apiKeyEnv", "GROQ_API_KEY")),
             }
         )
-        return kwargs
+        return apply_task_policy(kwargs, task, allow_thinking=allow_thinking)
 
     if kind == "openai_compatible" or provider == "nvidia" or model_id.startswith(
         ("nvidia/", "google/", "meta/", "mistralai/", "z-ai/", "qwen/", "microsoft/")
@@ -178,10 +187,10 @@ def litellm_kwargs(model_id: str, *, stream: bool = True) -> Dict[str, Any]:
                 "api_key": _api_key(prov.get("apiKeyEnv", "NVIDIA_API_KEY")),
             }
         )
-        return kwargs
+        return apply_task_policy(kwargs, task, allow_thinking=allow_thinking)
 
     kwargs["model"] = model_id
-    return kwargs
+    return apply_task_policy(kwargs, task, allow_thinking=allow_thinking)
 
 
 def pollinations_api_key() -> str:

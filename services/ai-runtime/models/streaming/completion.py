@@ -71,9 +71,15 @@ def _last_user_text(messages: List[Dict[str, Any]]) -> str:
 def _resolve_chat_models(
     messages: List[Dict[str, Any]],
     task: Optional[str] = None,
+    *,
+    task_locked: bool = False,
 ) -> Tuple[List[str], str]:
     query = _last_user_text(messages)
-    resolved_task = classify_task(query, task)
+    explicit = (task or "").strip()
+    if task_locked and explicit and explicit != "auto":
+        resolved_task = explicit
+    else:
+        resolved_task = classify_task(query, task)
     if resolved_task in ("vision", "file_analysis") and not _messages_have_image_attachments(
         messages
     ):
@@ -140,7 +146,7 @@ async def _stream_vision_sequential(
                 yield sse_done(model_name, label_for(model_name))
                 return
 
-            call_kwargs = litellm_kwargs(model_name, stream=True)
+            call_kwargs = litellm_kwargs(model_name, stream=True, task=resolved_task)
             async for token in iter_litellm_tokens(messages, call_kwargs):
                 if cancel_event and cancel_event.is_set():
                     raise asyncio.CancelledError()
@@ -172,11 +178,16 @@ async def stream_completion_sse(
     messages: List[Dict[str, Any]],
     task: Optional[str] = None,
     *,
+    allow_thinking: Optional[bool] = None,
+    deadline_ms: Optional[float] = None,
+    task_locked: bool = False,
     cancel_event: Optional[asyncio.Event] = None,
 ) -> AsyncIterator[str]:
     """Yield SSE-formatted frames: token, error, and done events."""
     t0 = time.perf_counter()
-    models, resolved_task = _resolve_chat_models(messages, task)
+    models, resolved_task = _resolve_chat_models(
+        messages, task, task_locked=task_locked
+    )
     logger.info("[chat] task=%s model_chain=%s", resolved_task, models)
 
     if not _has_any_provider_key() or not models:
@@ -213,7 +224,11 @@ async def stream_completion_sse(
 
     try:
         async for frame in stream_text_orchestrated(
-            messages, resolved_task, cancel_event=cancel_event
+            messages,
+            resolved_task,
+            allow_thinking=allow_thinking,
+            deadline_ms=deadline_ms,
+            cancel_event=cancel_event,
         ):
             yield frame
         return
@@ -266,7 +281,7 @@ async def complete_text(
                 timeout=timeout_s,
             )
 
-        call_kwargs = litellm_kwargs(model_name, stream=False)
+        call_kwargs = litellm_kwargs(model_name, stream=False, task=resolved_task)
         timeout_s = float(call_kwargs.get("timeout", 60)) + 5.0
         resp = await asyncio.wait_for(
             litellm.acompletion(messages=messages, stream=False, **call_kwargs),

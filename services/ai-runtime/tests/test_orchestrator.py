@@ -53,8 +53,8 @@ class TestRoutingTiers(unittest.TestCase):
 
     def test_fast_chat_tier1_has_two_models(self) -> None:
         tiers = tiers_for_task("fast_chat")
+        self.assertEqual(tiers["tier1"][0], "groq/llama-3.3-70b")
         self.assertIn("nvidia/deepseek-v4-flash", tiers["tier1"])
-        self.assertIn("groq/llama-3.3-70b", tiers["tier1"])
         self.assertEqual(len(tiers["tier2"]), 2)
 
     def test_coding_tier1_uses_qwen_next_and_gpt_oss_120b(self) -> None:
@@ -75,17 +75,16 @@ class TestTierRaceCancel(unittest.IsolatedAsyncioTestCase):
         with patch(
             "models.orchestration.stream_race._filter_models",
             return_value=["groq/llama-3.3-70b"],
+        ), patch(
+            "models.orchestration.stream_race.iter_tier_race_tokens",
+            side_effect=asyncio.CancelledError(),
         ):
-            with patch(
-                "models.orchestration.stream_race._probe_first_token",
-                new_callable=AsyncMock,
-                side_effect=asyncio.CancelledError(),
-            ):
-                result = await race_tier(
-                    ["groq/llama-3.3-70b"],
-                    [{"role": "user", "content": "hi"}],
-                    cancel_event=cancel,
-                )
+            result = await race_tier(
+                ["groq/llama-3.3-70b"],
+                [{"role": "user", "content": "hi"}],
+                task="fast_chat",
+                cancel_event=cancel,
+            )
         self.assertIsNone(result)
 
 

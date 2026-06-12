@@ -33,6 +33,9 @@ class ChatStreamRequest(BaseModel):
     chat_history: List[Dict[str, str]] = Field(default_factory=list)
     user_id: Optional[str] = None
     task: Optional[str] = "auto"
+    task_locked: bool = False
+    allow_thinking: Optional[bool] = None
+    deadline_ms: Optional[float] = None
     attachments: List[Dict[str, Any]] = Field(default_factory=list)
     resolved_attachments: List[Dict[str, Any]] = Field(default_factory=list)
     personality_id: Optional[str] = None
@@ -71,21 +74,16 @@ def resolve_task_for_payload(
     explicit_task: Optional[str],
     resolved_attachments: List[Dict[str, Any]],
 ) -> str:
-    """Route attachment turns: vision → file_analysis; text-only docs → fast_chat."""
-    if explicit_task and explicit_task.strip() not in (
-        "",
-        "auto",
-        "fast_chat",
-        "reasoning",
-        "file_analysis",
-    ):
-        return explicit_task.strip()
+    explicit = (explicit_task or "").strip()
 
     if resolved_attachments:
         if _attachment_has_vision_payload(resolved_attachments):
             return "file_analysis"
         if any(a.get("textExcerpt") or a.get("note") for a in resolved_attachments):
             return "fast_chat"
+
+    if explicit and explicit != "auto":
+        return explicit
 
     return classify_task(query, explicit_task)
 
@@ -145,7 +143,6 @@ def build_chat_messages(
             last_plain = (last.get("content") or "").strip()
             query_plain = query.strip()
             if resolved_attachments:
-                # Merge multimodal content into the latest user turn (history is text-only).
                 if formatted and formatted[-1].get("role") == "user":
                     formatted[-1] = {"role": "user", "content": user_content}
                 should_append = False
@@ -220,9 +217,12 @@ def chat_title(payload: ChatTitleRequest):
 async def chat_stream(payload: ChatStreamRequest, request: Request):
     t0 = time.perf_counter()
     context_str = await _resolve_context(payload)
-    resolved_task = resolve_task_for_payload(
-        payload.query, payload.task, payload.resolved_attachments
-    )
+    if payload.task_locked and (payload.task or "").strip() not in ("", "auto"):
+        resolved_task = (payload.task or "").strip()
+    else:
+        resolved_task = resolve_task_for_payload(
+            payload.query, payload.task, payload.resolved_attachments
+        )
     messages = build_chat_messages(
         payload.chat_history,
         context_str,
@@ -253,11 +253,22 @@ async def chat_stream(payload: ChatStreamRequest, request: Request):
                 name="chat.stream",
                 user_id=payload.user_id,
                 input=payload.query,
-                metadata={"rag_enabled": payload.rag_enabled, "task": resolved_task},
+                metadata={
+                    "rag_enabled": payload.rag_enabled,
+                    "task": resolved_task,
+                    "task_locked": payload.task_locked,
+                    "allow_thinking": payload.allow_thinking,
+                    "deadline_ms": payload.deadline_ms,
+                },
             )
         try:
             async for frame in stream_completion_sse(
-                messages, resolved_task, cancel_event=cancel_event
+                messages,
+                resolved_task,
+                allow_thinking=payload.allow_thinking,
+                deadline_ms=payload.deadline_ms,
+                task_locked=payload.task_locked,
+                cancel_event=cancel_event,
             ):
                 if cancel_on_disconnect and await request.is_disconnected():
                     cancel_event.set()

@@ -66,7 +66,7 @@ def generate_chat_title(user_message: str, assistant_message: str) -> str:
             continue
         try:
             call_kwargs = {
-                **litellm_kwargs(model_name, stream=False),
+                **litellm_kwargs(model_name, stream=False, task="title"),
                 "max_tokens": 24,
                 "temperature": 0.3,
             }

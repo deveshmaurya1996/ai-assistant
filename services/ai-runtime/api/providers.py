@@ -37,14 +37,14 @@ def _status_label(
 
 @router.get("/providers/health")
 def providers_health() -> Dict[str, Any]:
-    out: Dict[str, Any] = {}
+    out: Dict[str, Any] = {"providers": {}, "routes": {}}
     for name in ("nvidia", "groq", "pollinations"):
         configured = _provider_configured(name)
-        metrics = health_metrics.stats(name)
-        breaker = circuit_breaker.snapshot(name)
+        metrics = health_metrics.stats(name, task="fast_chat")
+        breaker = circuit_breaker.snapshot(name, task="fast_chat")
         success_rate = metrics.get("success_rate")
         circuit = str(breaker.get("circuit", "closed"))
-        out[name] = {
+        out["providers"][name] = {
             "status": _status_label(
                 configured=configured,
                 circuit=circuit,
@@ -53,9 +53,15 @@ def providers_health() -> Dict[str, Any]:
             "circuit": circuit,
             "configured": configured,
             "latencyMs": metrics.get("avg_latency_ms"),
+            "p95LatencyMs": metrics.get("p95_latency_ms"),
             "successRate": success_rate,
             "windowSize": metrics.get("sample_size", 0),
             "failuresInWindow": metrics.get("failures_in_window", 0),
             "failureRate": breaker.get("failure_rate"),
         }
+    for key in health_metrics.route_keys():
+        provider, task = key.split(":", 1)
+        out["routes"][key] = health_metrics.stats(
+            provider, task=None if task == "*" else task
+        )
     return out

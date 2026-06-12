@@ -20,6 +20,15 @@ def test_image_attachment_uses_file_analysis():
     assert task == "file_analysis"
 
 
+def test_explicit_fast_chat_not_upgraded_to_reasoning():
+    task = resolve_task_for_payload(
+        "explain why step by step with pros and cons",
+        "fast_chat",
+        [],
+    )
+    assert task == "fast_chat"
+
+
 def test_embedded_images_use_file_analysis():
     task = resolve_task_for_payload(
         "",

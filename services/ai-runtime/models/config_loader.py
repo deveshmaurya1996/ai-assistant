@@ -165,7 +165,24 @@ def get_orchestration_config() -> Dict[str, Any]:
         "minSamplesToOpen": int(breaker.get("minSamplesToOpen", 10)),
         "openDurationSeconds": int(breaker.get("openDurationSeconds", 600)),
         "maxConcurrentPerTier": int(racing.get("maxConcurrentPerTier", 2)),
+        "probeTimeoutSeconds": float(racing.get("probeTimeoutSeconds", 8)),
     }
+
+
+def get_task_profile(task: str) -> Dict[str, Any]:
+    cfg = load_ai_models_config()
+    profiles = cfg.get("taskProfiles") or {}
+    entry = profiles.get(task) or profiles.get("fast_chat") or {}
+    return dict(entry) if isinstance(entry, dict) else {}
+
+
+def probe_timeout_for_task(task: str) -> float:
+    profile = get_task_profile(task)
+    orch = get_orchestration_config()
+    raw = profile.get("probeTimeoutSeconds")
+    if raw is not None:
+        return float(raw)
+    return float(orch.get("probeTimeoutSeconds", 8))
 
 
 def routing_tiers_for_task(task: str) -> Dict[str, List[str]]:

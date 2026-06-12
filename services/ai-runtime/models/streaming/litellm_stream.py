@@ -2,7 +2,22 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, AsyncIterator, Dict, List
+from typing import Any, AsyncIterator, Dict, List, Optional
+
+
+def extract_delta_text(chunk: Any) -> Optional[str]:
+    try:
+        delta = chunk.choices[0].delta
+    except (AttributeError, IndexError, TypeError):
+        return None
+    content = getattr(delta, "content", None)
+    if content:
+        return str(content)
+    for attr in ("reasoning_content", "reasoning"):
+        value = getattr(delta, attr, None)
+        if value:
+            return str(value)
+    return None
 
 
 async def iter_litellm_tokens(
@@ -13,7 +28,7 @@ async def iter_litellm_tokens(
 
     timeout_s = float(call_kwargs.get("timeout", 60))
     connect_timeout = min(timeout_s, 35.0)
-    chunk_timeout = min(timeout_s, 45.0)
+    chunk_timeout = min(timeout_s, 30.0)
 
     response = await asyncio.wait_for(
         litellm.acompletion(messages=messages, stream=True, **call_kwargs),
@@ -29,9 +44,9 @@ async def iter_litellm_tokens(
                 )
             except StopAsyncIteration:
                 break
-            content = chunk.choices[0].delta.content
-            if content:
-                yield content
+            text = extract_delta_text(chunk)
+            if text:
+                yield text
     finally:
         if hasattr(response, "aclose"):
             await response.aclose()

@@ -63,7 +63,7 @@ type ChatSocketContextValue = {
 
 const ChatSocketContext = createContext<ChatSocketContextValue | null>(null);
 
-const TURN_TIMEOUT_MS = 45_000;
+const TURN_TIMEOUT_MS = 20_000;
 const CHUNK_STORE_FLUSH_MS = 80;
 
 type ListenerEntry = {
@@ -200,6 +200,10 @@ export function ChatSocketProvider({
       if (!sessions[streamKey]?.isGenerating) return;
 
       const sid = streamKey === PENDING_CHAT_STREAM_KEY ? null : streamKey;
+      socketRef.current?.emit(
+        'chat:abort',
+        sid ? { chatSessionId: sid } : {}
+      );
       abortTurn(streamKey);
       clearActiveTurnIfMatches(sid);
       releaseBoundTurnIfIdle(streamKey);
@@ -310,11 +314,14 @@ export function ChatSocketProvider({
       setSocket(connected);
 
       connected.on('chat:chunk', (data) => {
+        const key = resolveChunkStreamKey(data.chatSessionId);
+        scheduleTurnTimeout(key);
         queueChunk(data.chatSessionId, data.chunk);
       });
 
       connected.on('chat:status', (data: ChatStatusPayload) => {
         const key = resolveChunkStreamKey(data.chatSessionId);
+        scheduleTurnTimeout(key);
         setStatusMessage(key, data.message);
       });
 

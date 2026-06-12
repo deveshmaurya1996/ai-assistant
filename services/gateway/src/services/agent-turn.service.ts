@@ -220,8 +220,7 @@ export async function runAgentTurn(
       } else if (ev.event === 'error') {
         const payload = safeParseJson<ChatErrorPayload>(ev.data, { message: 'Stream error' });
         const message = payload.message ?? 'Stream error';
-        accumulated += `\n[${message}]\n`;
-        void callbacks.onToken(`\n[${message}]\n`);
+        throw new Error(message);
       } else if (ev.event === 'image') {
         const payload = safeParseJson<ImageSsePayload>(ev.data, {});
         if (payload.imageBase64 && callbacks.onImageGenerated) {

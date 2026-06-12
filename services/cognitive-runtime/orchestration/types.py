@@ -73,3 +73,5 @@ class PlanTrace:
 def attach_trace(result: Dict[str, Any], trace: PlanTrace) -> Dict[str, Any]:
     result["trace"] = trace.to_dict(include_debug=planner_debug_enabled())
     return result
+
+from orchestration.turn_contract import ResolvedTurn 

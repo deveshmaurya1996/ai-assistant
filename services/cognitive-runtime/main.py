@@ -279,6 +279,7 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
         memory_prestream_budget_ms,
         resolve_memory_retrieval,
     )
+    from orchestration.turn_contract import build_resolved_turn
 
     turn_t0 = time.perf_counter()
     timings: Dict[str, float] = {}
@@ -307,7 +308,7 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
         resolved_attachments=payload.resolved_attachments,
         has_file_context=bool(file_ctx),
     )
-    timings["intent"] = route.intent.value  # type: ignore[assignment]
+    timings["intent"] = route.intent.value 
 
     retrieve_memory = route.retrieve_memory
     if not retrieve_memory:
@@ -336,12 +337,18 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
         cap_file_context=cap_file,
     )
 
+    resolved_turn = build_resolved_turn(route, retrieve_memory=retrieve_memory)
+    timings["resolved_task"] = resolved_turn.task
+    timings["allow_thinking"] = float(resolved_turn.allow_thinking)
+    timings["deadline_ms"] = float(resolved_turn.deadline_ms)
+
     logger.info(
-        "[agent] intent=%s stream_task=%s retrieve_memory=%s run_planner=%s",
+        "[agent] intent=%s stream_task=%s retrieve_memory=%s run_planner=%s deadline_ms=%.0f",
         route.intent.value,
         route.stream_task,
         retrieve_memory,
         route.run_planner,
+        resolved_turn.deadline_ms,
     )
 
     from orchestration.image_intent import classify_image_intent
@@ -574,13 +581,21 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
             if warnings:
                 stream_query += "\n\nPlanner warnings:\n" + "\n".join(f"- {w}" for w in warnings)
 
+            stream_task_resolved = (
+                resolved_turn.task
+                if resolved_turn.task_locked
+                else stream_task
+            )
             body = {
                 "query": stream_query,
                 "rag_enabled": False,
                 "retrieved_context": context_for_stream or None,
                 "chat_history": chat_history,
                 "user_id": payload.user_id,
-                "task": stream_task,
+                "task": stream_task_resolved,
+                "task_locked": resolved_turn.task_locked,
+                "allow_thinking": resolved_turn.allow_thinking,
+                "deadline_ms": resolved_turn.deadline_ms,
                 "attachments": payload.attachments,
                 "resolved_attachments": payload.resolved_attachments,
                 "personality_id": payload.personality_id,

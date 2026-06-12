@@ -14,12 +14,19 @@ def sse_token(content: str) -> str:
     return format_sse("token", {"content": content})
 
 
-def sse_done(model: str | None = None, label: str | None = None) -> str:
-    data: dict[str, str] = {}
+def sse_done(
+    model: str | None = None,
+    label: str | None = None,
+    *,
+    meta: dict[str, Any] | None = None,
+) -> str:
+    data: dict[str, Any] = {}
     if model:
         data["model"] = model
     if label:
         data["label"] = label
+    if meta:
+        data["meta"] = meta
     return format_sse("done", data)
 
 

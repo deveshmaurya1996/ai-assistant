@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import os
 import time
 from collections import deque
 from dataclasses import dataclass
-from threading import Lock
-from typing import Deque, Dict, Literal
+from typing import Deque, Dict, Literal, Optional
 
 from models.config_loader import get_orchestration_config
 
@@ -26,28 +24,31 @@ class ProviderCircuit:
 
 class CircuitBreaker:
     def __init__(self) -> None:
-        self._lock = Lock()
         self._circuits: Dict[str, ProviderCircuit] = {}
 
-    def _circuit(self, provider: str) -> ProviderCircuit:
-        if provider not in self._circuits:
-            self._circuits[provider] = ProviderCircuit()
-        return self._circuits[provider]
+    @staticmethod
+    def _route_key(provider: str, task: Optional[str] = None) -> str:
+        return f"{provider}:{task or '*'}"
 
-    def is_open(self, provider: str) -> bool:
+    def _circuit(self, route_key: str) -> ProviderCircuit:
+        if route_key not in self._circuits:
+            self._circuits[route_key] = ProviderCircuit()
+        return self._circuits[route_key]
+
+    def is_open(self, provider: str, *, task: Optional[str] = None) -> bool:
         if not provider:
             return False
+        route_key = self._route_key(provider, task)
         cfg = get_orchestration_config()
         now = time.time()
-        with self._lock:
-            c = self._circuit(provider)
-            if c.state == "open" and now >= c.retry_after:
-                c.state = "half_open"
-            if c.state == "open":
-                return True
-            if c.state == "half_open":
-                return False
+        c = self._circuit(route_key)
+        if c.state == "open" and now >= c.retry_after:
+            c.state = "half_open"
+        if c.state == "open":
+            return True
+        if c.state == "half_open":
             return False
+        return False
 
     def _reevaluate(self, c: ProviderCircuit, *, now: float) -> None:
         cfg = get_orchestration_config()
@@ -63,34 +64,37 @@ class CircuitBreaker:
         elif c.state != "open":
             c.state = "closed"
 
-    def record_success(self, provider: str) -> None:
+    def record_success(self, provider: str, *, task: Optional[str] = None) -> None:
         if not provider:
             return
+        route_key = self._route_key(provider, task)
         now = time.time()
-        with self._lock:
-            c = self._circuit(provider)
-            c.outcomes.append(True)
-            if c.state == "open" and now < c.retry_after:
-                return
-            self._reevaluate(c, now=now)
+        c = self._circuit(route_key)
+        c.outcomes.append(True)
+        if c.state == "open" and now < c.retry_after:
+            return
+        self._reevaluate(c, now=now)
 
-    def record_failure(self, provider: str) -> None:
+    def record_failure(self, provider: str, *, task: Optional[str] = None) -> None:
         if not provider:
             return
+        route_key = self._route_key(provider, task)
         now = time.time()
-        with self._lock:
-            c = self._circuit(provider)
-            c.outcomes.append(False)
-            self._reevaluate(c, now=now)
+        c = self._circuit(route_key)
+        c.outcomes.append(False)
+        self._reevaluate(c, now=now)
 
-    def snapshot(self, provider: str) -> Dict[str, object]:
+    def snapshot(
+        self, provider: str, *, task: Optional[str] = None
+    ) -> Dict[str, object]:
         cfg = get_orchestration_config()
-        with self._lock:
-            c = self._circuit(provider)
-            outcomes = list(c.outcomes)
+        route_key = self._route_key(provider, task)
+        c = self._circuit(route_key)
+        outcomes = list(c.outcomes)
         failures = sum(1 for ok in outcomes if not ok)
         rate = failures / len(outcomes) if outcomes else None
         return {
+            "route": route_key,
             "circuit": c.state,
             "retry_after": c.retry_after if c.state == "open" else None,
             "window_size": len(outcomes),

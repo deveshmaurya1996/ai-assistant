@@ -2,7 +2,7 @@
 version: 1
 
 timeouts:
-  stream: 45
+  stream: 30
   complete: 20
   planner: 20
 
@@ -34,6 +34,20 @@ orchestration:
     openDurationSeconds: 600
   racing:
     maxConcurrentPerTier: 2
+    probeTimeoutSeconds: 8
+
+taskProfiles:
+  fast_chat:
+    allowThinking: false
+    probeTimeoutSeconds: 3
+  summary:
+    allowThinking: false
+  title:
+    allowThinking: false
+  reasoning:
+    allowThinking: true
+  planner:
+    allowThinking: true
 
 providers:
   nvidia:
@@ -85,10 +99,6 @@ models:
       temperature: 1.0
       top_p: 0.95
       max_tokens: 16384
-      extra_body:
-        chat_template_kwargs:
-          thinking: true
-          reasoning_effort: high
 
   - id: nvidia/glm-5.1
     label: GLM 5.1
@@ -368,7 +378,7 @@ models:
 
 routingTiers:
   fast_chat:
-    tier1: [nvidia/deepseek-v4-flash, groq/llama-3.3-70b]
+    tier1: [groq/llama-3.3-70b, nvidia/deepseek-v4-flash]
     tier2: [groq/llama-3.1-8b, groq/gpt-oss-20b]
     tier3: [pollinations/openai]
   reasoning:
@@ -384,7 +394,7 @@ routingTiers:
     tier2: [groq/llama-3.3-70b, groq/gpt-oss-20b]
     tier3: [nvidia/deepseek-v4-flash, pollinations/openai]
   summary:
-    tier1: [nvidia/deepseek-v4-flash, groq/llama-3.3-70b]
+    tier1: [groq/llama-3.3-70b, nvidia/deepseek-v4-flash]
     tier2: [groq/llama-3.1-8b, groq/gpt-oss-20b]
     tier3: [pollinations/openai]
   planner:
@@ -404,8 +414,8 @@ routing:
     - nvidia/deepseek-v4-flash
     - pollinations/openai
   fast_chat:
-    - nvidia/deepseek-v4-flash
     - groq/llama-3.3-70b
+    - nvidia/deepseek-v4-flash
     - groq/llama-3.1-8b
     - groq/gpt-oss-20b
     - pollinations/openai
