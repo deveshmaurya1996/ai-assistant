@@ -45,7 +45,6 @@ COPY --from=node_build /app/packages ./packages
 COPY --from=node_build /app/services/gateway ./services/gateway
 COPY --from=node_build /app/services/tool-runtime ./services/tool-runtime
 COPY --from=node_build /app/services/capability-runtime ./services/capability-runtime
-COPY --from=node_build /app/patches ./patches
 COPY connectors ./connectors
 COPY catalog ./catalog
 COPY services/ai-runtime ./services/ai-runtime
