@@ -53,10 +53,10 @@ COPY --from=pruner /app/services/cognitive-runtime/capability_manifest.json ./se
 COPY planner-config ./planner-config
 COPY infra/supervisor/supervisord.conf ./infra/supervisor/supervisord.conf
 
-RUN cd services/gateway \
- && node -e "require('@ai-assistant/telemetry/register');require('@ai-assistant/auth');require('@ai-assistant/database');require('fs').accessSync('dist/index.js')" \
+RUN test -f /app/services/cognitive-runtime/capability_manifest.json \
  && uvicorn --version \
- && test -f services/cognitive-runtime/capability_manifest.json
+ && cd /app/services/gateway \
+ && node -e "require('@ai-assistant/telemetry/register');require('@ai-assistant/auth');require('@ai-assistant/database');require('fs').accessSync('dist/index.js')"
 
 ENV NODE_ENV=production
 ENV INTELLIGENCE_UPSTREAM_URL=http://127.0.0.1:8000
