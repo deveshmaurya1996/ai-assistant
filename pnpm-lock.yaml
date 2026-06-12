@@ -694,6 +694,9 @@ importers:
       '@ai-assistant/workflows':
         specifier: workspace:*
         version: link:../../packages/workflows
+      '@cacheable/node-cache':
+        specifier: ^1.4.0
+        version: 1.7.6
       '@fastify/cors':
         specifier: ^11.0.0
         version: 11.2.0

@@ -1,8 +1,13 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import pino from 'pino';
 import QRCode from 'qrcode';
 import { getBaileys, type BaileysSocket } from './baileys-loader';
+import {
+  createBaileysLogger,
+  createMsgRetryCounterCache,
+  createShouldIgnoreJid,
+} from './baileys-socket-support';
+import { isActionableWhatsAppJid } from './jid-policy';
 import {
   countSyncedThreads,
   loadChatsFromDb,
@@ -82,7 +87,7 @@ export interface UnreadChatItem {
   unreadCount: number;
 }
 
-const logger = pino({ level: process.env.WHATSAPP_LOG_LEVEL ?? 'warn' });
+const logger = createBaileysLogger();
 
 const AUTH_ROOT = getWhatsAppAuthRoot();
 
@@ -896,7 +901,7 @@ export class SessionManager {
       const c = chat as { id?: string; name?: string; unreadCount?: number };
       const jid = c.id ?? '';
       const name = c.name ?? jid.split('@')[0] ?? jid;
-      if (jid) rows.push({ jid, name, unreadCount: c.unreadCount });
+      if (jid && isActionableWhatsAppJid(jid)) rows.push({ jid, name, unreadCount: c.unreadCount });
     }
     return rows;
   }
@@ -906,7 +911,7 @@ export class SessionManager {
       const c = chat as { id?: string; name?: string; unreadCount?: number };
       const jid = c.id ?? '';
       const name = c.name ?? jid.split('@')[0] ?? jid;
-      if (!jid) continue;
+      if (!jid || !isActionableWhatsAppJid(jid)) continue;
       this.upsertChatCache(sessionId, {
         jid,
         name,
@@ -925,7 +930,7 @@ export class SessionManager {
     for (const update of updates) {
       const u = update as { id?: string; name?: string; unreadCount?: number };
       const jid = u.id ?? '';
-      if (!jid) continue;
+      if (!jid || !isActionableWhatsAppJid(jid)) continue;
       const existing = this.chatCache.get(sessionId)?.find((c) => c.jid === jid);
       const name = u.name ?? existing?.name ?? jid.split('@')[0] ?? jid;
       this.upsertChatCache(sessionId, {
@@ -1111,6 +1116,8 @@ export class SessionManager {
       markOnlineOnConnect: false,
       syncFullHistory: wantsFullHistory,
       shouldSyncHistoryMessage: () => true,
+      shouldIgnoreJid: createShouldIgnoreJid(),
+      msgRetryCounterCache: createMsgRetryCounterCache(),
       getMessage: async (key: { remoteJid?: string | null; id?: string | null }) => {
         const jid = key.remoteJid;
         const id = key.id;
@@ -1146,7 +1153,7 @@ export class SessionManager {
       for (const update of updates) {
         const u = update as { id?: string; name?: string; unreadCount?: number };
         const jid = u.id ?? '';
-        if (!jid) continue;
+        if (!jid || !isActionableWhatsAppJid(jid)) continue;
         const existing = this.chatCache.get(sessionId)?.find((c) => c.jid === jid);
         rows.push({
           jid,
@@ -1172,7 +1179,7 @@ export class SessionManager {
         for (const item of payload.messages) {
           const msg = item as { key?: { remoteJid?: string } };
           const jid = msg.key?.remoteJid;
-          if (!jid) continue;
+          if (!jid || !isActionableWhatsAppJid(jid)) continue;
           const parsed = this.parseBaileysMessages(jid, [item]);
           if (parsed.length > 0) {
             this.storeMessages(sessionId, jid, parsed, [item]);
@@ -1207,7 +1214,7 @@ export class SessionManager {
       for (const item of messages) {
         const msg = item as { key?: { remoteJid?: string; fromMe?: boolean; id?: string } };
         const jid = msg.key?.remoteJid;
-        if (!jid) continue;
+        if (!jid || !isActionableWhatsAppJid(jid)) continue;
         const parsed = this.parseBaileysMessages(jid, [item]);
         if (parsed.length === 0) continue;
         const m = parsed[0]!;
