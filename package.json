@@ -19,6 +19,7 @@
     "db:migrate:deploy": "pnpm --filter @ai-assistant/database db:migrate:deploy",
     "docker": "node scripts/docker.mjs",
     "verify": "node scripts/verify.mjs",
+    "verify:docker": "node scripts/verify-docker.mjs",
     "mobile:android": "pnpm --filter @ai-assistant/mobile android",
     "mobile:release": "pnpm --filter @ai-assistant/mobile release:sync",
     "mobile:eas": "node scripts/mobile-eas.mjs"
