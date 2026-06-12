@@ -13,7 +13,7 @@ DEV_SCRIPT = 'scripts/dev.mjs'
 
 DB_SETUP_DEPS = [
     DEV_SCRIPT,
-    'scripts/prisma-generate.mjs',
+    'packages/database/scripts/prisma-generate.mjs',
     'scripts/with-env.mjs',
     '.env',
     'packages/database/prisma/schema.prisma',

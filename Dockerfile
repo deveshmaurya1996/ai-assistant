@@ -16,6 +16,7 @@ COPY --from=pruner /app/out/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY .docker.npmrc ./.npmrc
 RUN pnpm install --frozen-lockfile --ignore-scripts
 COPY --from=pruner /app/out/full/ .
+COPY --from=pruner /app/tsconfig.base.json ./tsconfig.base.json
 
 ENV DATABASE_URL=postgresql://build:build@localhost:5432/build?schema=public
 RUN pnpm exec turbo run build --filter=@ai-assistant/gateway...

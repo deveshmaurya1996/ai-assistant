@@ -12,9 +12,9 @@
     }
   },
   "scripts": {
-    "prepare": "node ../../scripts/prisma-generate.mjs",
-    "build": "node ../../scripts/prisma-generate.mjs --lenient && node ../../node_modules/typescript/bin/tsc",
-    "db:generate": "node ../../scripts/prisma-generate.mjs",
+    "prepare": "node scripts/prisma-generate.mjs",
+    "build": "node scripts/prisma-generate.mjs --lenient && node ../../node_modules/typescript/bin/tsc",
+    "db:generate": "node scripts/prisma-generate.mjs",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
