@@ -1,6 +1,6 @@
 {
   "cli": {
-    "version": ">= 16.0.0",
+    "version": ">= 16.17.4",
     "appVersionSource": "remote"
   },
   "build": {
@@ -14,19 +14,13 @@
     },
     "preview": {
       "distribution": "internal",
-      "channel": "preview",
-      "env": {
-        "EXPO_PUBLIC_API_URL": "https://ai-assistant-v1-2jli.onrender.com"
-      }
+      "channel": "preview"
     },
     "production": {
       "channel": "production",
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
-      },
-      "env": {
-        "EXPO_PUBLIC_API_URL": "https://ai-assistant-v1-2jli.onrender.com"
       }
     }
   },

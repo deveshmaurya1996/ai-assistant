@@ -5,7 +5,7 @@ All chat/assistant dictation uploads flow through here before STT.
 ## Requirements
 
 - **ffmpeg** and **ffprobe** on `PATH`
-- API keys per `config/ai-models.yaml` (`NVIDIA_API_KEY`, `POLLINATIONS_API_KEY`)
+- API keys per `planner-config/ai-models.yaml` (`NVIDIA_API_KEY`, `POLLINATIONS_API_KEY`)
 
 ```bash
 python scripts/verify-ffmpeg.py

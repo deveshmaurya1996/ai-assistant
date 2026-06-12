@@ -73,26 +73,26 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
-    "eas-cli": "^16.17.4",
+    "eas-cli": "^16.32.0",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "postinstall": "node scripts/patch-country-picker.mjs",
-    "dev": "expo start --web --clear",
+    "dev": "node scripts/expo-cli.mjs start --web",
     "build": "echo \"Expo app — use expo export for production builds\"",
-    "start": "expo start",
+    "start": "node scripts/expo-cli.mjs start",
     "adb-reverse": "node scripts/adb-reverse.mjs",
-    "android": "node scripts/adb-reverse.mjs && expo prebuild --platform android && expo run:android",
-    "ios": "expo run:ios",
-    "web": "expo start --web",
-    "lint": "expo lint",
+    "android": "node ../../scripts/ports.mjs sync && node scripts/adb-reverse.mjs && node scripts/expo-cli.mjs prebuild --platform android && node scripts/expo-cli.mjs run:android",
+    "ios": "node scripts/expo-cli.mjs run:ios",
+    "web": "node scripts/expo-cli.mjs start --web",
+    "lint": "node scripts/expo-cli.mjs lint",
     "eas-build-post-install": "cd ../.. && pnpm --filter @ai-assistant/types build && pnpm --filter @ai-assistant/sdk build",
     "release:sync": "node ../../scripts/sync-mobile-release.mjs",
     "release:sync:eas": "node ../../scripts/sync-mobile-release.mjs --from-eas",
-    "eas:build:android:prod": "node scripts/sync-root-easignore.mjs && npx eas-cli build -p android --profile production && node ../../scripts/sync-mobile-release.mjs --from-eas",
-    "eas:build:android:preview": "node scripts/sync-root-easignore.mjs && npx eas-cli build -p android --profile preview && node ../../scripts/sync-mobile-release.mjs --from-eas",
-    "eas:update:production": "npx eas-cli update --channel production --environment production",
-    "eas:update:preview": "npx eas-cli update --channel preview --environment preview"
+    "eas:build:android:prod": "node scripts/sync-root-easignore.mjs && pnpm exec eas build -p android --profile production && node ../../scripts/sync-mobile-release.mjs --from-eas",
+    "eas:build:android:preview": "node scripts/sync-root-easignore.mjs && pnpm exec eas build -p android --profile preview && node ../../scripts/sync-mobile-release.mjs --from-eas",
+    "eas:update:production": "pnpm exec eas update --channel production --environment production",
+    "eas:update:preview": "pnpm exec eas update --channel preview --environment preview"
   },
   "private": true,
   "expo": {

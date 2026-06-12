@@ -7,6 +7,13 @@ from typing import Any, Dict, List, Optional
 
 _config_cache: Optional[Dict[str, Any]] = None
 
+DEFAULT_CONFIG_RELATIVE = Path("planner-config") / "ai-models.yaml"
+
+
+class AIModelsConfigError(RuntimeError):
+    """Raised when ai-models YAML cannot be loaded."""
+    pass
+
 
 def find_monorepo_root() -> Path:
     current = Path(__file__).resolve().parent
@@ -21,7 +28,7 @@ def config_path() -> Path:
     if override:
         path = Path(override)
         return path if path.is_absolute() else find_monorepo_root() / path
-    return find_monorepo_root() / "config" / "ai-models.yaml"
+    return find_monorepo_root() / DEFAULT_CONFIG_RELATIVE
 
 
 def load_ai_models_config(*, reload: bool = False) -> Dict[str, Any]:
@@ -30,9 +37,11 @@ def load_ai_models_config(*, reload: bool = False) -> Dict[str, Any]:
         return _config_cache
 
     path = config_path()
-    if not path.exists():
-        _config_cache = _default_config()
-        return _config_cache
+    if not path.is_file():
+        raise AIModelsConfigError(
+            f"AI models config not found: {path} "
+            f"(set AI_MODELS_CONFIG or add {DEFAULT_CONFIG_RELATIVE.as_posix()} under repo root)"
+        )
 
     raw = path.read_text(encoding="utf-8")
     try:
@@ -40,28 +49,24 @@ def load_ai_models_config(*, reload: bool = False) -> Dict[str, Any]:
 
         data = yaml.safe_load(raw) or {}
     except ImportError:
-        data = json.loads(raw) if raw.strip().startswith("{") else _default_config()
-    except Exception:
-        data = _default_config()
+        if raw.strip().startswith("{"):
+            data = json.loads(raw)
+        else:
+            raise AIModelsConfigError(
+                f"AI models config requires PyYAML to parse {path}"
+            ) from None
+    except Exception as exc:
+        raise AIModelsConfigError(
+            f"Failed to parse AI models config {path}: {exc}"
+        ) from exc
+
+    if not isinstance(data, dict):
+        raise AIModelsConfigError(
+            f"AI models config must be a mapping, got {type(data).__name__}"
+        )
 
     _config_cache = data
     return _config_cache
-
-
-def _default_config() -> Dict[str, Any]:
-    return {
-        "version": 1,
-        "timeouts": {"stream": 45, "complete": 20, "planner": 20},
-        "rag": {
-            "enabledByDefault": False,
-            "timeoutSeconds": 5,
-            "limit": 3,
-            "warmEmbedderOnStartup": True,
-        },
-        "providers": {},
-        "models": [],
-        "routing": {"fallback": ["pollinations/openai"]},
-    }
 
 
 def get_timeouts() -> Dict[str, float]:

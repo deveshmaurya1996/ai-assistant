@@ -6,7 +6,7 @@ const STEP_HINTS: Record<VoiceAiStep, string> = {
   transcription:
     'Uses /v1/voice/transcribe (ffmpeg → WAV → NVIDIA STT or Pollinations Whisper). Requires ffmpeg on ai-runtime and NVIDIA_API_KEY or POLLINATIONS_API_KEY in .env.',
   chat:
-    'Uses NVIDIA NIM via /v1/chat/stream (auto-routed from config/ai-models.yaml). Set NVIDIA_API_KEY and restart ai-runtime.',
+    'Uses NVIDIA NIM via /v1/chat/stream (auto-routed from planner-config/ai-models.yaml). Set NVIDIA_API_KEY and restart ai-runtime.',
   speech:
     'Uses Pollinations TTS via /v1/voice/speak. Set POLLINATIONS_API_KEY in .env.',
 };

@@ -163,15 +163,25 @@ async function up() {
   process.exit(r.status ?? 1);
 }
 
+function sync() {
+  const config = ensure();
+  syncDevEnvPorts(config);
+  const apiPort = config[PORT_KEYS.api];
+  console.log(`[ports] synced API → http://localhost:${apiPort}`);
+  return config;
+}
+
 const cmd = process.argv[2] ?? 'ensure';
 if (cmd === 'up') {
   up().catch((err) => {
     console.error(err.message ?? err);
     process.exit(1);
   });
-}
-else if (cmd === 'ensure') ensure();
-else {
-  console.error(`Unknown command: ${cmd} (use ensure | up)`);
+} else if (cmd === 'sync') {
+  sync();
+} else if (cmd === 'ensure') {
+  ensure();
+} else {
+  console.error(`Unknown command: ${cmd} (use ensure | sync | up)`);
   process.exit(1);
 }

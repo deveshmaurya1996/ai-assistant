@@ -103,10 +103,10 @@ models:
       top_p: 1.0
       max_tokens: 16384
 
-  - id: nvidia/qwen3-coder-480b
-    label: Qwen3 Coder 480B
+  - id: nvidia/qwen3-next-80b
+    label: Qwen3 Next 80B
     provider: nvidia
-    providerModel: qwen/qwen3-coder-480b-a35b-instruct
+    providerModel: qwen/qwen3-next-80b-a3b-instruct
     tasks: [coding]
     tier: A
     streamTimeout: 90
@@ -376,9 +376,9 @@ routingTiers:
     tier2: [groq/llama-3.3-70b, groq/gpt-oss-20b]
     tier3: [nvidia/mistral-nemotron, pollinations/openai]
   coding:
-    tier1: [nvidia/qwen3-coder-480b, groq/llama-3.3-70b]
+    tier1: [nvidia/qwen3-next-80b, groq/gpt-oss-120b]
     tier2: [groq/llama-3.3-70b, groq/gpt-oss-20b]
-    tier3: [nvidia/mistral-nemotron, pollinations/openai]
+    tier3: [pollinations/openai]
   attachment_read:
     tier1: [nvidia/kimi-k2.6, groq/llama-3.1-8b]
     tier2: [groq/llama-3.3-70b, groq/gpt-oss-20b]
@@ -417,7 +417,8 @@ routing:
     - nvidia/mistral-nemotron
     - pollinations/openai
   coding:
-    - nvidia/qwen3-coder-480b
+    - nvidia/qwen3-next-80b
+    - groq/gpt-oss-120b
     - groq/llama-3.3-70b
     - groq/gpt-oss-20b
     - pollinations/openai

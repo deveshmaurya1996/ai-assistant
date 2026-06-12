@@ -24,6 +24,7 @@ def ai_service():
             'tilt_config.json',
             'scripts/with-env.mjs',
             '.env',
+            'planner-config',
             'services/ai-runtime',
             'services/cognitive-runtime',
         ],

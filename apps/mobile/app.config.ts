@@ -38,7 +38,6 @@ const config: ExpoConfig = {
   android: {
     package: 'com.aiassistant.app',
     googleServicesFile: './google-services.json',
-    versionCode: 2,
     adaptiveIcon: {
       foregroundImage: './assets/images/android-icon-foreground.png',
       backgroundColor: splashBackground,

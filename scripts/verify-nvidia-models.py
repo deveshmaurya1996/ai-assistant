@@ -20,7 +20,7 @@ RERANK_URL = "https://ai.api.nvidia.com/v1/retrieval/nvidia/reranking"
 EXPECTED_CHAT = {
     "deepseek-ai/deepseek-v4-flash",
     "z-ai/glm-5.1",
-    "qwen/qwen3-coder-480b-a35b-instruct",
+    "qwen/qwen3-next-80b-a3b-instruct",
     "nvidia/nemotron-3-ultra-550b-a55b",
     "meta/llama-4-maverick-17b-128e-instruct",
     "moonshotai/kimi-k2.6",
@@ -156,7 +156,7 @@ def main() -> int:
             print()
 
     repo = Path(__file__).resolve().parents[1]
-    yaml_path = repo / "config" / "ai-models.yaml"
+    yaml_path = repo / "planner-config" / "ai-models.yaml"
     if yaml_path.is_file():
         print(f"Config: {yaml_path}")
     else:

@@ -48,12 +48,21 @@ class TestHealthMetricsLatencySort(unittest.TestCase):
 
 
 class TestRoutingTiers(unittest.TestCase):
-    def test_fast_chat_tier1_has_two_models(self) -> None:
+    def setUp(self) -> None:
         load_ai_models_config(reload=True)
+
+    def test_fast_chat_tier1_has_two_models(self) -> None:
         tiers = tiers_for_task("fast_chat")
         self.assertIn("nvidia/deepseek-v4-flash", tiers["tier1"])
         self.assertIn("groq/llama-3.3-70b", tiers["tier1"])
         self.assertEqual(len(tiers["tier2"]), 2)
+
+    def test_coding_tier1_uses_qwen_next_and_gpt_oss_120b(self) -> None:
+        tiers = tiers_for_task("coding")
+        self.assertEqual(
+            tiers["tier1"],
+            ["nvidia/qwen3-next-80b", "groq/gpt-oss-120b"],
+        )
 
 
 class TestTierRaceCancel(unittest.IsolatedAsyncioTestCase):
