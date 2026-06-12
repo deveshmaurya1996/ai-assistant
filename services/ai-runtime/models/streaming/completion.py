@@ -179,6 +179,7 @@ async def stream_completion_sse(
     task: Optional[str] = None,
     *,
     allow_thinking: Optional[bool] = None,
+    speed_profile: Optional[str] = None,
     deadline_ms: Optional[float] = None,
     task_locked: bool = False,
     cancel_event: Optional[asyncio.Event] = None,
@@ -227,6 +228,7 @@ async def stream_completion_sse(
             messages,
             resolved_task,
             allow_thinking=allow_thinking,
+            speed_profile=speed_profile,
             deadline_ms=deadline_ms,
             cancel_event=cancel_event,
         ):

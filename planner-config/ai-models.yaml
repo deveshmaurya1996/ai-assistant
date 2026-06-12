@@ -33,8 +33,35 @@ orchestration:
     minSamplesToOpen: 10
     openDurationSeconds: 600
   racing:
+    adaptiveEnabled: true
+    raceHealthThreshold: 0.9
+    raceMinSamples: 5
     maxConcurrentPerTier: 2
     probeTimeoutSeconds: 8
+
+speedProfiles:
+  fast_response:
+    task: fast_chat
+    deadlineMs: 30000
+    allowThinking: false
+  balanced:
+    deadlineMs: 60000
+    allowThinking: false
+  deep_reasoning:
+    task: reasoning
+    deadlineMs: 120000
+    allowThinking: true
+  voice_realtime:
+    task: fast_chat
+    deadlineMs: 15000
+    allowThinking: false
+    maxTokens: 200
+    temperature: 0.4
+    topP: 0.9
+    ttftTargetMs: 1000
+    memoryBudgetMs: 100
+    skipPlanner: true
+    probeTimeoutSeconds: 2
 
 taskProfiles:
   fast_chat:
@@ -48,6 +75,12 @@ taskProfiles:
     allowThinking: true
   planner:
     allowThinking: true
+  voice_realtime:
+    allowThinking: false
+    maxTokens: 200
+    temperature: 0.4
+    topP: 0.9
+    probeTimeoutSeconds: 2
 
 providers:
   nvidia:
@@ -317,6 +350,7 @@ models:
     label: Groq Llama 3.3 70B
     provider: groq
     providerModel: llama-3.3-70b-versatile
+    contextWindow: 128000
     raceTier: 1
     tasks: [fast_chat, reasoning, coding, planner, summary, attachment_read]
     streamTimeout: 5

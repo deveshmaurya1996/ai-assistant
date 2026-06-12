@@ -79,16 +79,18 @@ async def on_startup():
             await RAGService.warm_embedder()
         except Exception as exc:
             logger.warning("[rag] warm embedder failed: %s", exc)
-    from models.orchestration.provider_probe import (
-        probe_providers_once,
-        run_provider_probe_loop,
+    probe_on_startup = os.getenv("HEALTH_PROBE_ON_STARTUP", "false").lower() in (
+        "1",
+        "true",
+        "yes",
     )
+    if probe_on_startup:
+        from models.orchestration.provider_probe import probe_providers_once
 
-    try:
-        await probe_providers_once()
-    except Exception as exc:
-        logger.warning("[health-probe] startup probe failed: %s", exc)
-    asyncio.create_task(run_provider_probe_loop())
+        try:
+            await probe_providers_once()
+        except Exception as exc:
+            logger.warning("[health-probe] startup probe failed: %s", exc)
 
 
 @app.get("/")

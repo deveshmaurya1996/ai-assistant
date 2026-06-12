@@ -82,6 +82,23 @@ class HealthMetrics:
             "failures_in_window": failures,
         }
 
+    def should_race_primary(
+        self,
+        provider: str,
+        *,
+        task: Optional[str] = None,
+        threshold: float = 0.9,
+        min_samples: int = 5,
+    ) -> bool:
+        st = self.stats(provider, task=task)
+        sample_size = int(st.get("sample_size") or 0)
+        if sample_size < min_samples:
+            return False
+        success_rate = st.get("success_rate")
+        if success_rate is None:
+            return False
+        return float(success_rate) < threshold
+
     def sort_models_by_latency(
         self,
         model_ids: List[str],

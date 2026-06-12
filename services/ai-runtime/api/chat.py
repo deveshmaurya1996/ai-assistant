@@ -35,6 +35,7 @@ class ChatStreamRequest(BaseModel):
     task: Optional[str] = "auto"
     task_locked: bool = False
     allow_thinking: Optional[bool] = None
+    speed_profile: Optional[str] = None
     deadline_ms: Optional[float] = None
     attachments: List[Dict[str, Any]] = Field(default_factory=list)
     resolved_attachments: List[Dict[str, Any]] = Field(default_factory=list)
@@ -258,6 +259,7 @@ async def chat_stream(payload: ChatStreamRequest, request: Request):
                     "task": resolved_task,
                     "task_locked": payload.task_locked,
                     "allow_thinking": payload.allow_thinking,
+                    "speed_profile": payload.speed_profile,
                     "deadline_ms": payload.deadline_ms,
                 },
             )
@@ -266,6 +268,7 @@ async def chat_stream(payload: ChatStreamRequest, request: Request):
                 messages,
                 resolved_task,
                 allow_thinking=payload.allow_thinking,
+                speed_profile=payload.speed_profile,
                 deadline_ms=payload.deadline_ms,
                 task_locked=payload.task_locked,
                 cancel_event=cancel_event,

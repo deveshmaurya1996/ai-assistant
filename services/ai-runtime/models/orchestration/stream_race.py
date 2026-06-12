@@ -32,10 +32,35 @@ def _filter_models(model_ids: List[str], *, task: str) -> List[str]:
     return out
 
 
-def _rank_models(model_ids: List[str], *, task: str) -> List[str]:
+def _adaptive_candidates(
+    model_ids: List[str], *, task: str, race_meta: Optional[Dict[str, Any]] = None
+) -> List[str]:
     cfg = get_orchestration_config()
     ranked = health_metrics.sort_models_by_latency(model_ids, provider_for_model, task=task)
-    return ranked[: cfg["maxConcurrentPerTier"]]
+    if not ranked:
+        if race_meta is not None:
+            race_meta["race_mode"] = "none"
+        return []
+
+    primary = ranked[0]
+    race_mode = "primary"
+    candidates = [primary]
+
+    if cfg.get("adaptiveEnabled", True):
+        prov = provider_for_model(primary)
+        if health_metrics.should_race_primary(
+            prov,
+            task=task,
+            threshold=float(cfg.get("raceHealthThreshold", 0.9)),
+            min_samples=int(cfg.get("raceMinSamples", 5)),
+        ):
+            candidates = ranked[: cfg["maxConcurrentPerTier"]]
+            race_mode = "hedged"
+
+    if race_meta is not None:
+        race_meta["race_mode"] = race_mode
+        race_meta["race_candidates"] = list(candidates)
+    return candidates
 
 
 async def _pump_model_tokens(
@@ -44,13 +69,18 @@ async def _pump_model_tokens(
     *,
     task: str,
     allow_thinking: Optional[bool],
+    speed_profile: Optional[str],
     queue: asyncio.Queue,
     loser_event: asyncio.Event,
     cancel_event: Optional[asyncio.Event],
 ) -> None:
     try:
         call_kwargs = litellm_kwargs(
-            model_id, stream=True, task=task, allow_thinking=allow_thinking
+            model_id,
+            stream=True,
+            task=task,
+            allow_thinking=allow_thinking,
+            speed_profile=speed_profile,
         )
         async for token in iter_litellm_tokens(messages, call_kwargs):
             if cancel_event and cancel_event.is_set():
@@ -70,14 +100,18 @@ async def iter_tier_race_tokens(
     *,
     task: str,
     allow_thinking: Optional[bool] = None,
+    speed_profile: Optional[str] = None,
     probe_timeout_s: Optional[float] = None,
     cancel_event: Optional[asyncio.Event] = None,
+    race_meta: Optional[Dict[str, Any]] = None,
 ) -> AsyncIterator[tuple[str, str]]:
     """Hedged tier race: one stream per candidate; yield tokens from first winner only."""
     if cancel_event and cancel_event.is_set():
         raise asyncio.CancelledError()
 
-    candidates = _rank_models(_filter_models(model_ids, task=task), task=task)
+    candidates = _adaptive_candidates(
+        _filter_models(model_ids, task=task), task=task, race_meta=race_meta
+    )
     if not candidates:
         return
 
@@ -88,6 +122,7 @@ async def iter_tier_race_tokens(
             messages,
             task=task,
             allow_thinking=allow_thinking,
+            speed_profile=speed_profile,
             cancel_event=cancel_event,
         ):
             yield mid, token
@@ -103,6 +138,7 @@ async def iter_tier_race_tokens(
                 messages,
                 task=task,
                 allow_thinking=allow_thinking,
+                speed_profile=speed_profile,
                 queue=queues[mid],
                 loser_event=loser_event,
                 cancel_event=cancel_event,
@@ -234,10 +270,15 @@ async def stream_winner(
     *,
     task: str,
     allow_thinking: Optional[bool] = None,
+    speed_profile: Optional[str] = None,
     cancel_event: Optional[asyncio.Event] = None,
 ) -> AsyncIterator[str]:
     call_kwargs = litellm_kwargs(
-        model_id, stream=True, task=task, allow_thinking=allow_thinking
+        model_id,
+        stream=True,
+        task=task,
+        allow_thinking=allow_thinking,
+        speed_profile=speed_profile,
     )
     async for token in iter_litellm_tokens(messages, call_kwargs):
         if cancel_event and cancel_event.is_set():

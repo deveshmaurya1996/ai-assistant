@@ -125,6 +125,7 @@ def litellm_kwargs(
     stream: bool = True,
     task: Optional[str] = None,
     allow_thinking: Optional[bool] = None,
+    speed_profile: Optional[str] = None,
 ) -> Dict[str, Any]:
     from models.orchestration.param_policy import apply_task_policy
 
@@ -155,7 +156,9 @@ def litellm_kwargs(
                 "extra_headers": headers,
             }
         )
-        return apply_task_policy(kwargs, task, allow_thinking=allow_thinking)
+        return apply_task_policy(
+            kwargs, task, allow_thinking=allow_thinking, speed_profile=speed_profile
+        )
 
     if kind == "groq" or provider == "groq" or model_id.startswith("groq/"):
         prov = _provider_cfg("groq")
@@ -168,7 +171,9 @@ def litellm_kwargs(
                 "api_key": _api_key(prov.get("apiKeyEnv", "GROQ_API_KEY")),
             }
         )
-        return apply_task_policy(kwargs, task, allow_thinking=allow_thinking)
+        return apply_task_policy(
+            kwargs, task, allow_thinking=allow_thinking, speed_profile=speed_profile
+        )
 
     if kind == "openai_compatible" or provider == "nvidia" or model_id.startswith(
         ("nvidia/", "google/", "meta/", "mistralai/", "z-ai/", "qwen/", "microsoft/")
@@ -187,10 +192,14 @@ def litellm_kwargs(
                 "api_key": _api_key(prov.get("apiKeyEnv", "NVIDIA_API_KEY")),
             }
         )
-        return apply_task_policy(kwargs, task, allow_thinking=allow_thinking)
+        return apply_task_policy(
+            kwargs, task, allow_thinking=allow_thinking, speed_profile=speed_profile
+        )
 
     kwargs["model"] = model_id
-    return apply_task_policy(kwargs, task, allow_thinking=allow_thinking)
+    return apply_task_policy(
+            kwargs, task, allow_thinking=allow_thinking, speed_profile=speed_profile
+        )
 
 
 def pollinations_api_key() -> str:

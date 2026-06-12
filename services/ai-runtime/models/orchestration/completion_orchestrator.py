@@ -42,6 +42,7 @@ async def stream_text_orchestrated(
     task: str,
     *,
     allow_thinking: Optional[bool] = None,
+    speed_profile: Optional[str] = None,
     deadline_ms: Optional[float] = None,
     cancel_event: Optional[asyncio.Event] = None,
 ) -> AsyncIterator[str]:
@@ -67,17 +68,21 @@ async def stream_text_orchestrated(
         winner: Optional[str] = None
         first_token = True
 
+        tier_race_meta: Dict[str, Any] = {}
         try:
             async for model_id, token in iter_tier_race_tokens(
                 tier_models,
                 messages,
                 task=task,
                 allow_thinking=allow_thinking,
+                speed_profile=speed_profile,
                 cancel_event=cancel_event,
+                race_meta=tier_race_meta,
             ):
                 if winner is None:
                     winner = model_id
                     orchestration_meta["tier"] = tier_name
+                    orchestration_meta["race_mode"] = tier_race_meta.get("race_mode")
                     orchestration_meta["ttft_ms"] = round((time.perf_counter() - t0) * 1000, 1)
                     if primary_expected and winner != primary_expected:
                         orchestration_meta["provider_switch"] = True
@@ -147,6 +152,7 @@ async def stream_text_orchestrated(
                 messages,
                 task=task,
                 allow_thinking=allow_thinking,
+                speed_profile=speed_profile,
                 cancel_event=cancel_event,
             ):
                 if not got_token:

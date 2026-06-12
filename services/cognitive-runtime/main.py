@@ -225,12 +225,18 @@ async def _hybrid_memory_block(
     skip_episodic: bool,
     timings: Dict[str, float],
     chat_session_id: Optional[str] = None,
+    memory_budget_ms: Optional[float] = None,
 ) -> tuple[str, bool]:
     """Wait up to budget for memory; return (block, status_emitted)."""
     from orchestration.context import fetch_layered_memory_context
     from orchestration.turn_router import memory_prestream_budget_ms
 
-    budget_s = memory_prestream_budget_ms() / 1000.0
+    budget_ms = (
+        float(memory_budget_ms)
+        if memory_budget_ms is not None
+        else memory_prestream_budget_ms()
+    )
+    budget_s = budget_ms / 1000.0
     t0 = time.perf_counter()
     task = asyncio.create_task(
         fetch_layered_memory_context(
@@ -280,6 +286,7 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
         resolve_memory_retrieval,
     )
     from orchestration.turn_contract import build_resolved_turn
+    from orchestration.speed_router import resolve_speed_profile
 
     turn_t0 = time.perf_counter()
     timings: Dict[str, float] = {}
@@ -337,17 +344,24 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
         cap_file_context=cap_file,
     )
 
-    resolved_turn = build_resolved_turn(route, retrieve_memory=retrieve_memory)
+    speed_profile = resolve_speed_profile(route=route, source=payload.source)
+    resolved_turn = build_resolved_turn(
+        route,
+        retrieve_memory=retrieve_memory,
+        speed_profile=speed_profile,
+    )
     timings["resolved_task"] = resolved_turn.task
+    timings["speed_profile"] = resolved_turn.speed_profile
     timings["allow_thinking"] = float(resolved_turn.allow_thinking)
     timings["deadline_ms"] = float(resolved_turn.deadline_ms)
 
     logger.info(
-        "[agent] intent=%s stream_task=%s retrieve_memory=%s run_planner=%s deadline_ms=%.0f",
+        "[agent] intent=%s speed=%s stream_task=%s retrieve_memory=%s run_planner=%s deadline_ms=%.0f",
         route.intent.value,
+        resolved_turn.speed_profile,
         route.stream_task,
         retrieve_memory,
-        route.run_planner,
+        route.run_planner and not resolved_turn.skip_planner,
         resolved_turn.deadline_ms,
     )
 
@@ -421,7 +435,7 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
         rag_block = ""
         yield _sse_frame("status", {"message": "__thinking__"})
 
-        if route.run_planner:
+        if route.run_planner and not resolved_turn.skip_planner:
             yield _sse_frame("status", {"message": "Checking integrations…"})
             t_manifest = time.perf_counter()
             manifest_text, manifest_caps, manifest_connections, manifest_connection_states = (
@@ -518,6 +532,7 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
                 skip_episodic=hybrid_skip_episodic,
                 timings=timings,
                 chat_session_id=payload.chat_session_id,
+                memory_budget_ms=resolved_turn.memory_budget_ms,
             )
             if status_emitted:
                 yield _sse_frame("status", {"message": MEMORY_STATUS_MESSAGE})
@@ -581,6 +596,20 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
             if warnings:
                 stream_query += "\n\nPlanner warnings:\n" + "\n".join(f"- {w}" for w in warnings)
 
+            from orchestration.prompt_compression import compress_prompt_if_needed
+
+            chat_history, context_for_stream, compress_timings = await compress_prompt_if_needed(
+                chat_history=chat_history,
+                context_str=context_for_stream,
+                tool_context=tool_context,
+                user_query=stream_query,
+                user_id=payload.user_id,
+                task=resolved_turn.task,
+                speed_profile=resolved_turn.speed_profile,
+                deadline_ms=resolved_turn.deadline_ms,
+            )
+            timings.update(compress_timings)
+
             stream_task_resolved = (
                 resolved_turn.task
                 if resolved_turn.task_locked
@@ -595,6 +624,7 @@ async def agent_turn(payload: AgentTurnRequest, request: Request):
                 "task": stream_task_resolved,
                 "task_locked": resolved_turn.task_locked,
                 "allow_thinking": resolved_turn.allow_thinking,
+                "speed_profile": resolved_turn.speed_profile,
                 "deadline_ms": resolved_turn.deadline_ms,
                 "attachments": payload.attachments,
                 "resolved_attachments": payload.resolved_attachments,

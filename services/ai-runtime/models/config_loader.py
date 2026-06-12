@@ -166,6 +166,9 @@ def get_orchestration_config() -> Dict[str, Any]:
         "openDurationSeconds": int(breaker.get("openDurationSeconds", 600)),
         "maxConcurrentPerTier": int(racing.get("maxConcurrentPerTier", 2)),
         "probeTimeoutSeconds": float(racing.get("probeTimeoutSeconds", 8)),
+        "adaptiveEnabled": bool(racing.get("adaptiveEnabled", True)),
+        "raceHealthThreshold": float(racing.get("raceHealthThreshold", 0.9)),
+        "raceMinSamples": int(racing.get("raceMinSamples", 5)),
     }
 
 
@@ -174,6 +177,24 @@ def get_task_profile(task: str) -> Dict[str, Any]:
     profiles = cfg.get("taskProfiles") or {}
     entry = profiles.get(task) or profiles.get("fast_chat") or {}
     return dict(entry) if isinstance(entry, dict) else {}
+
+
+def get_speed_profile(speed_profile: str) -> Dict[str, Any]:
+    cfg = load_ai_models_config()
+    profiles = cfg.get("speedProfiles") or {}
+    entry = profiles.get(speed_profile) or {}
+    return dict(entry) if isinstance(entry, dict) else {}
+
+
+def context_window_for_task(task: str) -> int:
+    tiers = routing_tiers_for_task(task)
+    primary = (tiers.get("tier1") or [None])[0]
+    if primary:
+        entry = model_def(primary) or {}
+        window = entry.get("contextWindow")
+        if window is not None:
+            return int(window)
+    return 32_000
 
 
 def probe_timeout_for_task(task: str) -> float:

@@ -65,6 +65,59 @@ class TestRoutingTiers(unittest.TestCase):
         )
 
 
+class TestAdaptiveRace(unittest.TestCase):
+    def setUp(self) -> None:
+        load_ai_models_config(reload=True)
+
+    def test_healthy_primary_returns_single_candidate(self) -> None:
+        from models.orchestration.stream_race import _adaptive_candidates
+
+        metrics = HealthMetrics()
+        for _ in range(10):
+            metrics.record("groq", success=True, latency_ms=400, task="fast_chat")
+        with patch("models.orchestration.stream_race.health_metrics", metrics):
+            candidates = _adaptive_candidates(
+                ["groq/llama-3.3-70b", "nvidia/deepseek-v4-flash"],
+                task="fast_chat",
+                race_meta={},
+            )
+        self.assertEqual(len(candidates), 1)
+
+    def test_degraded_primary_races_top_two(self) -> None:
+        from models.orchestration.stream_race import _adaptive_candidates
+
+        metrics = HealthMetrics()
+        for _ in range(6):
+            metrics.record("groq", success=False, latency_ms=400, task="fast_chat")
+        metrics.record("nvidia", success=True, latency_ms=800, task="fast_chat")
+        with patch(
+            "models.orchestration.stream_race.health_metrics", metrics
+        ):
+            candidates = _adaptive_candidates(
+                ["groq/llama-3.3-70b", "nvidia/deepseek-v4-flash"],
+                task="fast_chat",
+                race_meta={},
+            )
+        self.assertEqual(len(candidates), 2)
+
+    def test_cold_start_uses_latency_ranked_primary(self) -> None:
+        from models.orchestration.stream_race import _adaptive_candidates
+
+        metrics = HealthMetrics()
+        metrics.record("groq", success=True, latency_ms=300, task="fast_chat")
+        metrics.record("nvidia", success=True, latency_ms=2000, task="fast_chat")
+        with patch(
+            "models.orchestration.stream_race.health_metrics", metrics
+        ):
+            candidates = _adaptive_candidates(
+                ["nvidia/deepseek-v4-flash", "groq/llama-3.3-70b"],
+                task="fast_chat",
+                race_meta={},
+            )
+        self.assertEqual(candidates[0], "groq/llama-3.3-70b")
+        self.assertEqual(len(candidates), 1)
+
+
 class TestTierRaceCancel(unittest.IsolatedAsyncioTestCase):
     async def test_cancel_event_aborts_race(self) -> None:
         from models.orchestration.stream_race import race_tier
