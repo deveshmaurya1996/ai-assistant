@@ -1,4 +1,4 @@
-import { betterAuth } from 'better-auth';
+import { betterAuth, type Auth as BetterAuthInstance } from 'better-auth';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { expo } from '@better-auth/expo';
 import { prisma } from '@ai-assistant/database';
@@ -44,6 +44,6 @@ export const auth = betterAuth({
         },
       }
     : {}),
-});
+}) as unknown as BetterAuthInstance;
 
-export type Auth = typeof auth;
+export type Auth = BetterAuthInstance;
