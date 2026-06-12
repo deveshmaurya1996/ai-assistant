@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.routing import APIRoute
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,18 @@ def mount_cognitive_routes(app: FastAPI) -> None:
         path = getattr(route, "path", None)
         if path in skip_paths:
             continue
-        app.router.routes.append(route)
+        if isinstance(route, APIRoute):
+            # Re-register on the parent app so POST bodies and dependencies bind correctly.
+            app.add_api_route(
+                path=route.path,
+                endpoint=route.endpoint,
+                methods=sorted(route.methods),
+                name=route.name,
+                dependencies=route.dependencies,
+                response_class=route.response_class,
+            )
+        else:
+            app.router.routes.append(route)
 
     _COGNITIVE_MOUNTED = True
     logger.info("[intelligence] mounted cognitive-runtime routes")

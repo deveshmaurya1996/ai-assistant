@@ -15,7 +15,7 @@ except ImportError:
 import httpx
 
 from ai_http import ai_http_client, ai_request_url
-from cognitive_env_loader import resolve_public_api_url
+from cognitive_env_loader import resolve_internal_gateway_url
 from orchestration.platform_capabilities import platform_capabilities_block
 from orchestration.scheduling_relative_time import resolve_one_shot_next_fire_at
 from orchestration.llm.json_parse import parse_llm_json as _parse_json
@@ -26,7 +26,7 @@ from orchestration.scheduling_timezone import (
 
 logger = logging.getLogger(__name__)
 
-GATEWAY_URL = resolve_public_api_url()
+GATEWAY_URL = resolve_internal_gateway_url()
 INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev-internal-token")
 SCHEDULING_TIMEOUT = float(os.getenv("SCHEDULING_PLANNER_TIMEOUT", "20"))
 

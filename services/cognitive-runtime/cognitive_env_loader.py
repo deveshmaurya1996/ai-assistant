@@ -66,12 +66,28 @@ def resolve_public_api_url() -> str:
     return _public_api_url_from_env()
 
 
+def resolve_internal_gateway_url() -> str:
+    """Loopback gateway URL for in-container calls (avoids Render public URL deadlocks)."""
+    _ensure_env()
+    explicit = os.getenv("GATEWAY_INTERNAL_URL", "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    if (
+        _embedded_in_ai_runtime()
+        or os.getenv("NODE_ENV") == "production"
+        or os.getenv("RENDER") == "true"
+    ):
+        port = os.getenv("API_PORT") or os.getenv("PORT") or "10000"
+        return f"http://127.0.0.1:{port}"
+    return resolve_public_api_url()
+
+
 def resolve_tool_runtime_url() -> str:
     _ensure_env()
     explicit = os.getenv("TOOL_RUNTIME_URL", "").strip()
     if explicit:
         return explicit.rstrip("/")
-    return f"{resolve_public_api_url()}/internal/tools"
+    return f"{resolve_internal_gateway_url()}/internal/tools"
 
 
 def resolve_capability_runtime_url() -> str:
@@ -79,7 +95,7 @@ def resolve_capability_runtime_url() -> str:
     explicit = os.getenv("CAPABILITY_RUNTIME_URL", "").strip()
     if explicit:
         return explicit.rstrip("/")
-    return f"{resolve_public_api_url()}/internal/capabilities"
+    return f"{resolve_internal_gateway_url()}/internal/capabilities"
 
 
 def _embedded_in_ai_runtime() -> bool:

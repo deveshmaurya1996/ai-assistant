@@ -3,9 +3,9 @@ from __future__ import annotations
 import os
 from typing import Any, Dict
 
-from cognitive_env_loader import resolve_public_api_url
+from cognitive_env_loader import resolve_internal_gateway_url
 
-GATEWAY_URL = resolve_public_api_url()
+GATEWAY_URL = resolve_internal_gateway_url()
 INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev-internal-token")
 
 

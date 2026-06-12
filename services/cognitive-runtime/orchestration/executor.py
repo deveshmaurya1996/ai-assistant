@@ -8,7 +8,7 @@ import httpx
 
 from cognitive_env_loader import (
     resolve_capability_runtime_url,
-    resolve_public_api_url,
+    resolve_internal_gateway_url,
     resolve_tool_runtime_url,
 )
 from orchestration.capability_map import (
@@ -25,7 +25,7 @@ from orchestration.policies import sanitize_tool_args, validate_tool_chain
 
 logger = logging.getLogger(__name__)
 
-GATEWAY_URL = resolve_public_api_url()
+GATEWAY_URL = resolve_internal_gateway_url()
 CAPABILITY_RUNTIME_URL = resolve_capability_runtime_url()
 TOOL_RUNTIME_URL = resolve_tool_runtime_url()
 

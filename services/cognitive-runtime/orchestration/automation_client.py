@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 import httpx
 
-from cognitive_env_loader import resolve_public_api_url
+from cognitive_env_loader import resolve_internal_gateway_url
 from orchestration.gateway_client import (
     gateway_error_message,
     internal_headers,
@@ -14,7 +14,7 @@ from orchestration.gateway_client import (
 )
 from orchestration.scheduling_timezone import resolve_effective_timezone
 
-GATEWAY_URL = resolve_public_api_url()
+GATEWAY_URL = resolve_internal_gateway_url()
 
 
 async def execute_automation_via_gateway(

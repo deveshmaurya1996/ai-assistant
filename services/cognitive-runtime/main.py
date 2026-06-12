@@ -19,12 +19,12 @@ from ai_http import AI_SERVICE_URL, ai_http_client, ai_request_url
 from cognitive_env_loader import (
     load_service_env,
     resolve_capability_runtime_url,
-    resolve_public_api_url,
+    resolve_internal_gateway_url,
     resolve_tool_runtime_url,
 )
 
 load_service_env()
-GATEWAY_URL = resolve_public_api_url()
+GATEWAY_URL = resolve_internal_gateway_url()
 TOOL_RUNTIME_URL = resolve_tool_runtime_url()
 CAPABILITY_RUNTIME_URL = resolve_capability_runtime_url()
 INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev-internal-token")
@@ -263,14 +263,16 @@ def warm_agent_modules() -> None:
     from orchestration.turn_router import classify_turn  # noqa: F401
 
 
+from orchestration.agent_pipeline import iter_agent_turn_sse
+
+
 @app.post("/v1/agent/turn")
 async def agent_turn(payload: AgentTurnRequest, request: Request):
     """Single chat entry — all routing decisions live in orchestration.agent_pipeline."""
-    from orchestration.agent_pipeline import iter_agent_turn_sse
-
     return StreamingResponse(
         iter_agent_turn_sse(payload, request),
         media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
