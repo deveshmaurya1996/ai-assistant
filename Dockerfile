@@ -30,7 +30,9 @@ COPY . .
 ENV DATABASE_URL=postgresql://build:build@localhost:5432/build?schema=public
 RUN pnpm install --frozen-lockfile --ignore-scripts \
  && pnpm catalog:generate && pnpm catalog:validate \
- && pnpm exec turbo run build --filter=@ai-assistant/gateway...
+ && pnpm exec turbo run build --filter=@ai-assistant/gateway... \
+ && pnpm install --frozen-lockfile --ignore-scripts \
+ && test -f node_modules/@ai-assistant/telemetry/dist/register.js
 
 FROM python:3.11-slim-bookworm AS python_deps
 WORKDIR /app
@@ -41,25 +43,27 @@ COPY services/cognitive-runtime/requirements.txt ./services/cognitive-runtime/re
 RUN pip install --no-cache-dir -r services/ai-runtime/requirements.txt \
  && pip install --no-cache-dir -r services/cognitive-runtime/requirements.txt
 
-FROM node:22-bookworm AS runtime
+FROM python:3.11-slim-bookworm AS runtime
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    supervisor ffmpeg python3 python3-pip \
+    supervisor ffmpeg curl ca-certificates gnupg \
+ && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+ && apt-get install -y --no-install-recommends nodejs \
  && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 
+COPY --from=python_deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=python_deps /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 COPY --from=node_build /app/node_modules ./node_modules
 COPY --from=node_build /app/packages ./packages
 COPY --from=node_build /app/services/gateway/dist ./services/gateway/dist
 COPY --from=node_build /app/services/gateway/package.json ./services/gateway/package.json
 COPY --from=node_build /app/services/tool-runtime/dist ./services/tool-runtime/dist
 COPY --from=node_build /app/services/capability-runtime/dist ./services/capability-runtime/dist
-COPY --from=python_deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=python_deps /usr/local/bin /usr/local/bin
+COPY --from=node_build /app/catalog ./catalog
+COPY --from=node_build /app/connectors ./connectors
 COPY services/ai-runtime ./services/ai-runtime
 COPY services/cognitive-runtime ./services/cognitive-runtime
-COPY connectors ./connectors
-COPY catalog ./catalog
 COPY planner-config ./planner-config
 COPY infra/supervisor/supervisord.conf ./infra/supervisor/supervisord.conf
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
