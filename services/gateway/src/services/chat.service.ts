@@ -1,24 +1,10 @@
-import { buildDefaultAttachmentQuery, resolveAssistantContext, normalizePersonalityId, type ChatAttachmentRef } from '@ai-assistant/types';
+import { resolveAssistantContext, normalizePersonalityId, type ChatAttachmentRef } from '@ai-assistant/types';
 import { prisma, Prisma, Role, type ChatSessionKind as PrismaChatSessionKind } from '@ai-assistant/database';
-import {
-  buildRetrievalContextForAttachments,
-  resolveAttachments,
-  shouldBuildRetrievalContext,
-} from './file-resolver.service';
 import { toChatAttachmentRef, uploadUserFile } from './file.service';
 import { updateSessionFileContext } from './file-registry.service';
-import { loadRecentChatHistory } from './chat-history.service';
-import {
-  buildSessionWorkingContext,
-  shouldHydrateSessionFiles,
-} from './session-context.service';
 import { deleteEpisodicMemoryForSession, ingestConversationMemory } from './memory.service';
-import {
-  capAttachmentUserQuery,
-  routingQueryFromText,
-  truncateForPrompt,
-  attachmentFileContextMaxChars,
-} from './prompt-budget';
+import { buildAgentTurnInput } from './chat-turn-input';
+import { chatHistoryLimit, loadRecentChatHistory } from './chat-history.service';
 
 type ChatSessionKind = 'text' | 'voice';
 import { fetchAi } from '../lib/http';
@@ -26,7 +12,6 @@ import { AppError, badRequest, forbidden, notFound } from '../lib/errors';
 import { EventNames, publishEvent } from '@ai-assistant/events';
 import { runAgentTurn, type AgentSource } from './agent-turn.service';
 import { ChatTurnAbortedError } from './chat-turn-errors';
-import { classifyImageIntent } from './image-intent.service';
 import {
   buildConfirmText,
   clearPendingConfirm,
@@ -40,7 +25,7 @@ export type ChatHistoryMessage = { role: string; content: string };
 
 const PLACEHOLDER_TITLES = new Set(['', 'new chat', 'untitled', 'voice chat']);
 const DEFAULT_TEXT_SESSION_TITLE = 'New Chat';
-const DEFAULT_VOICE_SESSION_TITLE = 'Voice chat';
+const DEFAULT_VOICE_SESSION_TITLE = 'Voice Chat';
 
 function isRagGloballyEnabled(): boolean {
   const raw = (process.env.RAG_ENABLED ?? 'true').trim().toLowerCase();
@@ -53,37 +38,7 @@ export function resolveRagEnabled(explicit?: boolean): boolean {
   return true;
 }
 
-export function chatHistoryLimit(): number {
-  const raw = process.env.CHAT_HISTORY_LIMIT ?? '20';
-  const n = parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? Math.min(n, 50) : 20;
-}
-
-export function chatHistoryLimitForMessage(
-  text: string,
-  attachments: ChatAttachmentRef[] = []
-): number {
-  const base = chatHistoryLimit();
-  if (attachments.length > 0) {
-    const attachLimit = parseInt(process.env.ATTACHMENT_HISTORY_LIMIT ?? '8', 10);
-    return Number.isFinite(attachLimit) && attachLimit > 0
-      ? Math.min(base, attachLimit)
-      : Math.min(base, 8);
-  }
-  const trimmed = text.trim();
-  if (trimmed.length >= 80) return base;
-  if (
-    /\b(whatsapp|gmail|email|calendar|remember|summarize|pdf|file|search my|connected)\b/i.test(
-      trimmed
-    )
-  ) {
-    return base;
-  }
-  const shortLimit = parseInt(process.env.CONVERSATIONAL_HISTORY_LIMIT ?? '10', 10);
-  return Number.isFinite(shortLimit) && shortLimit > 0
-    ? Math.min(base, shortLimit)
-    : Math.min(base, 10);
-}
+export { chatHistoryLimit, toAiRole } from './chat-history.service';
 
 function toApiSessionKind(kind: PrismaChatSessionKind): ChatSessionKind {
   return kind === 'VOICE' ? 'voice' : 'text';
@@ -260,23 +215,6 @@ function attachmentsFromMetadata(metadata: unknown): ChatAttachmentRef[] | undef
   return raw as ChatAttachmentRef[];
 }
 
-async function findLatestAssistantImageAttachment(
-  sessionId: string
-): Promise<ChatAttachmentRef | null> {
-  const rows = await prisma.message.findMany({
-    where: { chatSessionId: sessionId, role: 'ASSISTANT' },
-    orderBy: { createdAt: 'desc' },
-    take: 20,
-    select: { metadata: true },
-  });
-  for (const row of rows) {
-    const atts = attachmentsFromMetadata(row.metadata ?? null);
-    const image = atts?.find((a) => a.kind === 'image');
-    if (image) return image;
-  }
-  return null;
-}
-
 function personalityFieldsFromMetadata(metadata: unknown): {
   personalityId?: string;
   assistantDisplayName?: string;
@@ -395,12 +333,6 @@ export async function resolveOrCreateSession(
     },
   });
   return session.id;
-}
-
-function toAiRole(role: Role): string {
-  if (role === 'USER') return 'user';
-  if (role === 'ASSISTANT') return 'assistant';
-  return 'system';
 }
 
 function parseSsePayload<T>(data: string, fallback: T): T {
@@ -563,119 +495,37 @@ export async function processChatMessage(params: {
     },
   });
 
-  const historyTake = chatHistoryLimitForMessage(text, attachments);
-  const hydrateFiles = await shouldHydrateSessionFiles(
-    sessionId,
-    text,
-    attachments.length > 0
-  );
-
   const agentSource: AgentSource =
     params.agentSource ?? (source === 'socket' ? 'chat' : 'chat');
-
-  const historyPromise = loadRecentChatHistory(sessionId, historyTake);
-  const needFileWork = hydrateFiles || attachments.length > 0;
-
-  const [dbHistory, resolvedAttachments] = await Promise.all([
-    historyPromise,
-    needFileWork
-      ? resolveAttachments(userId, attachments, {
-          query: text,
-          sessionId,
-          forceInline: attachments.some((a) => a.kind === 'image'),
-        })
-      : Promise.resolve([]),
-  ]);
-
-  const loadChunkContext =
-    needFileWork &&
-    shouldBuildRetrievalContext(attachments, resolvedAttachments, text);
-
-  const [fileRetrievalContext, sessionWorkingContext] = await Promise.all([
-    loadChunkContext
-      ? buildRetrievalContextForAttachments(userId, attachments, text, sessionId)
-      : Promise.resolve(''),
-    historyPromise.then((rows) => buildSessionWorkingContext(userId, rows)),
-  ]);
-
-  const rawAgentQuery =
-    text.trim() ||
-    (attachments.length > 0 ? buildDefaultAttachmentQuery(resolvedAttachments) : '');
-  const agentQuery =
-    attachments.length > 0 ? capAttachmentUserQuery(rawAgentQuery) : rawAgentQuery;
-  const routingQuery = routingQueryFromText(text);
-
-  const cappedFileContext =
-    attachments.length > 0 && fileRetrievalContext
-      ? truncateForPrompt(fileRetrievalContext, attachmentFileContextMaxChars())
-      : fileRetrievalContext;
-  const cappedSessionContext =
-    attachments.length > 0 && sessionWorkingContext
-      ? truncateForPrompt(sessionWorkingContext, attachmentFileContextMaxChars())
-      : sessionWorkingContext;
 
   if (attachments.length > 0) {
     await updateSessionFileContext(sessionId, {
       lastReferencedFileIds: attachments.map((a) => a.id),
     });
-  }
-
-  if (attachments.length > 0) {
     console.info('[chat] processing message with attachments', {
       sessionId,
       attachmentCount: attachments.length,
       kinds: attachments.map((a) => a.kind),
-      resolvedWithImage: resolvedAttachments.filter((r) => r.imageDataUrl).length,
-      resolvedWithExcerpt: resolvedAttachments.filter((r) => r.textExcerpt).length,
-      resolvedWithNote: resolvedAttachments.filter((r) => r.note).length,
-      queryChars: agentQuery.length,
-      routingQueryChars: routingQuery.length,
-      fileContextChars: cappedFileContext.length,
     });
   }
 
-  let effectiveAttachments = attachments;
-  let effectiveResolved = resolvedAttachments;
-  const hasUserImage = attachments.some((a) => a.kind === 'image');
-  const hasResolvedImage = resolvedAttachments.some((r) => r.imageDataUrl);
-  const imageIntent = classifyImageIntent(text, hasUserImage || hasResolvedImage);
-
-  if (imageIntent === 'image_edit' && !hasUserImage && !hasResolvedImage) {
-    const priorImage = await findLatestAssistantImageAttachment(sessionId);
-    if (priorImage) {
-      effectiveAttachments = [priorImage];
-      effectiveResolved = await resolveAttachments(userId, effectiveAttachments, {
-        query: text,
-        sessionId,
-        forceInline: true,
-      });
-    }
-  }
+  const turnInput = await buildAgentTurnInput({
+    userId,
+    sessionId,
+    text,
+    attachments,
+    ragEnabled,
+    confirmed: params.confirmed ?? false,
+    source: agentSource,
+    personalityId: params.personalityId,
+    assistantDisplayName: params.assistantDisplayName,
+    timezone: deviceTimezone,
+  });
 
   let turn;
   try {
     turn = await runAgentTurn(
-      {
-        userId,
-        query: agentQuery,
-        routingQuery,
-        chatSessionId: sessionId,
-        chatHistory: dbHistory.map((m) => ({
-          role: toAiRole(m.role),
-          content: m.content,
-        })),
-        attachments: effectiveAttachments,
-        resolvedAttachments: effectiveResolved,
-        ragEnabled,
-        confirmed: params.confirmed ?? false,
-        source: agentSource,
-        personalityId: assistantContext.personalityId,
-        assistantDisplayName: assistantContext.displayName,
-        systemPrompt: assistantContext.systemPrompt,
-        fileRetrievalContext: cappedFileContext,
-        sessionContext: cappedSessionContext,
-        timezone: deviceTimezone,
-      },
+      turnInput,
       {
         onToken: (token) => onChunk(token, sessionId),
         onStatus: (message) => params.onStatus?.(message, sessionId),
@@ -725,7 +575,7 @@ export async function processChatMessage(params: {
       void maybeAutoTitleSession({
         userId,
         sessionId,
-        userMessage: text.trim() || agentQuery,
+        userMessage: text.trim() || turnInput.query,
         assistantMessage: partial,
         onTitleUpdated,
       });
@@ -766,7 +616,7 @@ export async function processChatMessage(params: {
       void maybeAutoTitleSession({
         userId,
         sessionId,
-        userMessage: text.trim() || agentQuery,
+        userMessage: text.trim() || turnInput.query,
         assistantMessage: confirmText,
         onTitleUpdated,
       });
@@ -795,7 +645,7 @@ export async function processChatMessage(params: {
     void maybeAutoTitleSession({
       userId,
       sessionId,
-      userMessage: text.trim() || agentQuery,
+      userMessage: text.trim() || turnInput.query,
       assistantMessage: modalConfirmText,
       onTitleUpdated,
     });
@@ -840,7 +690,7 @@ export async function processChatMessage(params: {
   void maybeAutoTitleSession({
     userId,
     sessionId,
-    userMessage: text.trim() || agentQuery,
+    userMessage: text.trim() || turnInput.query,
     assistantMessage: accumulated,
     hasImageAttachment: assistantAttachments.length > 0,
     onTitleUpdated,

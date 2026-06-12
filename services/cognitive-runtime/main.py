@@ -227,460 +227,51 @@ async def _hybrid_memory_block(
     chat_session_id: Optional[str] = None,
     memory_budget_ms: Optional[float] = None,
 ) -> tuple[str, bool]:
-    """Wait up to budget for memory; return (block, status_emitted)."""
-    from orchestration.context import fetch_layered_memory_context
-    from orchestration.turn_router import memory_prestream_budget_ms
+    """Backward-compatible alias for orchestration.memory_fetch."""
+    from orchestration.memory_fetch import fetch_hybrid_memory_block
 
-    budget_ms = (
-        float(memory_budget_ms)
-        if memory_budget_ms is not None
-        else memory_prestream_budget_ms()
+    return await fetch_hybrid_memory_block(
+        query=query,
+        user_id=user_id,
+        skip_episodic=skip_episodic,
+        timings=timings,
+        chat_session_id=chat_session_id,
+        memory_budget_ms=memory_budget_ms,
     )
-    budget_s = budget_ms / 1000.0
-    t0 = time.perf_counter()
-    task = asyncio.create_task(
-        fetch_layered_memory_context(
-            query,
-            user_id,
-            skip_episodic=skip_episodic,
-            chat_session_id=chat_session_id,
-        )
-    )
-    status_emitted = False
-    try:
-        block = await asyncio.wait_for(asyncio.shield(task), timeout=budget_s)
-        timings["rag_ms"] = (time.perf_counter() - t0) * 1000
-        timings["rag_within_budget"] = 1.0
-        return block, status_emitted
-    except asyncio.TimeoutError:
-        status_emitted = True
-        timings["rag_within_budget"] = 0.0
-        try:
-            block = await task
-            timings["rag_ms"] = (time.perf_counter() - t0) * 1000
-            return block, status_emitted
-        except Exception as exc:
-            logger.warning("[agent] memory fetch failed after status: %s", exc)
-            timings["rag_ms"] = (time.perf_counter() - t0) * 1000
-            return "", status_emitted
 
 
 ORCHESTRATOR_STREAM_TIMEOUT = float(os.getenv("ORCHESTRATOR_STREAM_TIMEOUT", "45"))
 
 
+def _log_agent_stage(stage: str, **extra: Any) -> None:
+    from orchestration.pipeline_debug import log_agent_stage
+
+    log_agent_stage(stage, **extra)
+
+
+def warm_agent_modules() -> None:
+    """Load orchestration modules at startup so the first chat turn is not blocked."""
+    from orchestration.agent_pipeline import iter_agent_turn_sse  # noqa: F401
+    from orchestration.context import fetch_integration_manifest  # noqa: F401
+    from orchestration.executor import execute_planned_tools  # noqa: F401
+    from orchestration.image_intent import classify_image_intent  # noqa: F401
+    from orchestration.planner import plan_tools  # noqa: F401
+    from orchestration.prompt_compression import compress_prompt_if_needed  # noqa: F401
+    from orchestration.speed_router import resolve_speed_profile  # noqa: F401
+    from orchestration.stream_chat import passthrough_chat_stream  # noqa: F401
+    from orchestration.turn_contract import build_resolved_turn  # noqa: F401
+    from orchestration.turn_router import classify_turn  # noqa: F401
+
+
 @app.post("/v1/agent/turn")
 async def agent_turn(payload: AgentTurnRequest, request: Request):
-    from orchestration.planner import plan_tools
-    from orchestration.executor import execute_planned_tools
-    from orchestration.context import (
-        assemble_turn_context,
-        build_assistant_identity_block,
-        build_context,
-        fetch_curated_facts_block,
-        fetch_integration_manifest,
+    """Single chat entry — all routing decisions live in orchestration.agent_pipeline."""
+    from orchestration.agent_pipeline import iter_agent_turn_sse
+
+    return StreamingResponse(
+        iter_agent_turn_sse(payload, request),
+        media_type="text/event-stream",
     )
-    from orchestration.turn_router import (
-        TurnIntent,
-        classify_turn,
-        memory_prestream_budget_ms,
-        resolve_memory_retrieval,
-    )
-    from orchestration.turn_contract import build_resolved_turn
-    from orchestration.speed_router import resolve_speed_profile
-
-    turn_t0 = time.perf_counter()
-    timings: Dict[str, float] = {}
-
-    tool_results: List[Dict[str, Any]] = list(payload.tool_results or [])
-    plan: Dict[str, Any] = {"tools": [], "connections": [], "warnings": []}
-    manifest_text = ""
-
-    has_attachments = bool(payload.attachments or payload.resolved_attachments)
-
-    def _attachment_has_vision(a: Dict[str, Any]) -> bool:
-        return bool(a.get("imageDataUrl") or a.get("embeddedImageDataUrls"))
-
-    has_images = any(_attachment_has_vision(a) for a in payload.resolved_attachments)
-    file_ctx = (payload.file_retrieval_context or "").strip()
-    session_ctx = (payload.session_context or "").strip()
-
-    route = classify_turn(
-        query=payload.query,
-        routing_query=payload.routing_query,
-        chat_history=payload.chat_history,
-        confirmed=payload.confirmed,
-        skip_planning=payload.skip_planning,
-        rag_enabled=payload.rag_enabled,
-        attachments=payload.attachments,
-        resolved_attachments=payload.resolved_attachments,
-        has_file_context=bool(file_ctx),
-    )
-    timings["intent"] = route.intent.value 
-
-    retrieve_memory = route.retrieve_memory
-    if not retrieve_memory:
-        retrieve_memory = await resolve_memory_retrieval(
-            route,
-            query=payload.query,
-            rag_enabled=payload.rag_enabled,
-            has_file_context=bool(file_ctx),
-        )
-
-    identity_block = (
-        build_assistant_identity_block(
-            payload.assistant_display_name,
-            payload.personality_id,
-        )
-        if route.include_identity
-        else None
-    )
-
-    cap_file = has_attachments and route.intent == TurnIntent.KNOWLEDGE
-    base_context = assemble_turn_context(
-        session_context=session_ctx or None,
-        file_context=file_ctx or None,
-        identity_block=identity_block,
-        memory_block=None,
-        cap_file_context=cap_file,
-    )
-
-    speed_profile = resolve_speed_profile(route=route, source=payload.source)
-    resolved_turn = build_resolved_turn(
-        route,
-        retrieve_memory=retrieve_memory,
-        speed_profile=speed_profile,
-    )
-    timings["resolved_task"] = resolved_turn.task
-    timings["speed_profile"] = resolved_turn.speed_profile
-    timings["allow_thinking"] = float(resolved_turn.allow_thinking)
-    timings["deadline_ms"] = float(resolved_turn.deadline_ms)
-
-    logger.info(
-        "[agent] intent=%s speed=%s stream_task=%s retrieve_memory=%s run_planner=%s deadline_ms=%.0f",
-        route.intent.value,
-        resolved_turn.speed_profile,
-        route.stream_task,
-        retrieve_memory,
-        route.run_planner and not resolved_turn.skip_planner,
-        resolved_turn.deadline_ms,
-    )
-
-    from orchestration.image_intent import classify_image_intent
-
-    image_intent = None
-    if not payload.confirmed:
-        image_intent = classify_image_intent(
-            payload.query, has_image_attachment=has_images
-        )
-        if image_intent == "image_edit" and not has_images:
-            image_intent = None
-
-    if image_intent:
-
-        async def image_stream():
-            logger.info("[agent] image fast path intent=%s", image_intent)
-            yield _sse_frame("status", {"message": "__image_generating__"})
-            async with ai_http_client(timeout=300.0) as client:
-                res = await client.post(
-                    ai_request_url("/v1/image/from-chat"),
-                    json={
-                        "query": payload.query,
-                        "resolved_attachments": payload.resolved_attachments,
-                        "width": 1024,
-                        "height": 1024,
-                    },
-                )
-                try:
-                    data = res.json()
-                except Exception:
-                    data = {"success": False, "error": "Image service returned invalid response."}
-                if res.status_code == 200 and data.get("success"):
-                    caption = str(data.get("caption") or "Here's your image.")
-                    yield _sse_frame("token", {"content": f"{caption}\n"})
-                    yield _sse_frame(
-                        "image",
-                        {
-                            "imageBase64": data.get("imageBase64"),
-                            "mimeType": data.get("mimeType", "image/jpeg"),
-                        },
-                    )
-                    yield _sse_frame(
-                        "done",
-                        {
-                            "model": data.get("modelUsed"),
-                            "label": data.get("modelLabel"),
-                        },
-                    )
-                else:
-                    msg = str(
-                        data.get("error")
-                        or "Image generation failed. Please try again later."
-                    )
-                    yield _sse_frame("token", {"content": msg})
-                    yield _sse_frame("done", {})
-
-        return StreamingResponse(image_stream(), media_type="text/event-stream")
-
-    stream_task = route.stream_task
-
-    use_hybrid_memory = retrieve_memory
-    hybrid_skip_episodic = route.skip_episodic
-    prebuilt_context = base_context
-    timings["session_context_chars"] = float(len(session_ctx))
-    chat_history = payload.chat_history[: route.history_limit]
-
-    async def stream_response():
-        nonlocal plan, tool_results, manifest_text
-        t_stream = time.perf_counter()
-        rag_block = ""
-        yield _sse_frame("status", {"message": "__thinking__"})
-
-        if route.run_planner and not resolved_turn.skip_planner:
-            yield _sse_frame("status", {"message": "Checking integrations…"})
-            t_manifest = time.perf_counter()
-            manifest_text, manifest_caps, manifest_connections, manifest_connection_states = (
-                await fetch_integration_manifest(payload.user_id)
-            )
-            timings["manifest_ms"] = (time.perf_counter() - t_manifest) * 1000
-
-            if not payload.skip_planning:
-                if retrieve_memory:
-                    rag_block = await fetch_curated_facts_block(payload.user_id)
-
-                t_ctx = time.perf_counter()
-                context_str = await build_context(
-                    payload.query,
-                    payload.user_id,
-                    chat_history,
-                    retrieve_memory,
-                    manifest_text=manifest_text,
-                    rag_block=rag_block,
-                )
-                timings["build_context_ms"] = (time.perf_counter() - t_ctx) * 1000
-
-                if file_ctx:
-                    context_str = (
-                        f"{file_ctx}\n\n{context_str}".strip() if context_str else file_ctx
-                    )
-
-                t_plan = time.perf_counter()
-                plan = await plan_tools(
-                    payload.query,
-                    context_str,
-                    payload.user_id,
-                    manifest_caps=manifest_caps,
-                    manifest_connections=manifest_connections,
-                    manifest_connection_states=manifest_connection_states,
-                    routing_query=payload.routing_query,
-                    timezone=payload.timezone,
-                    chat_history=chat_history,
-                )
-                timings["plan_tools_ms"] = (time.perf_counter() - t_plan) * 1000
-                timings["planner"] = plan.get("planner", "")
-                if plan.get("model_used"):
-                    timings["planner_model"] = plan.get("model_used")
-                from orchestration.types import planner_trace_in_sse
-
-                if planner_trace_in_sse() and plan.get("trace"):
-                    timings["planner_trace"] = plan.get("trace")
-
-                work_items = plan.get("tools") or plan.get("capabilities") or []
-                if work_items and route.run_tools:
-                    t_tools = time.perf_counter()
-                    tool_results = await execute_planned_tools(
-                        work_items,
-                        user_id=payload.user_id,
-                        source=payload.source,
-                        confirmed=payload.confirmed,
-                        chat_session_id=payload.chat_session_id,
-                        connections=plan.get("connections", []),
-                    )
-                    timings["execute_tools_ms"] = (time.perf_counter() - t_tools) * 1000
-                    pending_confirm = [
-                        r for r in tool_results if r.get("requiresConfirmation")
-                    ]
-                    completed = [
-                        r for r in tool_results if not r.get("requiresConfirmation")
-                    ]
-
-                    if pending_confirm and not payload.confirmed:
-                        from orchestration.contacts import enrich_whatsapp_send_to
-
-                        enrich_whatsapp_send_to(pending_confirm, completed)
-
-                        yield _sse_frame(
-                            "action_confirm",
-                            {
-                                "requiresConfirmation": True,
-                                "tools": pending_confirm,
-                                "warnings": plan.get("warnings", []),
-                            },
-                        )
-                        yield _sse_frame(
-                            "done",
-                            {"intent": route.intent.value, "timings": timings},
-                        )
-                        return
-
-            timings["planner_pre_stream_ms"] = (time.perf_counter() - t_stream) * 1000
-
-        memory_block = ""
-        if use_hybrid_memory:
-            memory_block, status_emitted = await _hybrid_memory_block(
-                query=payload.query,
-                user_id=payload.user_id,
-                skip_episodic=hybrid_skip_episodic,
-                timings=timings,
-                chat_session_id=payload.chat_session_id,
-                memory_budget_ms=resolved_turn.memory_budget_ms,
-            )
-            if status_emitted:
-                yield _sse_frame("status", {"message": MEMORY_STATUS_MESSAGE})
-
-        context_for_stream = assemble_turn_context(
-            session_context=session_ctx or None,
-            file_context=file_ctx or None,
-            identity_block=identity_block,
-            memory_block=memory_block or None,
-            cap_file_context=cap_file,
-        ) or prebuilt_context
-
-        if manifest_text and manifest_text.strip():
-            manifest_block = manifest_text.strip()
-            context_for_stream = (
-                f"{manifest_block}\n\n{context_for_stream}"
-                if context_for_stream
-                else manifest_block
-            )
-
-        async with ai_http_client(timeout=ORCHESTRATOR_STREAM_TIMEOUT) as client:
-            tool_context = ""
-            if tool_results:
-                from orchestration.tool_results import format_tool_results_for_context
-
-                tool_context = format_tool_results_for_context(tool_results)
-            elif plan.get("planner") == "llm-scheduling-clarification":
-                from orchestration.tool_results import format_scheduling_clarification
-
-                tool_context = format_scheduling_clarification(
-                    plan.get("warnings") or []
-                )
-            elif plan.get("planner") == "llm-scheduling-empty":
-                from orchestration.tool_results import format_scheduling_plan_failure
-
-                tool_context = format_scheduling_plan_failure(
-                    plan.get("warnings") or []
-                )
-            elif plan.get("planner") in (
-                "integration-blocked",
-                "integration-unsupported",
-            ):
-                from orchestration.tool_results import format_integration_guidance
-
-                tool_context = format_integration_guidance(
-                    plan.get("user_guidance") or ""
-                )
-            stream_query = payload.query + tool_context
-            if has_attachments and not stream_query.strip():
-                if has_images:
-                    stream_query = (
-                        "Describe and analyze the attached file(s), "
-                        "including any images or scanned pages."
-                    )
-                else:
-                    stream_query = (
-                        "Analyze the attached file(s) and summarize the key details, "
-                        "structure, and important information."
-                    )
-            warnings = plan.get("warnings") or []
-            if warnings:
-                stream_query += "\n\nPlanner warnings:\n" + "\n".join(f"- {w}" for w in warnings)
-
-            from orchestration.prompt_compression import compress_prompt_if_needed
-
-            chat_history, context_for_stream, compress_timings = await compress_prompt_if_needed(
-                chat_history=chat_history,
-                context_str=context_for_stream,
-                tool_context=tool_context,
-                user_query=stream_query,
-                user_id=payload.user_id,
-                task=resolved_turn.task,
-                speed_profile=resolved_turn.speed_profile,
-                deadline_ms=resolved_turn.deadline_ms,
-            )
-            timings.update(compress_timings)
-
-            stream_task_resolved = (
-                resolved_turn.task
-                if resolved_turn.task_locked
-                else stream_task
-            )
-            body = {
-                "query": stream_query,
-                "rag_enabled": False,
-                "retrieved_context": context_for_stream or None,
-                "chat_history": chat_history,
-                "user_id": payload.user_id,
-                "task": stream_task_resolved,
-                "task_locked": resolved_turn.task_locked,
-                "allow_thinking": resolved_turn.allow_thinking,
-                "speed_profile": resolved_turn.speed_profile,
-                "deadline_ms": resolved_turn.deadline_ms,
-                "attachments": payload.attachments,
-                "resolved_attachments": payload.resolved_attachments,
-                "personality_id": payload.personality_id,
-                "assistant_display_name": payload.assistant_display_name,
-                "system_prompt": payload.system_prompt,
-            }
-            async with client.stream(
-                "POST",
-                ai_request_url("/v1/chat/stream"),
-                json=body,
-            ) as response:
-                if response.status_code >= 400:
-                    err_body = await response.aread()
-                    snippet = err_body[:500].decode("utf-8", errors="replace")
-                    logger.error(
-                        "[agent] ai-runtime error status=%s body=%s",
-                        response.status_code,
-                        snippet,
-                    )
-                    hint = ""
-                    if response.status_code == 404:
-                        hint = (
-                            " Start ai-runtime on INTELLIGENCE_UPSTREAM_URL (Tilt: ai-runtime on "
-                            ":8000). cognitive-runtime alone does not expose "
-                            "/v1/chat/stream."
-                        )
-                    message = (
-                        f"AI service error ({response.status_code}): "
-                        f"{snippet[:200] or 'no body'}.{hint}"
-                    )
-                    yield _sse_frame("error", {"message": message})
-                    yield _sse_frame("done", {})
-                    return
-
-                first_byte = True
-                async for chunk in response.aiter_bytes():
-                    if await request.is_disconnected():
-                        await response.aclose()
-                        break
-                    if first_byte:
-                        timings["time_to_first_byte_ms"] = (
-                            time.perf_counter() - turn_t0
-                        ) * 1000
-                        logger.info(
-                            "[agent] first_byte_ms=%.0f intent=%s budget_ms=%.0f rag_ms=%.0f",
-                            timings["time_to_first_byte_ms"],
-                            route.intent.value,
-                            memory_prestream_budget_ms(),
-                            timings.get("rag_ms", 0),
-                        )
-                        first_byte = False
-                    yield chunk
-        timings["stream_total_ms"] = (time.perf_counter() - t_stream) * 1000
-
-    return StreamingResponse(stream_response(), media_type="text/event-stream")
 
 
 @app.post("/v1/agent/plan")

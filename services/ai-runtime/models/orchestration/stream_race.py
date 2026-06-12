@@ -128,7 +128,9 @@ async def iter_tier_race_tokens(
             yield mid, token
         return
 
-    timeout_s = probe_timeout_s if probe_timeout_s is not None else probe_timeout_for_task(task)
+    timeout_s = probe_timeout_s if probe_timeout_s is not None else probe_timeout_for_task(
+        task, speed_profile
+    )
     loser_event = asyncio.Event()
     queues: Dict[str, asyncio.Queue] = {mid: asyncio.Queue() for mid in candidates}
     pump_tasks = [

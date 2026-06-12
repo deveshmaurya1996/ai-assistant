@@ -41,3 +41,26 @@ export function classifyImageIntent(
 
   return null;
 }
+
+/** Edit follow-up when the user refers to a prior generated image without re-attaching. */
+export function looksLikeImageEditFollowUp(query: string): boolean {
+  const q = query.toLowerCase().trim();
+  if (!q) return false;
+
+  if (
+    /\b(analyze|describe|read|ocr|extract text|what(?:'s| is) in (?:this|the) (?:image|photo|file|document|pdf|screenshot))\b/.test(
+      q
+    )
+  ) {
+    return false;
+  }
+
+  const editSignals = [
+    /\b(edit|modify|retouch|inpaint|change|alter|update)\b/,
+    /\b(remove|add|replace|erase)\b.+\b(from|in|on)\b/,
+    /\bmake\b.+\b(sky|background|hair|color|colou?r)\b/,
+    /\b(the|this|that|previous|last)\s+(generated\s+)?(image|picture|photo)\b/,
+  ];
+
+  return editSignals.some((p) => p.test(q));
+}

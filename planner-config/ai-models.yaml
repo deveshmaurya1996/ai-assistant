@@ -44,6 +44,7 @@ speedProfiles:
     task: fast_chat
     deadlineMs: 30000
     allowThinking: false
+    probeTimeoutSeconds: 2
   balanced:
     deadlineMs: 60000
     allowThinking: false
@@ -412,8 +413,8 @@ models:
 
 routingTiers:
   fast_chat:
-    tier1: [groq/llama-3.3-70b, nvidia/deepseek-v4-flash]
-    tier2: [groq/llama-3.1-8b, groq/gpt-oss-20b]
+    tier1: [groq/llama-3.1-8b, groq/llama-3.3-70b]
+    tier2: [nvidia/deepseek-v4-flash, groq/gpt-oss-20b]
     tier3: [pollinations/openai]
   reasoning:
     tier1: [nvidia/glm-5.1, groq/gpt-oss-120b]

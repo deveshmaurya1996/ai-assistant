@@ -55,3 +55,10 @@ def mount_cognitive_routes(app: FastAPI) -> None:
 
     _COGNITIVE_MOUNTED = True
     logger.info("[intelligence] mounted cognitive-runtime routes")
+    warm = getattr(module, "warm_agent_modules", None)
+    if callable(warm):
+        try:
+            warm()
+            logger.info("[intelligence] cognitive orchestration modules warmed")
+        except Exception as exc:
+            logger.warning("[intelligence] cognitive warm import failed: %s", exc)

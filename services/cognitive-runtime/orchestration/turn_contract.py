@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from orchestration.speed_router import SpeedProfile
-from orchestration.turn_router import TurnIntent, TurnRoute
+from orchestration.turn_router import TurnRoute
 
 _SPEED_PROFILE_DEFAULTS: dict[SpeedProfile, dict] = {
     SpeedProfile.FAST_RESPONSE: {
@@ -57,6 +57,17 @@ class ResolvedTurn:
     max_tokens: Optional[int] = None
 
 
+def _resolve_task(route: TurnRoute, speed_profile: SpeedProfile) -> str:
+    """Explicit route tasks win; profile default applies only when stream_task is auto."""
+    route_task = route.stream_task if route.stream_task != "auto" else "fast_chat"
+    profile_task = _SPEED_PROFILE_DEFAULTS[speed_profile].get("task")
+    if route.stream_task != "auto":
+        return route_task
+    if profile_task:
+        return str(profile_task)
+    return route_task
+
+
 def build_resolved_turn(
     route: TurnRoute,
     *,
@@ -64,9 +75,7 @@ def build_resolved_turn(
     speed_profile: SpeedProfile,
 ) -> ResolvedTurn:
     defaults = _SPEED_PROFILE_DEFAULTS[speed_profile]
-    route_task = route.stream_task if route.stream_task != "auto" else "fast_chat"
-    profile_task = defaults.get("task")
-    task = profile_task if profile_task else route_task
+    task = _resolve_task(route, speed_profile)
 
     allow_thinking = bool(defaults.get("allow_thinking"))
     if speed_profile == SpeedProfile.BALANCED and task in _THINKING_TASKS:
@@ -85,7 +94,7 @@ def build_resolved_turn(
         deadline_ms=int(defaults["deadline_ms"]),
         speed_profile=speed_profile.value,
         task_locked=task_locked,
-        skip_planner=bool(defaults.get("skip_planner")),
+        skip_planner=bool(defaults.get("skip_planner")) or not route.run_planner,
         memory_budget_ms=defaults.get("memory_budget_ms"),
         max_tokens=defaults.get("max_tokens"),
     )

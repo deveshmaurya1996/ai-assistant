@@ -63,7 +63,7 @@ type ChatSocketContextValue = {
 
 const ChatSocketContext = createContext<ChatSocketContextValue | null>(null);
 
-const TURN_TIMEOUT_MS = 20_000;
+const TURN_TIMEOUT_MS = 25_000;
 const CHUNK_STORE_FLUSH_MS = 80;
 
 type ListenerEntry = {
@@ -209,7 +209,7 @@ export function ChatSocketProvider({
       releaseBoundTurnIfIdle(streamKey);
 
       const message =
-        'Request timed out. Check that AI services are running and try again.';
+        'Assistant is starting up — please try again in a moment.';
       if (sid) {
         notifySessionEvent(sid, (l) => l.onError?.(message));
       } else {

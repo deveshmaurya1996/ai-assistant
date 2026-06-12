@@ -47,3 +47,12 @@ def test_voice_realtime_profile():
     assert turn.max_tokens == 200
     assert turn.memory_budget_ms == 100
     assert turn.deadline_ms == 15_000
+
+
+def test_attachment_read_preserved_under_fast_response():
+    route = _route(TurnIntent.KNOWLEDGE, "attachment_read")
+    turn = build_resolved_turn(
+        route, retrieve_memory=False, speed_profile=SpeedProfile.FAST_RESPONSE
+    )
+    assert turn.task == "attachment_read"
+    assert turn.task_locked is True

@@ -197,8 +197,13 @@ def context_window_for_task(task: str) -> int:
     return 32_000
 
 
-def probe_timeout_for_task(task: str) -> float:
-    profile = get_task_profile(task)
+def probe_timeout_for_task(task: str, speed_profile: str | None = None) -> float:
+    profile = dict(get_task_profile(task))
+    if speed_profile:
+        sp = get_speed_profile(speed_profile)
+        raw_sp = sp.get("probeTimeoutSeconds")
+        if raw_sp is not None:
+            profile["probeTimeoutSeconds"] = raw_sp
     orch = get_orchestration_config()
     raw = profile.get("probeTimeoutSeconds")
     if raw is not None:

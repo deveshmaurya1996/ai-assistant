@@ -240,6 +240,10 @@ async def resolve_memory_retrieval(
     return False
 
 
+def is_direct_stream_route(route: TurnRoute) -> bool:
+    return not route.run_planner and not route.run_tools and not route.retrieve_memory
+
+
 def memory_prestream_budget_ms() -> float:
     raw = os.getenv("MEMORY_PRESTREAM_BUDGET_MS", "300")
     try:

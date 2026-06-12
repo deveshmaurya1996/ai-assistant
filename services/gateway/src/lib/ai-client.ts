@@ -14,6 +14,26 @@ const TIMEOUTS = {
 
 type FetchInit = RequestInit & { timeoutMs?: number; requestId?: string };
 
+function mergeAbortSignals(
+  userSignal: AbortSignal | undefined,
+  timeoutMs: number
+): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  if (!userSignal) return timeoutSignal;
+  if (typeof AbortSignal.any === 'function') {
+    return AbortSignal.any([userSignal, timeoutSignal]);
+  }
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (userSignal.aborted) {
+    abort();
+    return controller.signal;
+  }
+  userSignal.addEventListener('abort', abort, { once: true });
+  timeoutSignal.addEventListener('abort', abort, { once: true });
+  return controller.signal;
+}
+
 function buildHeaders(init?: FetchInit): Record<string, string> {
   const headers = injectTraceHeadersFromInit(init);
   const correlation = correlationHeaders(init?.requestId ?? getRequestId());
@@ -28,11 +48,11 @@ async function intelligenceFetch(
   url: string,
   init?: FetchInit
 ): Promise<Response> {
-  const { timeoutMs = TIMEOUTS.default, ...rest } = init ?? {};
+  const { timeoutMs = TIMEOUTS.default, signal, ...rest } = init ?? {};
   return fetch(url, {
     ...rest,
     headers: buildHeaders(rest),
-    signal: rest.signal ?? AbortSignal.timeout(timeoutMs),
+    signal: mergeAbortSignals(signal ?? undefined, timeoutMs),
   });
 }
 

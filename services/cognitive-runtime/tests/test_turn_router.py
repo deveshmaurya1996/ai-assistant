@@ -1,6 +1,6 @@
 import pytest
 
-from orchestration.turn_router import TurnIntent, classify_turn
+from orchestration.turn_router import TurnIntent, classify_turn, is_direct_stream_route
 
 
 @pytest.mark.parametrize(
@@ -36,6 +36,35 @@ def test_classify_turn_text_only(query, expected):
         has_file_context=False,
     )
     assert route.intent == expected
+
+
+def test_hi_is_direct_stream_route():
+    route = classify_turn(
+        query="hi",
+        confirmed=False,
+        skip_planning=False,
+        rag_enabled=True,
+        attachments=[],
+        resolved_attachments=[],
+        has_file_context=False,
+    )
+    assert route.intent == TurnIntent.CASUAL
+    assert route.stream_task == "fast_chat"
+    assert is_direct_stream_route(route)
+
+
+def test_tool_query_is_not_direct_stream():
+    route = classify_turn(
+        query="check my email",
+        confirmed=False,
+        skip_planning=False,
+        rag_enabled=True,
+        attachments=[],
+        resolved_attachments=[],
+        has_file_context=False,
+    )
+    assert route.intent == TurnIntent.TOOL
+    assert is_direct_stream_route(route) is False
 
 
 def test_classify_attachment_knowledge_skips_planner():
