@@ -46,7 +46,13 @@ async function checkRedis(): Promise<boolean> {
 async function checkQdrant(): Promise<boolean> {
   try {
     const base = config.qdrantUrl.replace(/\/$/, '');
-    const res = await fetch(`${base}/healthz`, { signal: AbortSignal.timeout(2_000) });
+    const apiKey = process.env.QDRANT_API_KEY?.trim();
+    const headers: Record<string, string> = {};
+    if (apiKey) headers['api-key'] = apiKey;
+    const res = await fetch(`${base}/healthz`, {
+      signal: AbortSignal.timeout(2_000),
+      headers,
+    });
     return res.ok;
   } catch {
     return false;

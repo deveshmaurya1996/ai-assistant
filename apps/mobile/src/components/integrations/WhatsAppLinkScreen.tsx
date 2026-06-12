@@ -19,7 +19,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Check, Copy } from 'lucide-react-native';
 import { ApiError } from '@ai-assistant/sdk';
-import type { WhatsAppSessionStatus } from '@ai-assistant/types';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -37,6 +36,12 @@ import {
   formatE164ForDisplay,
   validateLocalPhone,
 } from '@/components/integrations/countryCodes';
+import {
+  isPairingExpired,
+  mergePairingSession,
+  usePairingCountdown,
+  type PairingSessionState,
+} from '@/components/integrations/useWhatsAppPairingSession';
 
 type LinkMode = 'qr' | 'code';
 
@@ -44,9 +49,7 @@ type Props = {
   connectionId: string;
 };
 
-type SessionState = WhatsAppSessionStatus & { connectionId?: string };
-
-const PAIRING_TTL_MS = 120_000;
+type SessionState = PairingSessionState;
 const WHATSAPP_GREEN = '#25D366';
 const WHATSAPP_DARK = '#128C7E';
 
@@ -59,56 +62,6 @@ const STEPS_CODE = [
   'Enter the number on your WhatsApp account',
   'Tap Continue — then enter the code on your phone',
 ];
-
-function isPairingExpired(session: SessionState | null): boolean {
-  if (!session) return false;
-  if (session.pairingExpired) return true;
-  if (session.pairingCodeExpiresAt) {
-    return Date.now() >= new Date(session.pairingCodeExpiresAt).getTime();
-  }
-  if (session.pairingCodeIssuedAt) {
-    return Date.now() - new Date(session.pairingCodeIssuedAt).getTime() >= PAIRING_TTL_MS;
-  }
-  return false;
-}
-
-function mergeSession(prev: SessionState | null, data: SessionState): SessionState {
-  if (data.status === 'active') {
-    return { ...data };
-  }
-
-  if (data.pairingCode && data.pairingCodeIssuedAt) {
-    return { ...data };
-  }
-
-  const next = { ...data };
-  const prevStillValid =
-    !!prev?.pairingCode && !!prev.pairingCodeIssuedAt && !isPairingExpired(prev);
-
-  if (
-    prevStillValid &&
-    !next.pairingCode &&
-    !next.pairingExpired &&
-    !next.pairingInvalidated
-  ) {
-    next.pairingCode = prev.pairingCode;
-    next.pairingPhone = prev.pairingPhone ?? next.pairingPhone;
-    next.pairingCodeIssuedAt = prev.pairingCodeIssuedAt ?? next.pairingCodeIssuedAt;
-    next.pairingCodeExpiresAt = prev.pairingCodeExpiresAt ?? next.pairingCodeExpiresAt;
-    next.pairingCodeRaw = prev.pairingCodeRaw ?? next.pairingCodeRaw;
-    next.pairingInvalidated = false;
-  }
-
-  if (prev?.pairingReconnecting && !next.pairingReconnecting && prevStillValid) {
-    next.pairingCode = next.pairingCode ?? prev.pairingCode;
-    next.pairingPhone = next.pairingPhone ?? prev.pairingPhone;
-    next.pairingCodeIssuedAt = next.pairingCodeIssuedAt ?? prev.pairingCodeIssuedAt;
-    next.pairingCodeExpiresAt = next.pairingCodeExpiresAt ?? prev.pairingCodeExpiresAt;
-    next.pairingCodeRaw = next.pairingCodeRaw ?? prev.pairingCodeRaw;
-  }
-
-  return next;
-}
 
 function isRecoverableSessionError(message: string): boolean {
   const lower = message.toLowerCase();
@@ -154,28 +107,6 @@ function formatCountdown(ms: number): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-function usePairingCountdown(expiresAt?: string, issuedAt?: string): number | null {
-  const [remaining, setRemaining] = useState<number | null>(null);
-
-  useEffect(() => {
-    const end = expiresAt
-      ? new Date(expiresAt).getTime()
-      : issuedAt
-        ? new Date(issuedAt).getTime() + PAIRING_TTL_MS
-        : null;
-    if (!end) {
-      setRemaining(null);
-      return;
-    }
-    const tick = () => setRemaining(Math.max(0, end - Date.now()));
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [expiresAt, issuedAt]);
-
-  return remaining;
-}
-
 type LinkStatus = {
   label: string;
   color: string;
@@ -197,10 +128,26 @@ function getLinkStatus(
       prominent: true,
     };
   }
-  if (session?.pairingReconnecting || session?.pairingAccepted) {
+  if (session?.pairingAccepted) {
     return {
       label: 'Code accepted — finishing link… keep this screen open',
       color: WHATSAPP_DARK,
+      showSpinner: true,
+      prominent: true,
+    };
+  }
+  if (session?.pairingReconnecting && session?.pairingCode) {
+    return {
+      label: 'Reconnecting… keep this screen open',
+      color: WHATSAPP_DARK,
+      showSpinner: true,
+      prominent: true,
+    };
+  }
+  if (session?.pairingReconnecting) {
+    return {
+      label: 'Reconnecting…',
+      color: colors.textMuted,
       showSpinner: true,
       prominent: true,
     };
@@ -422,7 +369,7 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
     try {
       const data = await apiClient.getWhatsAppLinkSession(connectionId);
       setSessionError(null);
-      setSession((prev) => mergeSession(prev, data));
+      setSession((prev) => mergePairingSession(prev, data));
       if (data.status === 'active') {
         await finishLink();
       }
@@ -548,18 +495,6 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
       setSession({ ...data, connectionId });
     };
 
-    const recoverAndRetryPairing = async (): Promise<SessionState | null> => {
-      const challenge = await apiClient.connectProvider('whatsapp');
-      if (challenge.state === 'ready') {
-        router.replace('/(app)/integrations');
-        return null;
-      }
-      return apiClient.requestWhatsAppPairing(connectionId, digits, {
-        ...pairingOptions,
-        forceRefresh: true,
-      });
-    };
-
     setPairingLoading(true);
     try {
       const data = await apiClient.requestWhatsAppPairing(connectionId, digits, pairingOptions);
@@ -568,11 +503,12 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
       const message = e instanceof ApiError ? e.message : 'Could not get pairing code';
       if (isRecoverableSessionError(message)) {
         try {
-          const recovered = await recoverAndRetryPairing();
-          if (recovered) {
-            applyPairingResponse(recovered);
-            return;
-          }
+          const recovered = await apiClient.requestWhatsAppPairing(connectionId, digits, {
+            ...pairingOptions,
+            forceRefresh: true,
+          });
+          applyPairingResponse(recovered);
+          return;
         } catch {
           /* fall through to alert */
         }

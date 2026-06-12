@@ -43,4 +43,5 @@ export type * from './memory';
 export type * from './voice';
 export type * from './tool';
 export type * from './integration';
+export { WHATSAPP_PAIRING_CODE_TTL_MS } from './integration';
 export type * from './note';

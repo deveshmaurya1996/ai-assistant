@@ -15,11 +15,8 @@ import {
   decryptCredentials,
   encryptCredentials,
 } from '../services/encryption.service';
-import {
-  isPairingCodeExpired,
-  pairingCodeExpiresAt,
-  sessionManager,
-} from '../whatsapp/session-manager';
+import { sessionManager } from '../whatsapp/session-manager';
+import { toPublicWhatsAppSession } from '../whatsapp/pairing-public';
 import { findLatestActiveBridgeSession } from '../whatsapp/session-resolve';
 import { formatPhoneForDisplay } from '../whatsapp/phone-normalize';
 import {
@@ -34,46 +31,6 @@ function resolveWhatsAppBridgeSessionId(metadata: unknown): string | null {
   const meta = (metadata ?? {}) as { bridgeSessionId?: string };
   const id = meta.bridgeSessionId?.trim();
   return id || null;
-}
-
-function toPublicSession(
-  session: {
-    sessionId?: string;
-    status: string;
-    qrData?: string;
-    pairingCode?: string;
-    pairingPhone?: string;
-    pairingCodeIssuedAt?: string;
-    pairingInvalidatedAt?: string;
-    pairingAccepted?: boolean;
-    updatedAt: string;
-  },
-  connectionPhase?: string
-) {
-  const expired = session.pairingCodeIssuedAt
-    ? isPairingCodeExpired(session.pairingCodeIssuedAt)
-    : false;
-  const showCode = session.pairingCode && !expired;
-  const rawCode =
-    showCode && session.pairingCode
-      ? session.pairingCode.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
-      : '';
-  const pairingCodeDisplay =
-    rawCode.length === 8 ? `${rawCode.slice(0, 4)}-${rawCode.slice(4)}` : showCode ? session.pairingCode : undefined;
-  return {
-    status: session.status,
-    qrData: session.qrData,
-    pairingCode: pairingCodeDisplay,
-    pairingCodeRaw: rawCode || undefined,
-    pairingPhone: showCode ? session.pairingPhone : undefined,
-    pairingCodeIssuedAt: showCode ? session.pairingCodeIssuedAt : undefined,
-    pairingCodeExpiresAt: showCode ? pairingCodeExpiresAt(session.pairingCodeIssuedAt) : undefined,
-    pairingExpired: expired && !!session.pairingCode,
-    pairingInvalidated: !!(session.pairingInvalidatedAt && !showCode),
-    pairingAccepted: !!session.pairingAccepted,
-    connectionPhase,
-    updatedAt: session.updatedAt,
-  };
 }
 
 function parseOAuthState(state: string): { userId: string; oauthState: string } | null {
@@ -275,9 +232,8 @@ export async function integrationRoutes(fastify: FastifyInstance) {
 
         if (existing?.status === 'PENDING' && oldBridge) {
           try {
-            const resumed = await sessionManager.getOrRestoreSession(oldBridge);
+            const resumed = await sessionManager.getLinkingSessionState(oldBridge);
             if (resumed.status === 'pending') {
-              await sessionManager.restartPendingSession(oldBridge).catch(() => undefined);
               return reply.send({
                 connectionId: existing.id,
                 type: 'qr',
@@ -514,8 +470,10 @@ export async function integrationRoutes(fastify: FastifyInstance) {
 
       return reply.send({
         connectionId: id,
-        ...toPublicSession(session, connectionPhase),
-        pairingReconnecting: sessionManager.isReconnecting(bridgeSessionId),
+        ...toPublicWhatsAppSession(session, {
+          connectionPhase,
+          pairingReconnecting: sessionManager.isReconnecting(bridgeSessionId),
+        }),
       });
     } catch (error) {
       return sendError(reply, error);
@@ -558,34 +516,45 @@ export async function integrationRoutes(fastify: FastifyInstance) {
           forceRefresh,
         });
 
-      try {
-        const session = await requestPairing();
+      const sendPairingResponse = (session: Awaited<ReturnType<typeof requestPairing>>) => {
         const connectionPhase = sessionManager.getConnectionPhase(bridgeSessionId);
         return reply.send({
           connectionId: id,
-          ...toPublicSession(session, connectionPhase),
+          ...toPublicWhatsAppSession(session, {
+            connectionPhase,
+            pairingReconnecting: sessionManager.isReconnecting(bridgeSessionId),
+          }),
           pairingPhoneDisplay: session.pairingPhone
             ? formatPhoneForDisplay(session.pairingPhone)
             : undefined,
         });
+      };
+
+      try {
+        const session = await requestPairing();
+        return sendPairingResponse(session);
       } catch (err) {
-        if (connection.status === 'PENDING') {
+        const message = err instanceof Error ? err.message : 'Pairing failed';
+        if (connection.status === 'PENDING' && message.includes('Session not found')) {
           try {
             await sessionManager.restartPendingSession(bridgeSessionId);
             const session = await requestPairing();
-            const connectionPhase = sessionManager.getConnectionPhase(bridgeSessionId);
-            return reply.send({
-              connectionId: id,
-              ...toPublicSession(session, connectionPhase),
-              pairingPhoneDisplay: session.pairingPhone
-                ? formatPhoneForDisplay(session.pairingPhone)
-                : undefined,
-            });
+            return sendPairingResponse(session);
           } catch {
-            /* fall through to original error */
+            /* fall through */
           }
         }
-        const message = err instanceof Error ? err.message : 'Pairing failed';
+        if (connection.status === 'PENDING' && !forceRefresh) {
+          try {
+            const session = await sessionManager.requestPairingCode(bridgeSessionId, phoneNumber, {
+              countryCode,
+              forceRefresh: true,
+            });
+            return sendPairingResponse(session);
+          } catch {
+            /* fall through */
+          }
+        }
         return reply.code(400).send({ error: message });
       }
     } catch (error) {

@@ -30,7 +30,22 @@ import {
 import { markConnectionActive, markWhatsAppDisconnectedForUser } from './connection-lifecycle';
 import { repairWhatsAppConnectionMetadata } from './session-resolve';
 import { normalizeWhatsAppPairingPhone } from './phone-normalize';
+import { runLinkingOp, isLinkingOpLocked } from './linking-mutex';
+import {
+  clearPairingLease,
+  expirePairingLeaseIfNeeded,
+  isPairingLeaseActive,
+  issuePairingLease,
+} from './pairing-lease';
+import { formatPairingCodeDisplay } from './pairing-public';
 import { prisma } from '@ai-assistant/database';
+
+export {
+  PAIRING_CODE_TTL_MS,
+  isPairingCodeExpired,
+  isPairingLeaseActive,
+  pairingCodeExpiresAt,
+} from './pairing-lease';
 
 export type SessionStatus = 'pending' | 'active' | 'disconnected';
 
@@ -44,6 +59,7 @@ export interface SessionState {
   pairingPhone?: string;
   pairingInProgress?: boolean;
   pairingCodeIssuedAt?: string;
+  pairingCodeExpiresAt?: string;
   pairingInvalidatedAt?: string;
   pairingAccepted?: boolean;
   historySyncComplete?: boolean;
@@ -51,18 +67,7 @@ export interface SessionState {
   updatedAt: string;
 }
 
-export const PAIRING_CODE_TTL_MS = 120_000;
 export const PAIRING_REQUEST_TIMEOUT_MS = 45_000;
-
-export function isPairingCodeExpired(issuedAt?: string): boolean {
-  if (!issuedAt) return true;
-  return Date.now() - new Date(issuedAt).getTime() >= PAIRING_CODE_TTL_MS;
-}
-
-export function pairingCodeExpiresAt(issuedAt?: string): string | undefined {
-  if (!issuedAt) return undefined;
-  return new Date(new Date(issuedAt).getTime() + PAIRING_CODE_TTL_MS).toISOString();
-}
 
 export interface ChatEntry {
   jid: string;
@@ -94,7 +99,7 @@ const AUTH_ROOT = getWhatsAppAuthRoot();
 export function formatPairingCode(code: string): string {
   const raw = code.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
   if (raw.length === 8) {
-    return `${raw.slice(0, 4)}-${raw.slice(4)}`;
+    return formatPairingCodeDisplay(raw);
   }
   if (raw.length === 6 && /^\d+$/.test(raw)) {
     return `${raw.slice(0, 3)}-${raw.slice(3)}`;
@@ -171,10 +176,7 @@ export class SessionManager {
   }
 
   private isActivePhonePairing(session: SessionState): boolean {
-    return !!(
-      session.pairingInProgress ||
-      (session.pairingCode && !isPairingCodeExpired(session.pairingCodeIssuedAt))
-    );
+    return isPairingLeaseActive(session);
   }
 
   private bumpAuthEpoch(sessionId: string): void {
@@ -276,7 +278,8 @@ export class SessionManager {
     if (!current) return;
     if (this.reconnecting.has(sessionId)) return;
 
-    if (options.invalidatePairing && current.pairingCode) {
+    const preserveLease = isPairingLeaseActive(current);
+    if (options.invalidatePairing && current.pairingCode && !preserveLease) {
       this.clearPairingState(current, true);
       void this.persistSessionMetaNow(current);
     }
@@ -285,16 +288,18 @@ export class SessionManager {
 
     const reconnect = async () => {
       try {
-        await drainAuthPersistence(sessionId);
-        this.teardownSocket(sessionId);
-        if (options.resetAuth) {
-          await this.resetLinkingAuth(sessionId);
-        }
-        if (this.isLinking(current)) {
-          await this.ensureLinkingSocket(sessionId, { fromReconnect: true });
-        } else {
-          await this.ensureSocket(sessionId, { fromReconnect: true });
-        }
+        await runLinkingOp(sessionId, async () => {
+          await drainAuthPersistence(sessionId);
+          this.teardownSocket(sessionId);
+          if (options.resetAuth && !preserveLease) {
+            await this.resetLinkingAuth(sessionId);
+          }
+          if (this.isLinking(current)) {
+            await this.ensureLinkingSocket(sessionId, { fromReconnect: true });
+          } else {
+            await this.ensureSocket(sessionId, { fromReconnect: true });
+          }
+        });
       } finally {
         this.reconnecting.delete(sessionId);
       }
@@ -306,18 +311,10 @@ export class SessionManager {
   }
 
   private clearPairingState(session: SessionState, invalidated: boolean): void {
-    const hadCode = !!session.pairingCode;
-    session.pairingCode = undefined;
-    session.pairingPhone = undefined;
-    session.pairingInProgress = false;
-    session.pairingCodeIssuedAt = undefined;
-    if (invalidated && hadCode) {
-      session.pairingInvalidatedAt = new Date().toISOString();
+    if (invalidated) {
       session.pairingAccepted = false;
-    } else if (!invalidated) {
-      session.pairingInvalidatedAt = undefined;
     }
-    session.updatedAt = new Date().toISOString();
+    clearPairingLease(session, invalidated);
   }
 
   async getOrRestoreSession(sessionId: string): Promise<SessionState> {
@@ -340,17 +337,35 @@ export class SessionManager {
       return live;
     }
 
-    if (this.reconnecting.has(sessionId) || live.pairingAccepted) {
-      return this.sessions.get(sessionId) ?? live;
+    expirePairingLeaseIfNeeded(live);
+    const current = this.sessions.get(sessionId) ?? live;
+
+    if (this.reconnecting.has(sessionId) || live.pairingAccepted || isLinkingOpLocked(sessionId)) {
+      return current;
     }
 
-    if (!this.sockets.has(sessionId) && !this.starting.has(sessionId)) {
+    const leaseActive = isPairingLeaseActive(current);
+    if (
+      !this.sockets.has(sessionId) &&
+      !this.starting.has(sessionId) &&
+      !leaseActive
+    ) {
       void this.ensureLinkingSocket(sessionId).catch((err) => {
         logger.warn({ err, sessionId }, 'WhatsApp background linking socket start failed');
       });
+    } else if (
+      leaseActive &&
+      !this.sockets.has(sessionId) &&
+      !this.starting.has(sessionId)
+    ) {
+      void runLinkingOp(sessionId, () =>
+        this.ensureLinkingSocket(sessionId)
+      ).catch((err) => {
+        logger.warn({ err, sessionId }, 'WhatsApp pairing socket maintain failed');
+      });
     }
 
-    return this.sessions.get(sessionId) ?? live;
+    return this.sessions.get(sessionId) ?? current;
   }
 
   async getLinkingSession(sessionId: string): Promise<SessionState> {
@@ -417,23 +432,35 @@ export class SessionManager {
   }
 
   async restartPendingSession(sessionId: string): Promise<SessionState> {
-    const session = await this.loadSessionRecord(sessionId);
-    if (session.status === 'active') return session;
+    return runLinkingOp(sessionId, async () => {
+      const session = await this.loadSessionRecord(sessionId);
+      if (session.status === 'active') return session;
 
-    session.status = 'pending';
-    session.updatedAt = new Date().toISOString();
-    await this.persistSessionMetaNow(session);
+      session.status = 'pending';
+      session.updatedAt = new Date().toISOString();
+      await this.persistSessionMetaNow(session);
 
-    this.teardownSocket(sessionId);
-    await this.resetLinkingAuth(sessionId);
-    await this.ensureLinkingSocket(sessionId);
+      this.teardownSocket(sessionId);
+      await this.resetLinkingAuth(sessionId);
+      await this.ensureLinkingSocket(sessionId);
 
-    const refreshed = this.sessions.get(sessionId);
-    if (!refreshed) throw new Error('WhatsApp session could not be restarted');
-    return refreshed;
+      const refreshed = this.sessions.get(sessionId);
+      if (!refreshed) throw new Error('WhatsApp session could not be restarted');
+      return refreshed;
+    });
   }
 
   async requestPairingCode(
+    sessionId: string,
+    phoneNumber: string,
+    options?: { countryCode?: string; forceRefresh?: boolean }
+  ): Promise<SessionState> {
+    return runLinkingOp(sessionId, async () =>
+      this.requestPairingCodeInner(sessionId, phoneNumber, options)
+    );
+  }
+
+  private async requestPairingCodeInner(
     sessionId: string,
     phoneNumber: string,
     options?: { countryCode?: string; forceRefresh?: boolean }
@@ -498,12 +525,10 @@ export class SessionManager {
       );
     }
 
-    session.pairingPhone = normalized;
-    session.pairingCode = formatPairingCode(code);
-    session.pairingInProgress = true;
-    session.pairingCodeIssuedAt = new Date().toISOString();
-    session.pairingInvalidatedAt = undefined;
-    session.updatedAt = session.pairingCodeIssuedAt;
+    issuePairingLease(session, {
+      phone: normalized,
+      code: formatPairingCode(code),
+    });
     await this.persistSessionMetaNow(session);
     return session;
   }
@@ -1094,8 +1119,7 @@ export class SessionManager {
 
     const syncedThreads = await countSyncedThreads(sessionId);
     const isLinking = this.isLinking(session);
-    if (isLinking && session.pairingCode && !this.isActivePhonePairing(session)) {
-      this.clearPairingState(session, false);
+    if (isLinking && expirePairingLeaseIfNeeded(session)) {
       void this.persistSessionMetaNow(session);
     }
     const wantsFullHistory =
@@ -1314,8 +1338,12 @@ export class SessionManager {
 
         if (conflictReplaced) {
           if (wasLinking) {
-            logger.warn({ sessionId }, 'WhatsApp link conflict during pairing — recovering');
-            this.recoverLinkingAfterClose(sessionId, { resetAuth: true, invalidatePairing: true });
+            const leaseActive = isPairingLeaseActive(current);
+            logger.warn({ sessionId, leaseActive }, 'WhatsApp link conflict during pairing — recovering');
+            this.recoverLinkingAfterClose(sessionId, {
+              resetAuth: !leaseActive,
+              invalidatePairing: !leaseActive,
+            });
           } else {
             current.status = 'disconnected';
             current.updatedAt = new Date().toISOString();
@@ -1329,8 +1357,12 @@ export class SessionManager {
 
         if (statusCode === baileys.DisconnectReason.loggedOut) {
           if (wasLinking) {
-            logger.info({ sessionId }, 'WhatsApp logged out during link — resetting auth');
-            this.recoverLinkingAfterClose(sessionId, { resetAuth: true, invalidatePairing: true });
+            const leaseActive = isPairingLeaseActive(current);
+            logger.info({ sessionId, leaseActive }, 'WhatsApp logged out during link — recovering');
+            this.recoverLinkingAfterClose(sessionId, {
+              resetAuth: !leaseActive,
+              invalidatePairing: !leaseActive,
+            });
           } else {
             current.status = 'disconnected';
             current.updatedAt = new Date().toISOString();

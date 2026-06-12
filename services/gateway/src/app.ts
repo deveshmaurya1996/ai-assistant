@@ -36,6 +36,7 @@ import { internalMemoryRoutes } from './routes/internal-memory.routes';
 import { mobileRoutes } from './routes/mobile.routes';
 import { setupSocketIO } from './socket';
 import { startAllWorkers } from './workers/queues';
+import { logProductionReadiness } from './lib/production-readiness';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -119,6 +120,7 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   setupSocketIO(app);
   startAllWorkers();
+  void logProductionReadiness(app.log);
 
   void import('./whatsapp/session-bootstrap.js').then(({ bootstrapWhatsAppSessions }) =>
     bootstrapWhatsAppSessions()

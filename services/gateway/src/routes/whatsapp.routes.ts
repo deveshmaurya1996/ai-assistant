@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { toPublicWhatsAppSession } from '../whatsapp/pairing-public';
 import { sessionManager } from '../whatsapp/session-manager';
 
 export async function whatsappRoutes(fastify: FastifyInstance) {
@@ -23,11 +24,10 @@ export async function whatsappRoutes(fastify: FastifyInstance) {
       const session = await sessionManager.getOrRestoreSession(sessionId);
       return {
         sessionId: session.sessionId,
-        status: session.status,
-        qrData: session.qrData,
-        pairingCode: session.pairingCode,
-        pairingPhone: session.pairingPhone,
-        updatedAt: session.updatedAt,
+        ...toPublicWhatsAppSession(session, {
+          connectionPhase: sessionManager.getConnectionPhase(sessionId),
+          pairingReconnecting: sessionManager.isReconnecting(sessionId),
+        }),
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Session not found';
@@ -46,9 +46,10 @@ export async function whatsappRoutes(fastify: FastifyInstance) {
       const session = await sessionManager.requestPairingCode(sessionId, phoneNumber);
       return {
         sessionId: session.sessionId,
-        pairingCode: session.pairingCode,
-        pairingPhone: session.pairingPhone,
-        status: session.status,
+        ...toPublicWhatsAppSession(session, {
+          connectionPhase: sessionManager.getConnectionPhase(sessionId),
+          pairingReconnecting: sessionManager.isReconnecting(sessionId),
+        }),
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Pairing failed';

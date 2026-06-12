@@ -36,6 +36,8 @@ export interface UserConnection {
   healthError?: string | null;
 }
 
+export const WHATSAPP_PAIRING_CODE_TTL_MS = 120_000;
+
 export interface ConnectChallenge {
   type: ConnectChallengeType;
   url?: string;
@@ -56,6 +58,7 @@ export interface WhatsAppSessionStatus {
   pairingPhone?: string;
   pairingCodeIssuedAt?: string;
   pairingCodeExpiresAt?: string;
+  pairingRemainingMs?: number;
   pairingExpired?: boolean;
   pairingInvalidated?: boolean;
   pairingReconnecting?: boolean;
