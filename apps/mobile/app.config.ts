@@ -78,6 +78,7 @@ const config: ExpoConfig = {
         },
       },
     ],
+    './plugins/with-android-pnpm-paths.js',
     './modules/overlay/app.plugin.js',
     [
       'expo-notifications',
@@ -115,6 +116,7 @@ const config: ExpoConfig = {
   ],
   experiments: {
     typedRoutes: true,
+    autolinkingModuleResolution: true,
   },
   extra: {
     apiUrl: process.env.EXPO_PUBLIC_API_URL,

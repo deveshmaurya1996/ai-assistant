@@ -264,12 +264,7 @@ export default function IntegrationsScreen() {
           <View style={styles.header}>
             <Text variant="caption" muted style={styles.subtitle}>
               You are signed in to AI Assistant. Connecting an app grants API access
-              only — it does not sign you out or log you in again.
-            </Text>
-            <Text variant="caption" muted style={styles.subtitle}>
-              For Google, you will approve Gmail, Calendar, and Drive permissions in
-              Google&apos;s consent screen. All three APIs must be enabled in your Google
-              Cloud project.
+              only, it does not sign you out or log you in again.
             </Text>
           </View>
         }

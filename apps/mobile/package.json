@@ -96,6 +96,9 @@
   },
   "private": true,
   "expo": {
+    "autolinking": {
+      "searchPaths": ["../../node_modules", "./node_modules"]
+    },
     "doctor": {
       "reactNativeDirectoryCheck": {
         "exclude": [

@@ -461,7 +461,7 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
         />
         <NavRow
           icon={<DrawerColorIcon name="automations" drawer />}
-          label="Automations"
+          label="Scheduler"
           active={isAutomationsActive}
           onPress={() =>
             closeAnd(() => {

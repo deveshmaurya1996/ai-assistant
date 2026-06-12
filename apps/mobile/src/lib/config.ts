@@ -4,11 +4,35 @@ import { Platform } from 'react-native';
 const DEFAULT_API_PORT = 3000;
 const DEV_API_HOST = 'localhost';
 
+function parsePortFromUrl(
+  url: string | null | undefined,
+  fallback = DEFAULT_API_PORT
+): number {
+  if (!url) return fallback;
+  try {
+    const parsed = new URL(url);
+    if (parsed.port) {
+      const port = Number(parsed.port);
+      if (Number.isFinite(port) && port > 0) return port;
+    }
+    if (parsed.protocol === 'https:') return 443;
+    if (parsed.protocol === 'http:') return 80;
+  } catch {
+    // ignore invalid URL
+  }
+  return fallback;
+}
+
 function getApiPort(): number {
-  const raw = process.env.EXPO_PUBLIC_API_PORT?.trim();
-  if (!raw) return DEFAULT_API_PORT;
-  const port = Number(raw);
-  return Number.isFinite(port) && port > 0 ? port : DEFAULT_API_PORT;
+  const explicit = process.env.EXPO_PUBLIC_API_URL?.trim();
+  if (explicit) return parsePortFromUrl(explicit);
+
+  const fromExtra = Constants.expoConfig?.extra?.apiUrl;
+  if (typeof fromExtra === 'string' && fromExtra.length > 0) {
+    return parsePortFromUrl(fromExtra);
+  }
+
+  return DEFAULT_API_PORT;
 }
 
 function lanDevHost(): string | null {
@@ -29,8 +53,6 @@ function readApiUrl(): string {
   const extraUrl =
     typeof fromExtra === 'string' && fromExtra.length > 0 ? fromExtra : null;
 
-  // OTA bundles can accidentally bake localhost from apps/mobile/.env during export.
-  // In release builds, prefer the URL embedded in the native binary instead.
   if (explicit && (__DEV__ || !isLocalDevUrl(explicit))) {
     return explicit;
   }

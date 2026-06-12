@@ -85,6 +85,10 @@ function upsertEnvLine(content, key, value) {
   return `${content.replace(/\n?$/, '\n')}${line}\n`;
 }
 
+function removeEnvLine(content, key) {
+  return content.replace(new RegExp(`^${key}=.*$\n?`, 'm'), '');
+}
+
 function syncDevEnvPorts(config) {
   const apiPort = config[PORT_KEYS.api];
   const aiPort = config[PORT_KEYS.ai];
@@ -102,7 +106,7 @@ function syncDevEnvPorts(config) {
   const mobileEnvPath = path.join(root, 'apps', 'mobile', '.env');
   if (fs.existsSync(mobileEnvPath)) {
     let mobileEnv = fs.readFileSync(mobileEnvPath, 'utf8');
-    mobileEnv = upsertEnvLine(mobileEnv, 'EXPO_PUBLIC_API_PORT', apiPort);
+    mobileEnv = removeEnvLine(mobileEnv, 'EXPO_PUBLIC_API_PORT');
     mobileEnv = upsertEnvLine(
       mobileEnv,
       'EXPO_PUBLIC_API_URL',
@@ -141,7 +145,7 @@ function tiltPortFromConfig(config) {
 }
 
 async function up() {
-  await ensureDocker();
+  await ensureDocker({ root });
   const config = ensure();
   syncDevEnvPorts(config);
   const tiltPort = tiltPortFromConfig(config);

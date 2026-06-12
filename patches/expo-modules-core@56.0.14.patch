@@ -1,0 +1,33 @@
+diff --git a/expo-module-gradle-plugin/src/main/kotlin/expo/modules/plugin/gradle/ExpoGradleHelperExtension.kt b/expo-module-gradle-plugin/src/main/kotlin/expo/modules/plugin/gradle/ExpoGradleHelperExtension.kt
+index 7c387abb5aeaf058406947347e4aeab4cf076ee4..888787033e7acc4b7f1ebb19d4b100e49be5de45 100644
+--- a/expo-module-gradle-plugin/src/main/kotlin/expo/modules/plugin/gradle/ExpoGradleHelperExtension.kt
++++ b/expo-module-gradle-plugin/src/main/kotlin/expo/modules/plugin/gradle/ExpoGradleHelperExtension.kt
+@@ -40,12 +40,22 @@ open class ExpoGradleHelperExtension {
+       ?.projectDir
+       ?.parentFile
+ 
+-    reactNativeDir = reactNativeDirFromSource ?: File(
+-      project.providers.exec { env ->
+-        env.workingDir(project.rootDir)
+-        env.commandLine("node", "--print", "require.resolve('react-native/package.json')")
+-      }.standardOutput.asText.get().trim()
+-    ).parentFile
++    reactNativeDir = reactNativeDirFromSource ?: run {
++      val monorepoReactNative = File(
++        project.rootProject.projectDir,
++        "../../../node_modules/react-native"
++      ).canonicalFile
++      if (monorepoReactNative.isDirectory) {
++        monorepoReactNative
++      } else {
++        File(
++          project.providers.exec { env ->
++            env.workingDir(project.rootDir)
++            env.commandLine("node", "--print", "require.resolve('react-native/package.json')")
++          }.standardOutput.asText.get().trim()
++        ).parentFile
++      }
++    }
+ 
+     return reactNativeDir
+   }

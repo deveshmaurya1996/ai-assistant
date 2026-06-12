@@ -12,7 +12,7 @@ Expo React Native client with floating dock navigation, drawer sidebar, full set
 | **VoiceEqualizer** (in-app) | ChatGPT/Gemini-style animated bars (Reanimated) |
 | **expo-audio** `~56.0.10` | TTS playback only |
 
-After adding or upgrading audio-studio / Skia, rebuild the dev client: `npx expo prebuild --clean` then `pnpm mobile:android`.
+After adding or upgrading audio-studio / Skia, run `npx install-skia` from `apps/mobile` if native Skia libs are missing, then rebuild the dev client: `npx expo prebuild --clean` and `pnpm mobile:android`.
 
 **Expo SDK 56:** `@siteed/audio-studio@3.2.0` needs a small Kotlin patch for `Promise.reject` (see `patches/@siteed__audio-studio@3.2.0.patch` at repo root). Remove the patch when upstream ships a fix.
 
@@ -23,7 +23,7 @@ After adding or upgrading audio-studio / Skia, rebuild the dev client: `npx expo
 | Tool | Notes |
 |------|--------|
 | **Node.js 20+** | |
-| **pnpm 9+** | Root `.npmrc` uses `node-linker=hoisted` (required for Android native builds on Windows) |
+| **pnpm 9+** | Root `.npmrc` uses `node-linker=hoisted` and `package-import-method=copy` ([Expo monorepo + pnpm](https://docs.expo.dev/guides/monorepos/#pnpm)) |
 | **Docker Desktop** | PostgreSQL, Redis, Qdrant |
 | **Android Studio** | SDK, platform-tools, NDK, CMake (see below) |
 | **Physical device or emulator** | Physical device recommended for mic, notifications, overlay |
@@ -290,7 +290,8 @@ Works for basic UI and API calls. **Does not support** assistant keep-listening 
 | `adb devices` empty | Re-plug USB, re-enable wireless debugging, run `adb kill-server` then `adb start-server` |
 | Red screen / cannot load bundle | Start Metro (`pnpm --filter @ai-assistant/mobile dev`), run `adb reverse tcp:8081 tcp:8081` |
 | API errors on device | `adb reverse tcp:3000 tcp:3000`, `EXPO_PUBLIC_API_URL=http://localhost:3000`, API running on :3000 |
-| Windows `prefab_command.bat` / path too long | Ensure root `.npmrc` has `node-linker=hoisted`, then `pnpm install` from repo root |
+| Windows `prefab_command.bat` / path too long | Windows MAX_PATH (~260 chars). **Repo config:** `node-linker=hoisted`, `package-import-method=copy`, `expo.autolinking.searchPaths`, `experiments.autolinkingModuleResolution`, `react-native.config.js`, `with-android-pnpm-paths` (Gradle points at monorepo-root `node_modules/react-native`), and a `pnpm` patch on `expo-modules-core` so `ExpoGradleHelperExtension` uses the hoisted `react-native` path for CMake (`REACT_NATIVE_DIR`). **Machine setup:** clone at a short path (e.g. `C:\dev\ai-assistant`), enable [Win32 long paths](https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation), optional `subst A: C:\dev\ai-assistant`. After path changes: delete `node_modules/expo-modules-core/android/.cxx` and `apps/mobile/android/app/.cxx`, run `pnpm install`, then `pnpm mobile:android`. Preview APKs without local native toolchain: `pnpm mobile:eas build:preview` |
+| Skia `libskia.a` not found | From `apps/mobile`: `npx install-skia`, then rebuild |
 | Gradle / NDK errors | Install NDK + CMake in SDK Manager; project uses Gradle **8.13** (see `android/gradle/wrapper/gradle-wrapper.properties`) |
 | Port 8081 in use | Stop other Metro instances or use `npx expo start --dev-client --port 8083` |
 

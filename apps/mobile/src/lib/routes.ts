@@ -10,7 +10,10 @@ export const Routes = {
   settings: '/(app)/settings' as Href,
   integrations: { pathname: '/(app)/integrations' } as Href,
   automations: { pathname: '/(app)/automations' } as Href,
-  automationsReminders: { pathname: '/(app)/automations/reminders' } as Href,
+  automationsReminders: {
+    pathname: '/(app)/automations',
+    params: { tab: 'reminders' },
+  } as Href,
   notes: '/(app)/notes' as Href,
   memory: '/(app)/memory' as Href,
   authCallback: '/auth/callback' as Href,
