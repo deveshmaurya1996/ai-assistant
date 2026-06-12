@@ -47,9 +47,12 @@ switch (target) {
   case 'catalog':
     run('pnpm catalog:validate');
     break;
+  case 'docker-lockfile':
+    run('node scripts/verify-docker-lockfile.mjs');
+    break;
   default:
     console.error(
-      'Usage: node scripts/verify.mjs <ffmpeg|file-pipeline|attachment|db|catalog|planner|planner:fixture|planner:live|planner:pytest|planner:examples>',
+      'Usage: node scripts/verify.mjs <ffmpeg|file-pipeline|attachment|db|catalog|docker-lockfile|planner|planner:fixture|planner:live|planner:pytest|planner:examples>',
     );
     process.exit(1);
 }
