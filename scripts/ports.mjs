@@ -129,7 +129,12 @@ function ensure() {
   for (const [name, cfgKey] of Object.entries(PORT_KEYS)) {
     const base = DEFAULTS[name];
     const preferred = existing[name] ?? base + offset;
-    const port = portInUse(preferred) ? findFreePort(base + offset) : preferred;
+    const port =
+      existing[name] !== undefined
+        ? preferred
+        : portInUse(preferred)
+          ? findFreePort(base + offset)
+          : preferred;
     config[cfgKey] = String(port);
   }
 
@@ -154,9 +159,13 @@ async function up() {
   if (tiltfileArgs.length) args.push('--', ...tiltfileArgs);
 
   console.log(`Tilt → http://localhost:${tiltPort}/`);
+  const tiltEnv = { ...process.env, TILT_PORT: String(tiltPort) };
+  if (process.platform === 'win32' && !tiltEnv.TILT_WATCH_WINDOWS_BUFFER_SIZE) {
+    tiltEnv.TILT_WATCH_WINDOWS_BUFFER_SIZE = '524288';
+  }
   const r = spawnSync('tilt', args, {
     cwd: root,
-    env: { ...process.env, TILT_PORT: String(tiltPort) },
+    env: tiltEnv,
     stdio: 'inherit',
     shell: true,
   });
@@ -164,7 +173,13 @@ async function up() {
 }
 
 function sync() {
-  const config = ensure();
+  let config = readTiltConfig();
+  const hasAllPorts = Object.values(PORT_KEYS).every(
+    (key) => config[key] !== undefined && config[key] !== ''
+  );
+  if (!hasAllPorts) {
+    config = ensure();
+  }
   syncDevEnvPorts(config);
   const apiPort = config[PORT_KEYS.api];
   console.log(`[ports] synced API → http://localhost:${apiPort}`);
