@@ -5,6 +5,7 @@ RUN corepack enable
 COPY . .
 COPY .docker.npmrc ./.npmrc
 RUN pnpm install --frozen-lockfile --ignore-scripts \
+ && pnpm catalog:generate && pnpm catalog:validate \
  && pnpm exec turbo prune @ai-assistant/gateway --docker
 
 FROM node:22-bookworm AS node_build
@@ -17,8 +18,7 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 COPY --from=pruner /app/out/full/ .
 
 ENV DATABASE_URL=postgresql://build:build@localhost:5432/build?schema=public
-RUN pnpm catalog:generate && pnpm catalog:validate \
- && pnpm exec turbo run build --filter=@ai-assistant/gateway...
+RUN pnpm exec turbo run build --filter=@ai-assistant/gateway...
 
 FROM python:3.11-slim-bookworm AS python_deps
 WORKDIR /app
@@ -44,11 +44,12 @@ COPY --from=node_build /app/packages ./packages
 COPY --from=node_build /app/services/gateway ./services/gateway
 COPY --from=node_build /app/services/tool-runtime ./services/tool-runtime
 COPY --from=node_build /app/services/capability-runtime ./services/capability-runtime
-COPY --from=node_build /app/catalog ./catalog
-COPY --from=node_build /app/connectors ./connectors
 COPY --from=node_build /app/patches ./patches
+COPY connectors ./connectors
+COPY catalog ./catalog
 COPY services/ai-runtime ./services/ai-runtime
 COPY services/cognitive-runtime ./services/cognitive-runtime
+COPY --from=pruner /app/services/cognitive-runtime/capability_manifest.json ./services/cognitive-runtime/capability_manifest.json
 COPY planner-config ./planner-config
 COPY infra/supervisor/supervisord.conf ./infra/supervisor/supervisord.conf
 
