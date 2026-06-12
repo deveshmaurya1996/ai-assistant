@@ -3,7 +3,9 @@ FROM node:22-bookworm AS pruner
 WORKDIR /app
 RUN corepack enable
 COPY . .
-RUN pnpm exec turbo prune @ai-assistant/gateway --docker
+COPY .docker.npmrc ./.npmrc
+RUN pnpm install --frozen-lockfile --ignore-scripts \
+ && pnpm exec turbo prune @ai-assistant/gateway --docker
 
 FROM node:22-bookworm AS node_build
 WORKDIR /app
