@@ -53,7 +53,8 @@ COPY --from=pruner /app/services/cognitive-runtime/capability_manifest.json ./se
 COPY planner-config ./planner-config
 COPY infra/supervisor/supervisord.conf ./infra/supervisor/supervisord.conf
 
-RUN test -f /app/services/cognitive-runtime/capability_manifest.json \
+RUN BETTER_AUTH_SECRET=docker-build-smoke-test-only-not-used-at-runtime-00 \
+ && test -f /app/services/cognitive-runtime/capability_manifest.json \
  && uvicorn --version \
  && cd /app/services/gateway \
  && node -e "require('@ai-assistant/telemetry/register');require('@ai-assistant/auth');require('@ai-assistant/database');require('fs').accessSync('dist/index.js')"
