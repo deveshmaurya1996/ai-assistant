@@ -55,7 +55,10 @@ COPY infra/supervisor/supervisord.conf ./infra/supervisor/supervisord.conf
 
 RUN BETTER_AUTH_SECRET=docker-build-smoke-test-only-not-used-at-runtime-00 \
  && test -f /app/services/cognitive-runtime/capability_manifest.json \
+ && test -f /app/services/cognitive-runtime/orchestration/agent_pipeline.py \
  && uvicorn --version \
+ && cd /app/services/ai-runtime \
+ && PYTHONPATH=/app/services/ai-runtime:/app/services/cognitive-runtime python -c "from main import app; assert any(getattr(r,'path',None)=='/v1/agent/turn' for r in app.routes)" \
  && cd /app/services/gateway \
  && node -e "require('@ai-assistant/telemetry/register');require('@ai-assistant/auth');require('@ai-assistant/database');require('fs').accessSync('dist/index.js')"
 

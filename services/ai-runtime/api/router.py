@@ -10,7 +10,7 @@ from observability import langfuse_span
 from models.registry import get_models_catalog
 from models import media
 from models.transcription import get_transcription_provider
-from orchestration.voice_router import VoiceMode, VoiceRouter, VoiceSessionRequest
+from voice_orchestration.voice_router import VoiceMode, VoiceRouter, VoiceSessionRequest
 from agents.supervisor import run_agent
 from api.chat import router as chat_router
 from api.image_chat import router as image_chat_router
