@@ -57,6 +57,7 @@ RUN BETTER_AUTH_SECRET=docker-build-smoke-test-only-not-used-at-runtime-00 \
  && cd /app/services/ai-runtime \
  && PYTHONPATH=/app/services/ai-runtime python -c "from main import app; assert '/health' in app.openapi().get('paths', {})" \
  && cd /app/services/gateway \
+ && node scripts/smoke-health-routes.mjs \
  && node -e "require('@ai-assistant/telemetry/register');require('@ai-assistant/auth');require('@ai-assistant/database');require('fs').accessSync('dist/index.js')"
 
 ENV NODE_ENV=production

@@ -52,7 +52,6 @@ function registerLivenessRoute(
   body: Record<string, unknown>
 ): void {
   app.get(path, async () => body);
-  app.head(path, async (_, reply) => reply.code(200).send());
 }
 
 export async function healthRoutes(app: FastifyInstance): Promise<void> {
