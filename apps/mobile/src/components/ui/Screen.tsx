@@ -7,6 +7,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { AppNavigationGestureHost } from '@/components/layout/AppNavigationGestureHost';
 import { useTheme } from '@/theme/ThemeProvider';
 import { useResponsive } from '@/theme/useResponsive';
 
@@ -15,10 +16,18 @@ type Props = {
   scroll?: boolean;
   padded?: boolean;
   safeTop?: boolean;
+  navigationGestures?: boolean;
   style?: ViewStyle;
 };
 
-export function Screen({ children, scroll, padded = true, safeTop = false, style }: Props) {
+export function Screen({
+  children,
+  scroll,
+  padded = true,
+  safeTop = false,
+  navigationGestures = true,
+  style,
+}: Props) {
   const { screenStyle } = useTheme();
   const { horizontalPadding, contentMaxWidth } = useResponsive();
   const insets = useSafeAreaInsets();
@@ -39,21 +48,27 @@ export function Screen({ children, scroll, padded = true, safeTop = false, style
     </View>
   );
 
+  const body = scroll ? (
+    <ScrollView
+      style={screenStyle}
+      contentContainerStyle={{ flexGrow: 1, paddingBottom: 32 }}
+      keyboardShouldPersistTaps="handled">
+      {content}
+    </ScrollView>
+  ) : (
+    content
+  );
+
   return (
     <View style={[screenStyle, safeTop ? { paddingTop: insets.top } : null]}>
       <KeyboardAvoidingView
         style={screenStyle}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={0}>
-        {scroll ? (
-          <ScrollView
-            style={screenStyle}
-            contentContainerStyle={{ flexGrow: 1, paddingBottom: 32 }}
-            keyboardShouldPersistTaps="handled">
-            {content}
-          </ScrollView>
+        {navigationGestures ? (
+          <AppNavigationGestureHost>{body}</AppNavigationGestureHost>
         ) : (
-          content
+          body
         )}
       </KeyboardAvoidingView>
     </View>

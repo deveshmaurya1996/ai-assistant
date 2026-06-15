@@ -20,7 +20,15 @@ async function main() {
     });
   }
 
-  await waitForIntelligence();
+  try {
+    await waitForIntelligence();
+  } catch (err) {
+    if (!config.isDev) throw err;
+    console.warn(
+      '[gateway] Intelligence runtime not ready — starting API anyway (chat/voice may fail until ai-runtime is up):',
+      err instanceof Error ? err.message : err
+    );
+  }
 
   const app = await buildApp();
 

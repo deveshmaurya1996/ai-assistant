@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -7,10 +7,11 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { TabView } from 'react-native-tab-view';
 import { Bell, Pencil, Trash2, Zap } from 'lucide-react-native';
-import { Screen } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -21,6 +22,8 @@ import { PressableScale } from '@/components/motion/PressableScale';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing, radii } from '@/theme/tokens';
 import { apiClient } from '@/lib/api-client';
+import { API_URL } from '@/lib/config';
+import { formatApiError } from '@/lib/format-ai-error';
 import { AutomationEditModal } from '@/features/automations/AutomationEditModal';
 import { ReminderEditModal } from '@/features/reminders/ReminderEditModal';
 import { subscribeReminderRefresh } from '@/features/reminders/reminderEvents';
@@ -32,13 +35,17 @@ import {
 } from '@ai-assistant/types';
 import { formatReminderTime } from '@/lib/formatReminderTime';
 
-type SchedulerTab = 'tasks' | 'reminders';
 type ReminderRow = Reminder & { scheduleLabel?: string | null };
 
 const TAB_OPTIONS = [
   { value: 'tasks' as const, label: 'Scheduled Task' },
   { value: 'reminders' as const, label: 'Reminder' },
 ];
+
+const TAB_ROUTES = TAB_OPTIONS.map((option) => ({
+  key: option.value,
+  title: option.label,
+}));
 
 function lastRunSummary(item: Automation): string | null {
   const run = item.runs?.[0];
@@ -77,8 +84,9 @@ function formatReminderStatus(status: ReminderRow['status']): string {
 
 export default function SchedulerScreen() {
   const { tab: tabParam } = useLocalSearchParams<{ tab?: string }>();
-  const { colors } = useTheme();
-  const [tab, setTab] = useState<SchedulerTab>(tabParam === 'reminders' ? 'reminders' : 'tasks');
+  const { width } = useWindowDimensions();
+  const { colors, screenStyle } = useTheme();
+  const [tabIndex, setTabIndex] = useState(tabParam === 'reminders' ? 1 : 0);
 
   const [automations, setAutomations] = useState<Automation[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
@@ -94,9 +102,11 @@ export default function SchedulerScreen() {
   const [editingReminder, setEditingReminder] = useState<ReminderRow | null>(null);
 
   useEffect(() => {
-    if (tabParam === 'reminders') setTab('reminders');
-    else if (tabParam === 'tasks') setTab('tasks');
+    if (tabParam === 'reminders') setTabIndex(1);
+    else if (tabParam === 'tasks') setTabIndex(0);
   }, [tabParam]);
+
+  const tab = TAB_OPTIONS[tabIndex]?.value ?? 'tasks';
 
   const loadAutomations = useCallback(async () => {
     try {
@@ -118,7 +128,7 @@ export default function SchedulerScreen() {
     } catch (err) {
       setReminders([]);
       setRemindersLoadError(
-        err instanceof Error ? err.message : 'Could not load reminders. Pull to retry.'
+        `${formatApiError(err)}\n\nAPI: ${API_URL}`
       );
     } finally {
       setRemindersLoading(false);
@@ -204,105 +214,121 @@ export default function SchedulerScreen() {
     [loadReminders]
   );
 
-  const activeLoading = tab === 'tasks' ? tasksLoading : remindersLoading;
+  const renderScene = useCallback(
+    ({ route }: { route: { key: string } }) => {
+      if (route.key === 'tasks') {
+        if (tasksLoading) {
+          return (
+            <View style={styles.scene}>
+              <View style={styles.centered}>
+                <ActivityIndicator size="large" color={colors.primary} />
+              </View>
+            </View>
+          );
+        }
 
-  return (
-    <Screen padded={false}>
-      <AppHeader title="Scheduler" />
-      <View style={styles.tabs}>
-        <SegmentedControl options={TAB_OPTIONS} value={tab} onChange={setTab} />
-      </View>
+        return (
+          <View style={styles.scene}>
+            <FlatList
+            data={automations}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={styles.list}
+            refreshControl={
+              <RefreshControl
+                refreshing={tasksRefreshing}
+                onRefresh={() => {
+                  setTasksRefreshing(true);
+                  void loadAutomations();
+                }}
+              />
+            }
+            ListEmptyComponent={
+              <EmptyState
+                icon={<Zap color={colors.textMuted} size={40} />}
+                title="No scheduled tasks yet"
+                description="Ask your assistant to set up recurring tasks, or create them from the web dashboard."
+              />
+            }
+            renderItem={({ item, index }) => {
+              const kind = automationKindLabel(item.action);
+              const summary = lastRunSummary(item);
 
-      {activeLoading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      ) : tab === 'tasks' ? (
-        <FlatList
-          data={automations}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-          refreshControl={
-            <RefreshControl
-              refreshing={tasksRefreshing}
-              onRefresh={() => {
-                setTasksRefreshing(true);
-                void loadAutomations();
-              }}
-            />
-          }
-          ListEmptyComponent={
-            <EmptyState
-              icon={<Zap color={colors.textMuted} size={40} />}
-              title="No scheduled tasks yet"
-              description="Ask your assistant to set up recurring tasks, or create them from the web dashboard."
-            />
-          }
-          renderItem={({ item, index }) => {
-            const kind = automationKindLabel(item.action);
-            const summary = lastRunSummary(item);
-
-            return (
-              <FadeIn delay={index * 40} style={styles.rowWrap}>
-                <Card style={styles.card}>
-                  <PressableScale
-                    onPress={() => setEditingAutomation(item)}
-                    style={styles.cardMain}
-                    disabled={deletingAutomationId === item.id}>
-                    <View
-                      style={[
-                        styles.statusIcon,
-                        {
-                          backgroundColor: item.isActive
-                            ? `${colors.success}22`
-                            : colors.surfaceElevated,
-                        },
-                      ]}>
-                      <Zap
-                        color={item.isActive ? colors.success : colors.textMuted}
-                        size={20}
-                      />
-                    </View>
-                    <View style={styles.automationBody}>
-                      <Text variant="bodyMedium" numberOfLines={1}>
-                        {kind ? `${kind}: ${item.name}` : item.name}
-                      </Text>
-                      <Text variant="caption" muted>
-                        {formatAutomationSchedule(item)}
-                      </Text>
-                      {summary ? (
-                        <Text variant="caption" muted numberOfLines={2} style={styles.summary}>
-                          {summary}
-                        </Text>
-                      ) : null}
-                    </View>
-                  </PressableScale>
-                  <View style={styles.actions}>
-                    <PressableScale onPress={() => setEditingAutomation(item)} hitSlop={8}>
-                      <View style={[styles.actionBtn, { backgroundColor: colors.surfaceElevated }]}>
-                        <Pencil color={colors.textMuted} size={18} />
-                      </View>
-                    </PressableScale>
+              return (
+                <FadeIn delay={index * 40} style={styles.rowWrap}>
+                  <Card style={styles.card}>
                     <PressableScale
-                      onPress={() => handleDeleteAutomation(item)}
-                      disabled={deletingAutomationId === item.id}
-                      hitSlop={8}>
-                      <View style={[styles.actionBtn, { backgroundColor: colors.surfaceElevated }]}>
-                        {deletingAutomationId === item.id ? (
-                          <ActivityIndicator size="small" color={colors.danger} />
-                        ) : (
-                          <Trash2 color={colors.danger} size={18} />
-                        )}
+                      onPress={() => setEditingAutomation(item)}
+                      style={styles.cardMain}
+                      disabled={deletingAutomationId === item.id}>
+                      <View
+                        style={[
+                          styles.statusIcon,
+                          {
+                            backgroundColor: item.isActive
+                              ? `${colors.success}22`
+                              : colors.surfaceElevated,
+                          },
+                        ]}>
+                        <Zap
+                          color={item.isActive ? colors.success : colors.textMuted}
+                          size={20}
+                        />
+                      </View>
+                      <View style={styles.automationBody}>
+                        <Text variant="bodyMedium" numberOfLines={1}>
+                          {kind ? `${kind}: ${item.name}` : item.name}
+                        </Text>
+                        <Text variant="caption" muted>
+                          {formatAutomationSchedule(item)}
+                        </Text>
+                        {summary ? (
+                          <Text variant="caption" muted numberOfLines={2} style={styles.summary}>
+                            {summary}
+                          </Text>
+                        ) : null}
                       </View>
                     </PressableScale>
-                  </View>
-                </Card>
-              </FadeIn>
-            );
-          }}
-        />
-      ) : (
-        <FlatList
+                    <View style={styles.actions}>
+                      <PressableScale onPress={() => setEditingAutomation(item)} hitSlop={8}>
+                        <View style={[styles.actionBtn, { backgroundColor: colors.surfaceElevated }]}>
+                          <Pencil color={colors.textMuted} size={18} />
+                        </View>
+                      </PressableScale>
+                      <PressableScale
+                        onPress={() => handleDeleteAutomation(item)}
+                        disabled={deletingAutomationId === item.id}
+                        hitSlop={8}>
+                        <View style={[styles.actionBtn, { backgroundColor: colors.surfaceElevated }]}>
+                          {deletingAutomationId === item.id ? (
+                            <ActivityIndicator size="small" color={colors.danger} />
+                          ) : (
+                            <Trash2 color={colors.danger} size={18} />
+                          )}
+                        </View>
+                      </PressableScale>
+                    </View>
+                  </Card>
+                </FadeIn>
+              );
+            }}
+          />
+          </View>
+        );
+      }
+
+      if (remindersLoading) {
+        return (
+          <View style={styles.scene}>
+            <View style={styles.centered}>
+              <ActivityIndicator size="large" color={colors.primary} />
+            </View>
+          </View>
+        );
+      }
+
+      return (
+        <View style={styles.scene}>
+          <FlatList
           data={reminders}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
@@ -315,15 +341,14 @@ export default function SchedulerScreen() {
               }}
             />
           }
-          ListHeaderComponent={
-            remindersLoadError ? (
-              <Text variant="caption" style={{ color: colors.danger, marginBottom: spacing.sm }}>
-                {remindersLoadError}
-              </Text>
-            ) : null
-          }
           ListEmptyComponent={
-            remindersLoadError ? null : (
+            remindersLoadError ? (
+              <EmptyState
+                icon={<Bell color={colors.textMuted} size={40} />}
+                title="Could not load reminders"
+                description={remindersLoadError}
+              />
+            ) : (
               <EmptyState
                 icon={<Bell color={colors.textMuted} size={40} />}
                 title="No reminders scheduled"
@@ -391,7 +416,60 @@ export default function SchedulerScreen() {
             );
           }}
         />
-      )}
+        </View>
+      );
+    },
+    [
+      automations,
+      colors.danger,
+      colors.primary,
+      colors.primaryMuted,
+      colors.success,
+      colors.surfaceElevated,
+      colors.textMuted,
+      deletingAutomationId,
+      deletingReminderId,
+      handleDeleteAutomation,
+      handleDeleteReminder,
+      loadAutomations,
+      loadReminders,
+      reminders,
+      remindersLoadError,
+      remindersLoading,
+      remindersRefreshing,
+      tasksLoading,
+      tasksRefreshing,
+    ]
+  );
+
+  const navigationState = useMemo(
+    () => ({ index: tabIndex, routes: TAB_ROUTES }),
+    [tabIndex]
+  );
+
+  return (
+    <View style={screenStyle}>
+      <AppHeader title="Scheduler" />
+      <View style={styles.tabs}>
+        <SegmentedControl
+          options={TAB_OPTIONS}
+          value={tab}
+          onChange={(value) => {
+            const nextIndex = TAB_OPTIONS.findIndex((option) => option.value === value);
+            if (nextIndex >= 0) setTabIndex(nextIndex);
+          }}
+        />
+      </View>
+
+      <TabView
+        navigationState={navigationState}
+        renderScene={renderScene}
+        onIndexChange={setTabIndex}
+        renderTabBar={() => null}
+        swipeEnabled
+        initialLayout={{ width }}
+        style={styles.tabView}
+      />
 
       <AutomationEditModal
         automation={editingAutomation}
@@ -405,11 +483,13 @@ export default function SchedulerScreen() {
         onClose={() => setEditingReminder(null)}
         onSaved={() => void loadReminders()}
       />
-    </Screen>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  tabView: { flex: 1 },
+  scene: { flex: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   tabs: { paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
   list: { padding: spacing.md, paddingBottom: 140, flexGrow: 1 },

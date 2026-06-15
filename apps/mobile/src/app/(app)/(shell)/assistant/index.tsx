@@ -3,6 +3,7 @@ import { useSettingsStore } from '@/stores/settings';
 import { useLocalSearchParams } from 'expo-router';
 import { Text } from '@/components/ui/Text';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
+import { AppNavigationGestureHost } from '@/components/layout/AppNavigationGestureHost';
 import { VoiceConversationView } from '@/components/assistant/VoiceConversationView';
 import { AssistantStartButton } from '@/components/assistant/AssistantStartButton';
 import { AssistantActiveFooter } from '@/components/assistant/AssistantActiveFooter';
@@ -45,8 +46,9 @@ export default function AssistantScreen() {
   const idleEnd = error ? isVoiceIdleEndMessage(error) : false;
 
   return (
-    <View style={[styles.root, screenStyle]}>
-      <ScreenHeader
+    <AppNavigationGestureHost>
+      <View style={[styles.root, screenStyle]}>
+        <ScreenHeader
         title={assistantDisplayName}
         variant="page"
         leading="menu"
@@ -111,7 +113,8 @@ export default function AssistantScreen() {
           />
         </>
       ) : null}
-    </View>
+      </View>
+    </AppNavigationGestureHost>
   );
 }
 

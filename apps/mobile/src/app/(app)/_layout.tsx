@@ -1,104 +1,13 @@
 import { Redirect } from 'expo-router';
-import { Drawer } from 'expo-router/drawer';
-import { DrawerContent } from '@/components/layout/DrawerContent';
-import { useTheme } from '@/theme/ThemeProvider';
-import { useThemedScreenOptions } from '@/theme/useThemedScreenOptions';
-import { ChatImagePreviewHost } from '@/features/chat/ChatImagePreviewHost';
-import { VoiceSessionHost } from '@/features/voice-assistant/VoiceSessionHost';
-import { ActionConfirmSheet } from '@/components/integrations/ActionConfirmSheet';
-import { useChatActionConfirmBridge } from '@/features/chat/chatActionConfirmBridge';
+import { Stack } from 'expo-router';
 import { useAuthStore } from '@/stores/auth';
 import { AppSplash } from '@/components/boot/AppSplash';
 import { Routes } from '@/lib/routes';
-import { ActiveChatSessionTracker } from '@/features/chat/ActiveChatSessionTracker';
+import { useThemedScreenOptions } from '@/theme/useThemedScreenOptions';
 
-function AppDrawerLayoutContent() {
-  const { colors } = useTheme();
-  const screenOptions = useThemedScreenOptions();
-  const pendingAction = useChatActionConfirmBridge((s) => s.pendingAction);
-  const confirmPendingAction = useChatActionConfirmBridge((s) => s.confirmPendingAction);
-  const cancelPendingAction = useChatActionConfirmBridge((s) => s.cancelPendingAction);
-
-  const showModalConfirm =
-    Boolean(pendingAction) && !pendingAction?.tool.startsWith('whatsapp.');
-
-  return (
-    <>
-      <ActiveChatSessionTracker />
-      <ActionConfirmSheet
-        visible={showModalConfirm}
-        payload={pendingAction}
-        onConfirm={() => confirmPendingAction()}
-        onCancel={() => cancelPendingAction()}
-      />
-      <Drawer
-        backBehavior="history"
-        drawerContent={(props) => <DrawerContent {...props} />}
-        screenOptions={{
-          ...screenOptions,
-          drawerType: 'front',
-          drawerStyle: { backgroundColor: colors.background, width: 320 },
-          overlayColor: colors.overlay,
-          drawerContentContainerStyle: { flex: 1, backgroundColor: colors.background },
-          swipeEnabled: true,
-          swipeEdgeWidth: 56,
-          swipeMinDistance: 12,
-          keyboardDismissMode: 'on-drag',
-          configureGestureHandler: (gesture) =>
-            gesture.activeOffsetX([-16, 16]).failOffsetY([-12, 12]),
-        }}>
-        <Drawer.Screen
-          name="chat/compose"
-          options={{
-            drawerItemStyle: { display: 'none' },
-          }}
-        />
-        <Drawer.Screen
-          name="chat/[id]"
-          options={{
-            drawerItemStyle: { display: 'none' },
-          }}
-        />
-        <Drawer.Screen
-          name="assistant"
-          options={{
-            drawerItemStyle: { display: 'none' },
-          }}
-        />
-        <Drawer.Screen
-          name="settings"
-          options={{
-            drawerItemStyle: { display: 'none' },
-          }}
-        />
-        <Drawer.Screen
-          name="integrations"
-          options={{
-            drawerItemStyle: { display: 'none' },
-            swipeEnabled: false,
-          }}
-        />
-        <Drawer.Screen
-          name="automations"
-          options={{
-            drawerItemStyle: { display: 'none' },
-            swipeEnabled: false,
-          }}
-        />
-        <Drawer.Screen
-          name="notes"
-          options={{
-            drawerItemStyle: { display: 'none' },
-            swipeEnabled: false,
-          }}
-        />
-      </Drawer>
-    </>
-  );
-}
-
-export default function AppDrawerLayout() {
+export default function AppLayout() {
   const { session, loading } = useAuthStore();
+  const screenOptions = useThemedScreenOptions();
 
   if (loading) {
     return <AppSplash />;
@@ -109,10 +18,15 @@ export default function AppDrawerLayout() {
   }
 
   return (
-    <ChatImagePreviewHost>
-      <VoiceSessionHost>
-        <AppDrawerLayoutContent />
-      </VoiceSessionHost>
-    </ChatImagePreviewHost>
+    <Stack screenOptions={{ ...screenOptions, headerShown: false }}>
+      <Stack.Screen name="(shell)" options={{ animation: 'none' }} />
+      <Stack.Screen
+        name="settings"
+        options={{
+          animation: 'slide_from_right',
+          gestureEnabled: true,
+        }}
+      />
+    </Stack>
   );
 }

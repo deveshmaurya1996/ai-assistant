@@ -21,13 +21,35 @@ function detailText(details: unknown): string {
   }
 }
 
+function unwrapErrorMessage(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const parts = [err.message];
+  const cause = (err as Error & { cause?: unknown }).cause;
+  if (cause instanceof Error && cause.message && !parts.includes(cause.message)) {
+    parts.push(cause.message);
+  } else if (typeof cause === 'object' && cause !== null && 'message' in cause) {
+    const msg = String((cause as { message: unknown }).message);
+    if (msg && !parts.includes(msg)) parts.push(msg);
+  }
+  return parts.join(': ');
+}
+
+function isNetworkFetchError(message: string): boolean {
+  return /fetch failed|network request failed|unexpected end of stream|failed to connect|connection refused/i.test(
+    message
+  );
+}
+
 export function formatApiError(err: unknown): string {
   if (err instanceof ApiError) {
     const extra = detailText(err.details);
     return extra ? `${err.message} — ${extra}` : err.message;
   }
-  if (err instanceof Error) return err.message;
-  return String(err);
+  const message = unwrapErrorMessage(err);
+  if (isNetworkFetchError(message)) {
+    return `${message} — is the API running? (pnpm dev) On Android with localhost, run: pnpm --filter @ai-assistant/mobile adb-reverse`;
+  }
+  return message;
 }
 
 export function formatVoiceStepError(step: VoiceAiStep, err: unknown): string {

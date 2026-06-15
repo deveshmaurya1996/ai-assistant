@@ -24,6 +24,7 @@ import { clearSidebarAttention } from '@/features/chat/sidebarAttention';
 import { apiClient } from '@/lib/api-client';
 import { useGradualKeyboardAnimation } from '@/hooks/useGradualKeyboardAnimation';
 import { ShareChatSheet } from '@/components/share/ShareChatSheet';
+import { AppNavigationGestureHost } from '@/components/layout/AppNavigationGestureHost';
 
 type ChatScreenShellProps = {
   title: string;
@@ -119,8 +120,9 @@ export function ChatScreenShell({
   );
 
   return (
-    <View style={[styles.container, screenStyle]}>
-      <ScreenHeader
+    <AppNavigationGestureHost>
+      <View style={[styles.container, screenStyle]}>
+        <ScreenHeader
         title={title}
         subtitle={subtitle}
         variant="chat"
@@ -180,7 +182,8 @@ export function ChatScreenShell({
         sessionId={sessionId ?? null}
         title={title}
       />
-    </View>
+      </View>
+    </AppNavigationGestureHost>
   );
 }
 
