@@ -1,0 +1,10 @@
+[project]
+name = "ai-assistant-ai-runtime"
+version = "1.0.0"
+requires-python = ">=3.12"
+description = "AI runtime — planner, model routing, RAG, voice"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+pythonpath = ["."]

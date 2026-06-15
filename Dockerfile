@@ -21,14 +21,14 @@ COPY --from=pruner /app/tsconfig.base.json ./tsconfig.base.json
 ENV DATABASE_URL=postgresql://build:build@localhost:5432/build?schema=public
 RUN pnpm exec turbo run build --filter=@ai-assistant/gateway...
 
-FROM python:3.11-slim-bookworm AS python_deps
+FROM python:3.12-slim-bookworm AS python_deps
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 COPY services/ai-runtime/requirements.txt ./services/ai-runtime/requirements.txt
 RUN pip install --no-cache-dir -r services/ai-runtime/requirements.txt
 
-FROM python:3.11-slim-bookworm AS runtime
+FROM python:3.12-slim-bookworm AS runtime
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     supervisor ffmpeg curl ca-certificates gnupg \
@@ -36,7 +36,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && apt-get install -y --no-install-recommends nodejs \
  && rm -rf /var/lib/apt/lists/*
 
-COPY --from=python_deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=python_deps /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=python_deps /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 COPY --from=node_build /app/node_modules ./node_modules
 COPY --from=node_build /app/packages ./packages

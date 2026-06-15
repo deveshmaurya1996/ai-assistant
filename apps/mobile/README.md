@@ -389,7 +389,7 @@ Recording and live waveforms use [@siteed/audio-studio](https://www.npmjs.com/pa
 | Live analysis | `features/voice/studio/useStudioVoiceAnalysis.ts` | `analysisData.dataPoints` → level + VAD |
 | Capture | `features/voice/capture/useVoiceCapture.ts` | Chat record lifecycle |
 | Chat dictation | `features/voice/capture/useChatDictation.ts` | Tap-to-toggle → HTTP transcribe |
-| Chat mic UI | `components/voice/ChatVoiceMic.tsx` | Orb + studio waveform bars |
+| Chat mic UI | `components/voice/VoiceMicButton.tsx` | Tap-to-toggle dictation in chat composer |
 | Assistant start | `components/assistant/AssistantStartButton.tsx` | Sparkles button (idle) |
 | Assistant footer | `components/assistant/AssistantActiveFooter.tsx` | `StudioWaveform` + End |
 | Waveform | `components/voice/StudioWaveform.tsx` | Skia `WaveformPreview` |

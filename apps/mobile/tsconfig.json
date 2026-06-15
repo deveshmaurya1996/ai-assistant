@@ -1,4 +1,5 @@
 {
+  // Expo defaults — does not extend monorepo tsconfig.base.json.
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
@@ -13,13 +14,5 @@
     "src/**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
-  ],
-  "exclude": [
-    "src/components/themed-*.tsx",
-    "src/components/web-badge.tsx",
-    "src/components/hint-row.tsx",
-    "src/components/external-link.tsx",
-    "src/components/ui/collapsible.tsx",
-    "src/hooks/use-theme.ts"
   ]
 }

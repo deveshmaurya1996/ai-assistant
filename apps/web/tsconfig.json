@@ -1,4 +1,5 @@
 {
+  // Next.js defaults — does not extend monorepo tsconfig.base.json.
   "compilerOptions": {
     "target": "ES2017",
     "lib": ["dom", "dom.iterable", "esnext"],

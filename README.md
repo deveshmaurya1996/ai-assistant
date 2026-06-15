@@ -28,7 +28,7 @@ Mobile / Web  →  API Gateway (Fastify)  →  PostgreSQL
 
 - Node.js 20+
 - pnpm 9+
-- Python 3.11+ (AI service virtualenv at `services/ai-runtime/venv`)
+- Python 3.12+ (AI service virtualenv at `services/ai-runtime/venv`)
 - Docker Desktop
 - [Tilt](https://docs.tilt.dev/install.html) — `choco install tilt` (Windows, admin shell) or `brew install tilt` (macOS)
 
@@ -69,7 +69,7 @@ Ports are stored in **`tilt_config.json`** (gitignored). `pnpm dev` waits for Do
 |---------|---------|
 | Tilt UI | 10350 (`tilt up --port` / `TILT_PORT`) |
 | API Gateway | 3000 |
-| Intelligence (ai-runtime) | 8000 |
+| AI runtime (ai-runtime) | 8000 |
 | Prisma Studio | 5556 |
 | Web dashboard | 3002 |
 | PostgreSQL | 5432 |
@@ -113,21 +113,47 @@ pnpm catalog:validate   # catalog YAML consistency
 
 ## Monorepo layout
 
+| Folder | Owns |
+|--------|------|
+| `apps/mobile` | Expo client, settings/model picker UI |
+| `apps/web` | Next.js dashboard |
+| `services/gateway` | Auth, settings API, Socket.IO bridge |
+| `services/ai-runtime` | Model routing, planner, LLM, RAG, voice |
+| `services/capability-runtime` | Capability execution (in-process in gateway) |
+| `services/tool-runtime` | Tool executor library (in-process in gateway) |
+| `packages/icons` | Iconify / LobeHub icon components |
+| `packages/sdk` | Client SDK for mobile/web |
+| `packages/types` | Shared API and client TypeScript types |
+| `packages/storage` | File storage abstractions |
+| `packages/file-processing` | Document text extraction |
+| `packages/permissions` | Default policy codegen from catalog |
+| `packages/workflows` | Workflow engine types/helpers |
+| `packages/feature-flags` | Feature flag helpers |
+| `catalog/` | Single source of truth (providers, capabilities, tools, policy) |
+| `planner-config/` | Planner prompts and `ai-models.yaml` |
+| `connectors/` | Connector playbooks (`meta.json` + `PLAYBOOK.md`) |
+| `packages/catalog-codegen` | Generates registries from `catalog/` |
+| `evals/` | Planner eval fixtures |
+| `workspace/` | Assistant template files for users |
+| `patches/` | pnpm patched dependencies |
+| `infra/` | Docker Compose, Tilt, monitoring, supervisor |
+
 ```
 apps/mobile          Expo React Native client
 apps/web             Next.js dashboard
-services/gateway            Fastify API + Socket.IO + workers
-services/ai-runtime         Intelligence — models, RAG, voice, agent orchestration
-services/capability-runtime Capability execution (in-process in gateway)
-services/tool-runtime       Tool executor library (in-process in gateway)
+services/gateway     Fastify API + Socket.IO + workers
+services/ai-runtime  AI runtime — models, RAG, voice, agent orchestration
+services/capability-runtime  Capability execution (in-process in gateway)
+services/tool-runtime        Tool executor library (in-process in gateway)
 catalog/             Single source of truth (providers, capabilities, tools, policy)
 planner-config/      Planner prompts and AI model YAML
 connectors/          Connector playbooks (meta.json + PLAYBOOK.md per app)
+packages/icons       Iconify/LobeHub icons for mobile
 packages/catalog-codegen  Generates registries from catalog/
 packages/capabilities     Generated capability registry + planner manifest
 packages/tool-schema      Tool definitions (Zod in tool-schemas.ts, metadata from catalog)
 packages/integration-runtime  OAuth/API runtime (Google, WhatsApp)
-packages/platform           Platform tools (contacts, resources)
+packages/platform         Platform tools (contacts, resources)
 packages/types       Shared API & client TypeScript types
 packages/database    Prisma + PostgreSQL
 packages/auth        Better Auth configuration
@@ -135,10 +161,20 @@ packages/config      Shared environment loader (all runtimes)
 packages/telemetry   OpenTelemetry bootstrap
 packages/events      Redis pub/sub domain events
 packages/sdk         Client SDK for mobile/web
+packages/storage     Storage abstractions
+packages/file-processing  Document extraction
+packages/permissions Default policies (generated)
+packages/workflows   Workflow helpers
+packages/feature-flags  Feature flags
+evals/               Planner evaluation cases
+workspace/           User assistant templates
+patches/             pnpm patched dependencies
 infra/docker/        Layered compose files
 infra/tilt/          Tilt modules
 infra/monitoring/    Prometheus, Grafana, Loki, OTel collector
 ```
+
+See also [docs/architecture.md](docs/architecture.md).
 
 ## Infrastructure compose layers
 

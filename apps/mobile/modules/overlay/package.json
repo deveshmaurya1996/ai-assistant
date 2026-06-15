@@ -1,5 +1,6 @@
 {
   "name": "assistant-overlay",
   "version": "1.0.0",
+  "description": "Expo native overlay module (not a pnpm workspace package; unscoped name required by Expo modules)",
   "main": "index.ts"
 }

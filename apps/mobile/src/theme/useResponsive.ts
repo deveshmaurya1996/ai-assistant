@@ -20,7 +20,6 @@ export function useResponsive() {
       isCompact,
       horizontalPadding,
       contentMaxWidth: layout.maxContentWidth,
-      dockBottomOffset: layout.dockBottomOffset,
       scale,
       fontSize: (base: number) => Math.round(base * scale * (fontScale > 1.2 ? 1.05 : 1)),
     };

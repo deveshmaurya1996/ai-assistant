@@ -4,6 +4,7 @@
   "private": true,
   "description": "AI runtime — models, RAG, voice, streaming",
   "scripts": {
-    "dev": ".\\venv\\Scripts\\python.exe -m uvicorn main:app --host localhost --port 8000"
+    "dev": "node ../../scripts/with-env.mjs node ../../scripts/dev.mjs serve ai-runtime",
+    "test": "python -m pytest tests"
   }
 }

@@ -86,6 +86,7 @@ export function getPlannerVisibleCapabilities(): CapabilitySourceEntry[] {
 );
 
 // --- capability-manifest.json ---
+// Written twice: TS packages read packages/capabilities/generated/; Python ai-runtime reads services/ai-runtime/.
 const manifest = {
   version: 1,
   generatedAt: new Date().toISOString(),

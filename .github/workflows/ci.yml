@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pnpm install --ignore-scripts
+
+      - name: Generate and validate catalog
+        run: pnpm catalog:generate && pnpm catalog:validate
+
+      - name: Build workspace packages and services
+        run: pnpm exec turbo run build --filter=./packages/* --filter=./services/gateway --filter=./services/tool-runtime --filter=./services/capability-runtime
+
+      - name: Python tests (ai-runtime)
+        working-directory: services/ai-runtime
+        run: |
+          python -m pip install -r requirements.txt pytest pytest-asyncio
+          python -m pytest tests -q

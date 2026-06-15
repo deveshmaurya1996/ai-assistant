@@ -66,7 +66,7 @@ function findPython(aiDirName = 'ai-runtime') {
   return process.platform === 'win32' ? 'python' : 'python3';
 }
 
-async function assertIntelligencePort(port) {
+async function assertAiRuntimePort(port) {
   try {
     const res = await fetch(`http://localhost:${port}/health`, {
       signal: AbortSignal.timeout(2_000),
@@ -75,13 +75,13 @@ async function assertIntelligencePort(port) {
     const body = await res.json();
     if (body.service === 'cognitive-runtime' || body.cognitive === true) {
       console.error(
-        `[ai-runtime] Port ${port} is running a legacy intelligence-only process (missing /v1/chat/stream).`,
+        `[ai-runtime] Port ${port} is running a legacy cognitive-runtime process (missing /v1/chat/stream).`,
       );
       console.error('[ai-runtime] Stop that process, then start ai-runtime: pnpm dev:ai-runtime');
       process.exit(1);
     }
-    if (body.service === 'intelligence' && body.ai === true) {
-      console.log(`[ai-runtime] Intelligence already listening on http://localhost:${port}`);
+    if (body.service === 'ai-runtime' || (body.service === 'intelligence' && body.ai === true)) {
+      console.log(`[ai-runtime] Already listening on http://localhost:${port}`);
       process.exit(0);
     }
   } catch {
@@ -91,7 +91,7 @@ async function assertIntelligencePort(port) {
 
 async function serveAi() {
   const port = portFor('ai-runtime');
-  await assertIntelligencePort(port);
+  await assertAiRuntimePort(port);
   const aiDir = path.join(root, 'services', 'ai-runtime');
   const python = findPython('ai-runtime');
   const uvicornArgs = [

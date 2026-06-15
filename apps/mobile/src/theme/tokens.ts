@@ -24,8 +24,6 @@ export const radii = {
 
 export const layout = {
   headerHeight: 56,
-  dockHeight: 72,
-  dockBottomOffset: 12,
   maxContentWidth: 800,
 } as const;
 
@@ -50,7 +48,6 @@ export type ThemeColors = {
   onPrimary: string;
   danger: string;
   success: string;
-  dockBlur: string;
   overlay: string;
 };
 
@@ -67,7 +64,6 @@ export const palettes: Record<ColorScheme, ThemeColors> = {
     onPrimary: '#FFFFFF',
     danger: '#DC2626',
     success: '#16A34A',
-    dockBlur: 'light',
     overlay: 'rgba(0,0,0,0.4)',
   },
   dark: {
@@ -82,7 +78,6 @@ export const palettes: Record<ColorScheme, ThemeColors> = {
     onPrimary: splashBackground,
     danger: '#F87171',
     success: '#4ADE80',
-    dockBlur: 'dark',
     overlay: 'rgba(0,0,0,0.6)',
   },
 };
