@@ -106,9 +106,9 @@ const manifest = {
 };
 const manifestJson = JSON.stringify(manifest, null, 2);
 writeGenerated('packages/capabilities/generated/capability-manifest.json', manifestJson);
-const cognitivePath = join(repoRoot, 'services/cognitive-runtime/capability_manifest.json');
+const cognitivePath = join(repoRoot, 'services/ai-runtime/capability_manifest.json');
 writeFileSync(cognitivePath, manifestJson);
-console.log(`  wrote services/cognitive-runtime/capability_manifest.json`);
+console.log(`  wrote services/ai-runtime/capability_manifest.json`);
 
 // --- providers.ts (display names + known IDs) ---
 const enabledProviders = catalog.providers.filter((p) => p.enabled !== false);

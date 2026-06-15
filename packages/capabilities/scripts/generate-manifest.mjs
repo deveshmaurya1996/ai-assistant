@@ -42,7 +42,7 @@ writeFileSync(outPath, JSON.stringify(manifest, null, 2));
 
 const cognitivePath = join(
   pkgRoot,
-  '../../services/cognitive-runtime/capability_manifest.json'
+  '../../services/ai-runtime/capability_manifest.json'
 );
 copyFileSync(outPath, cognitivePath);
 

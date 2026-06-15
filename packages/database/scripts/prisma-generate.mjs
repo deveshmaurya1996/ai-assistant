@@ -59,7 +59,26 @@ function writeStagingSchema() {
   writeFileSync(stagingSchemaPath, next, 'utf8');
 }
 
+function resolvePrismaCli() {
+  let dir = databaseDir;
+  for (let i = 0; i < 6; i++) {
+    const candidate = path.join(dir, 'node_modules', 'prisma', 'build', 'index.js');
+    if (existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
 function runGenerate(schemaFile = schemaPath) {
+  const prismaCli = resolvePrismaCli();
+  if (prismaCli) {
+    return spawnSync(process.execPath, [prismaCli, 'generate', '--schema', schemaFile], {
+      cwd: databaseDir,
+      stdio: 'inherit',
+    });
+  }
   return spawnSync('pnpm', ['exec', 'prisma', 'generate', '--schema', schemaFile], {
     cwd: databaseDir,
     stdio: 'inherit',

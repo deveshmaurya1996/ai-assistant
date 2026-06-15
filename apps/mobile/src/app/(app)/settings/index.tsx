@@ -13,6 +13,7 @@ import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { SwitchRow } from '@/components/ui/SwitchRow';
 import { SettingsSection } from '@/components/settings/SettingsSection';
 import { AssistantPickerSheet } from '@/components/settings/AssistantPickerSheet';
+import { ModelPickerSheet } from '@/components/settings/ModelPickerSheet';
 import { useTheme } from '@/theme/ThemeProvider';
 import type { ThemeMode } from '@/theme/tokens';
 import { spacing } from '@/theme/tokens';
@@ -23,7 +24,7 @@ import {
 } from '@/stores/settings';
 import { useAuthStore } from '@/stores/auth';
 import {
-  requestMicPermission,
+  getMicPermissionStatus,
   openAppSettings,
   type PermissionStatus,
 } from '@/features/voice/requestVoicePermissions';
@@ -55,6 +56,7 @@ export default function SettingsScreen() {
   const session = useAuthStore((s) => s.session);
   const signOut = useAuthStore((s) => s.signOut);
   const assistantSheetRef = useRef<BottomSheetModal>(null);
+  const modelSheetRef = useRef<BottomSheetModal>(null);
 
   const {
     speakRepliesEnabled,
@@ -65,6 +67,9 @@ export default function SettingsScreen() {
     autoSendAfterTranscribe,
     overlayEnabled,
     lastAiModelLabel,
+    preferredModelId,
+    modelsCatalog,
+    loadModels,
     setSpeakRepliesEnabled,
     setAssistantContinuousListening,
     setAutoSend,
@@ -75,9 +80,15 @@ export default function SettingsScreen() {
 
   const selectedPreset = getPersonalityPreset(selectedPersonalityId, personalities);
   const assistantSummary = `${assistantDisplayName} · ${formatGenderLabel(selectedPreset.gender)}`;
-  const aiRoutingSummary = lastAiModelLabel
-    ? `Auto · ${lastAiModelLabel}`
-    : 'Automatic';
+  const selectedModel = modelsCatalog?.find((m) => m.id === preferredModelId);
+  const recommendedModel = modelsCatalog?.find((m) => m.recommended);
+  const aiRoutingSummary = selectedModel
+    ? selectedModel.label
+    : recommendedModel
+      ? `Auto · ${recommendedModel.label}`
+      : lastAiModelLabel
+        ? `Auto · ${lastAiModelLabel}`
+        : 'Automatic';
 
   const [micStatus, setMicStatus] = useState<PermissionStatus | null>(null);
   const [overlayStatus, setOverlayStatus] = useState<OverlayPermissionLabel>('Unknown');
@@ -101,19 +112,22 @@ export default function SettingsScreen() {
   }, []);
 
   useEffect(() => {
+    if (!session) return;
     void (async () => {
-      const mic = await requestMicPermission();
+      const mic = await getMicPermissionStatus();
       setMicStatus(mic);
       await refreshOverlayPermission();
       await refreshNotificationPermission();
     })();
-  }, [refreshOverlayPermission, refreshNotificationPermission]);
+  }, [session, refreshOverlayPermission, refreshNotificationPermission]);
 
   useFocusEffect(
     useCallback(() => {
+      if (!session) return;
       void refreshOverlayPermission();
       void refreshNotificationPermission();
-    }, [refreshOverlayPermission, refreshNotificationPermission])
+      void loadModels();
+    }, [session, refreshOverlayPermission, refreshNotificationPermission, loadModels])
   );
 
   const themeOptions: { value: ThemeMode; label: string }[] = [
@@ -148,12 +162,17 @@ export default function SettingsScreen() {
         </SettingsSection>
 
         <SettingsSection title="Assistant">
-          <View style={styles.row}>
-            <Text variant="bodyMedium">AI routing</Text>
-            <Text variant="caption" muted numberOfLines={1} style={{ maxWidth: 180 }}>
-              {aiRoutingSummary}
-            </Text>
-          </View>
+          <PressableScale onPress={() => modelSheetRef.current?.present()}>
+            <View style={styles.row}>
+              <Text variant="bodyMedium">AI model</Text>
+              <View style={styles.rowEnd}>
+                <Text variant="caption" muted numberOfLines={1} style={{ maxWidth: 180 }}>
+                  {aiRoutingSummary}
+                </Text>
+                <ChevronRight color={colors.textMuted} size={18} />
+              </View>
+            </View>
+          </PressableScale>
           <PressableScale onPress={() => assistantSheetRef.current?.present()}>
             <View style={styles.row}>
               <Text variant="bodyMedium">Your assistant</Text>
@@ -203,26 +222,28 @@ export default function SettingsScreen() {
           <Text variant="caption" muted style={{ marginTop: spacing.xs }}>
             Permission: {formatNotificationStatus(notificationStatus)}
           </Text>
-          <Button
-            label={
-              notificationStatus === 'granted'
-                ? 'Notifications enabled'
-                : 'Enable notifications'
-            }
-            variant="secondary"
-            style={{ marginTop: spacing.sm }}
-            onPress={async () => {
-              if (notificationStatus === 'denied') {
-                await openAppSettings();
-                return;
+          {notificationStatus !== 'granted' ? (
+            <Button
+              label={
+                notificationStatus === 'denied'
+                  ? 'Open notification settings'
+                  : 'Enable notifications'
               }
-              const status = await requestNotificationPermission();
-              setNotificationStatus(status);
-              if (status === 'granted') {
-                await registerPushTokenIfNeeded(reminderOverlayEnabled);
-              }
-            }}
-          />
+              variant="secondary"
+              style={{ marginTop: spacing.sm }}
+              onPress={async () => {
+                if (notificationStatus === 'denied') {
+                  await openAppSettings();
+                  return;
+                }
+                const status = await requestNotificationPermission();
+                setNotificationStatus(status);
+                if (status === 'granted') {
+                  await registerPushTokenIfNeeded(reminderOverlayEnabled);
+                }
+              }}
+            />
+          ) : null}
           {Platform.OS === 'android' ? (
             <SwitchRow
               label="Reminder overlay"
@@ -278,16 +299,18 @@ export default function SettingsScreen() {
           <Text variant="caption" muted style={{ marginTop: spacing.xs }}>
             Overlay permission: {overlayStatus}
           </Text>
-          <Button
-            label="Grant overlay permission"
-            variant="secondary"
-            style={{ marginTop: spacing.sm }}
-            onPress={async () => {
-              await requestOverlayPermission();
-              const ok = await canDrawOverlays();
-              setOverlayStatus(ok ? 'Granted' : 'Not granted');
-            }}
-          />
+          {overlayStatus !== 'Granted' ? (
+            <Button
+              label="Grant overlay permission"
+              variant="secondary"
+              style={{ marginTop: spacing.sm }}
+              onPress={async () => {
+                await requestOverlayPermission();
+                const ok = await canDrawOverlays();
+                setOverlayStatus(ok ? 'Granted' : 'Not granted');
+              }}
+            />
+          ) : null}
         </SettingsSection>
 
         <SettingsSection title="Memory">
@@ -335,6 +358,7 @@ export default function SettingsScreen() {
         </SettingsSection>
       </ScrollView>
       <AssistantPickerSheet ref={assistantSheetRef} />
+      <ModelPickerSheet ref={modelSheetRef} />
     </Screen>
   );
 }

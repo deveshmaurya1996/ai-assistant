@@ -17,7 +17,7 @@ from models.registry import (
     resolve_models,
 )
 from models.config_loader import timeout_for_model
-from models.orchestration.completion_orchestrator import (
+from llm.provider_router import (
     complete_text_orchestrated,
     stream_text_orchestrated,
 )
@@ -183,6 +183,8 @@ async def stream_completion_sse(
     deadline_ms: Optional[float] = None,
     task_locked: bool = False,
     cancel_event: Optional[asyncio.Event] = None,
+    preferred_model_id: Optional[str] = None,
+    session_model_id: Optional[str] = None,
 ) -> AsyncIterator[str]:
     """Yield SSE-formatted frames: token, error, and done events."""
     t0 = time.perf_counter()
@@ -231,6 +233,8 @@ async def stream_completion_sse(
             speed_profile=speed_profile,
             deadline_ms=deadline_ms,
             cancel_event=cancel_event,
+            preferred_model_id=preferred_model_id,
+            session_model_id=session_model_id,
         ):
             yield frame
         return
@@ -247,6 +251,8 @@ async def complete_text(
     task: Optional[str] = None,
     *,
     cancel_event: Optional[asyncio.Event] = None,
+    preferred_model_id: Optional[str] = None,
+    session_model_id: Optional[str] = None,
 ) -> Tuple[str, Optional[str]]:
     models, resolved_task = _resolve_chat_models(messages, task)
 
@@ -272,7 +278,11 @@ async def complete_text(
 
     if resolved_task not in ("vision", "file_analysis"):
         return await complete_text_orchestrated(
-            messages, resolved_task, cancel_event=cancel_event
+            messages,
+            resolved_task,
+            cancel_event=cancel_event,
+            preferred_model_id=preferred_model_id,
+            session_model_id=session_model_id,
         )
 
     async def complete_one(model_name: str) -> str:

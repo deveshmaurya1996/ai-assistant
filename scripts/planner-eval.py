@@ -11,9 +11,9 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "services" / "cognitive-runtime"))
+sys.path.insert(0, str(ROOT / "services" / "ai-runtime"))
 
-from cognitive_env_loader import load_service_env
+from env_loader import load_service_env
 
 load_service_env()
 

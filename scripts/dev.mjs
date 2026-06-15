@@ -73,9 +73,9 @@ async function assertIntelligencePort(port) {
     });
     if (!res.ok) return;
     const body = await res.json();
-    if (body.service === 'cognitive-runtime') {
+    if (body.service === 'cognitive-runtime' || body.cognitive === true) {
       console.error(
-        `[ai-runtime] Port ${port} is running cognitive-runtime alone (missing /v1/chat/stream).`,
+        `[ai-runtime] Port ${port} is running a legacy intelligence-only process (missing /v1/chat/stream).`,
       );
       console.error('[ai-runtime] Stop that process, then start ai-runtime: pnpm dev:ai-runtime');
       process.exit(1);
@@ -149,15 +149,11 @@ async function serveStudio() {
       'pnpm',
       '--filter',
       '@ai-assistant/database',
-      'exec',
-      'prisma',
+      'run',
       'studio',
+      '--',
       '--port',
       String(port),
-      '--browser',
-      'none',
-      '--hostname',
-      '127.0.0.1',
     ]),
   );
 }

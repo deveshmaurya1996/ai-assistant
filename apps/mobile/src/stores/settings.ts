@@ -13,6 +13,7 @@ import {
 import { deleteItemAsync, getItemAsync, setItemAsync } from '@/lib/secure-storage';
 import { reconcileStoredOverlayEnabled } from '@/lib/overlay-settings';
 import { apiClient } from '@/lib/api-client';
+import type { ModelInfo } from '@ai-assistant/types';
 import type { ThemeMode } from '@/theme/tokens';
 import { TERMS_VERSION } from '@/content/terms';
 
@@ -67,6 +68,9 @@ type SettingsState = {
   voiceOverlayEnabled: boolean;
   reminderOverlayEnabled: boolean;
   lastAiModelLabel: string | null;
+  preferredModelId: string | null;
+  modelsCatalog: ModelInfo[] | null;
+  modelsLoading: boolean;
   lastTranscript: string | null;
   hydrate: () => Promise<void>;
   acceptTerms: () => Promise<void>;
@@ -80,6 +84,8 @@ type SettingsState = {
   setVoiceOverlayEnabled: (v: boolean) => Promise<void>;
   setReminderOverlayEnabled: (v: boolean) => Promise<void>;
   setLastAiModelLabel: (label: string | null) => Promise<void>;
+  loadModels: () => Promise<void>;
+  setPreferredModelId: (modelId: string | null) => Promise<void>;
   setLastTranscript: (text: string | null) => Promise<void>;
   getSelectedTtsVoice: () => string;
 };
@@ -130,6 +136,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   voiceOverlayEnabled: false,
   reminderOverlayEnabled: false,
   lastAiModelLabel: null,
+  preferredModelId: null,
+  modelsCatalog: null,
+  modelsLoading: false,
   lastTranscript: null,
 
   hydrate: async () => {
@@ -297,6 +306,25 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       await deleteItemAsync(KEYS.lastAiModelLabel);
     }
     set({ lastAiModelLabel: value });
+  },
+
+  loadModels: async () => {
+    set({ modelsLoading: true });
+    try {
+      const data = await apiClient.getModels('fast_chat');
+      set({
+        modelsCatalog: data.models ?? [],
+        preferredModelId: data.preferredModelId ?? null,
+        modelsLoading: false,
+      });
+    } catch {
+      set({ modelsLoading: false });
+    }
+  },
+
+  setPreferredModelId: async (modelId) => {
+    await apiClient.setPreferredModel(modelId);
+    set({ preferredModelId: modelId });
   },
 
   setLastTranscript: async (text) => {

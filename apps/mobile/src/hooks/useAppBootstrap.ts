@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import { useAuthStore } from '@/stores/auth';
 import { useSettingsStore } from '@/stores/settings';
+import { hasAuthCredentials } from '@/lib/auth-cookies';
 import { setReminderOverlayEnabledNative } from '@/lib/overlay';
 import { registerPushTokenIfNeeded } from '@/features/reminders/registerPushToken';
 
@@ -27,7 +28,9 @@ export function useAppBootstrap(fontsLoaded: boolean) {
         if (cancelled) return;
         if (Platform.OS === 'android') {
           await setReminderOverlayEnabledNative(reminderOverlayEnabled);
-          await registerPushTokenIfNeeded(reminderOverlayEnabled);
+          if (hasAuthCredentials()) {
+            await registerPushTokenIfNeeded(reminderOverlayEnabled);
+          }
         }
       } catch (err) {
         console.warn(

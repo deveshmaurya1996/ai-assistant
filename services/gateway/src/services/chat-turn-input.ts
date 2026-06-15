@@ -10,6 +10,10 @@ import { resolveAttachments } from './file-resolver.service';
 import { looksLikeImageEditFollowUp } from './image-intent.service';
 import { capAttachmentUserQuery, routingQueryFromText } from './prompt-budget';
 import type { AgentSource, AgentTurnInput } from './agent-turn.service';
+import {
+  getSessionModelAssignment,
+  type SessionModelAssignment,
+} from './session-model-context.service';
 
 export type BuildAgentTurnInputParams = {
   userId: string;
@@ -22,6 +26,8 @@ export type BuildAgentTurnInputParams = {
   personalityId?: string;
   assistantDisplayName?: string;
   timezone?: string;
+  preferredModelId?: string;
+  modelAssignment?: SessionModelAssignment;
 };
 
 export async function buildAgentTurnInput(
@@ -77,5 +83,8 @@ export async function buildAgentTurnInput(
     fileRetrievalContext: '',
     sessionContext: '',
     timezone: params.timezone,
+    preferredModelId: params.preferredModelId,
+    sessionModelId: params.modelAssignment?.assignedModelId,
+    modelAssignment: params.modelAssignment,
   };
 }

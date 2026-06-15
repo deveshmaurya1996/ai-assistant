@@ -19,19 +19,7 @@ function mergeAbortSignals(
   timeoutMs: number
 ): AbortSignal {
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
-  if (!userSignal) return timeoutSignal;
-  if (typeof AbortSignal.any === 'function') {
-    return AbortSignal.any([userSignal, timeoutSignal]);
-  }
-  const controller = new AbortController();
-  const abort = () => controller.abort();
-  if (userSignal.aborted) {
-    abort();
-    return controller.signal;
-  }
-  userSignal.addEventListener('abort', abort, { once: true });
-  timeoutSignal.addEventListener('abort', abort, { once: true });
-  return controller.signal;
+  return userSignal ? AbortSignal.any([userSignal, timeoutSignal]) : timeoutSignal;
 }
 
 function buildHeaders(init?: FetchInit): Record<string, string> {
@@ -156,7 +144,7 @@ export const aiClient = {
       ),
 
     invalidateManifest: (body: unknown, init?: FetchInit) =>
-      intelligenceFetch(`${config.gatewayUrl}/internal/integrations/manifest/invalidate`, {
+      intelligenceFetch(getIntelligenceUrl('/internal/integrations/manifest/invalidate'), {
         method: 'POST',
         body: JSON.stringify(body),
         timeoutMs: TIMEOUTS.default,

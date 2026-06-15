@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from env_loader import load_monorepo_env
-from observability import init_observability, instrument_fastapi
+from internal.observability import init_observability, instrument_fastapi
 
 load_monorepo_env()
 init_observability()
@@ -38,8 +38,8 @@ class TraceContextMiddleware:
             await self.app(scope, receive, send)
 
 from api.router import router as api_router
-from cognitive_integration import mount_cognitive_routes
-from memory.rag_service import RAGService
+from api.agent import router as agent_router, warm_agent_modules
+from rag.rag_service import RAGService
 from request_id_middleware import RequestIdLogFilter, RequestIdMiddleware
 from models.config_loader import get_rag_config, load_ai_models_config
 from models.voice import FFMPEG_INSTALL_HINT, ensure_ffmpeg_on_path, ffmpeg_available
@@ -53,9 +53,20 @@ app.add_middleware(TraceContextMiddleware)
 instrument_fastapi(app)
 
 app.include_router(api_router, prefix="/v1")
-mount_cognitive_routes(app)
+app.include_router(agent_router)
 
 logging.getLogger().addFilter(RequestIdLogFilter())
+
+INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev-internal-token")
+
+
+@app.middleware("http")
+async def internal_auth_middleware(request, call_next):
+    if "/internal/" in request.url.path:
+        header = request.headers.get("x-internal-token")
+        if header != INTERNAL_SERVICE_TOKEN:
+            return JSONResponse(status_code=403, content={"error": "Forbidden"})
+    return await call_next(request)
 
 
 @app.on_event("startup")
@@ -85,12 +96,29 @@ async def on_startup():
         "yes",
     )
     if probe_on_startup:
-        from models.orchestration.provider_probe import probe_providers_once
+        from internal.diagnostics import probe_providers_once
 
         try:
             await probe_providers_once()
         except Exception as exc:
             logger.warning("[health-probe] startup probe failed: %s", exc)
+    try:
+        warm_agent_modules()
+        logger.info("[intelligence] agent orchestration modules warmed")
+    except Exception as exc:
+        logger.warning("[intelligence] agent warm import failed: %s", exc)
+    try:
+        from llm.health_monitor import start_health_monitor_loops
+
+        await start_health_monitor_loops()
+    except Exception as exc:
+        logger.warning("[health-probe] monitor start failed: %s", exc)
+    try:
+        from api.model_admin import start_daily_capability_probes
+
+        await start_daily_capability_probes()
+    except Exception as exc:
+        logger.warning("[cap-probe] daily probe start failed: %s", exc)
 
 
 @app.get("/")
@@ -114,7 +142,7 @@ def health_ready():
     if not qdrant_url:
         return {"status": "ready", "qdrant": "local"}
     try:
-        from memory.rag_service import _qdrant_client_from_env
+        from rag.rag_service import _qdrant_client_from_env
 
         client = _qdrant_client_from_env()
         client.get_collections()

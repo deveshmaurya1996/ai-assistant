@@ -15,7 +15,7 @@ export const Routes = {
     params: { tab: 'reminders' },
   } as Href,
   notes: '/(app)/notes' as Href,
-  memory: '/(app)/memory' as Href,
+  memory: '/(app)/settings/memory' as Href,
   authCallback: '/auth/callback' as Href,
 } as const;
 

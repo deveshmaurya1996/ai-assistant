@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const manifestCandidates = [
   path.join(root, 'packages', 'capabilities', 'dist', 'capability_manifest.json'),
-  path.join(root, 'services', 'cognitive-runtime', 'capability_manifest.json'),
+  path.join(root, 'services', 'ai-runtime', 'capability_manifest.json'),
 ];
 
 function loadManifest() {

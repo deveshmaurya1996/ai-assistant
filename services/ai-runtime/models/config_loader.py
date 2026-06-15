@@ -43,22 +43,21 @@ def load_ai_models_config(*, reload: bool = False) -> Dict[str, Any]:
             f"(set AI_MODELS_CONFIG or add {DEFAULT_CONFIG_RELATIVE.as_posix()} under repo root)"
         )
 
-    raw = path.read_text(encoding="utf-8")
-    try:
-        import yaml
-
-        data = yaml.safe_load(raw) or {}
-    except ImportError:
-        if raw.strip().startswith("{"):
-            data = json.loads(raw)
-        else:
-            raise AIModelsConfigError(
-                f"AI models config requires PyYAML to parse {path}"
-            ) from None
-    except Exception as exc:
-        raise AIModelsConfigError(
-            f"Failed to parse AI models config {path}: {exc}"
-        ) from exc
+    data = _read_yaml_file(path)
+    root = path.parent
+    extra = os.getenv("AI_MODELS_CONFIG_EXTRA", "").strip()
+    extras = [p.strip() for p in extra.split(",") if p.strip()] if extra else []
+    if not extras:
+        extras = [
+            "vision-models.yaml",
+            "voice-models.yaml",
+            "rag-models.yaml",
+            "safety-models.yaml",
+        ]
+    for name in extras:
+        sibling = root / name
+        if sibling.is_file():
+            _merge_catalog_file(data, _read_yaml_file(sibling))
 
     if not isinstance(data, dict):
         raise AIModelsConfigError(
@@ -67,6 +66,41 @@ def load_ai_models_config(*, reload: bool = False) -> Dict[str, Any]:
 
     _config_cache = data
     return _config_cache
+
+
+def _read_yaml_file(path: Path) -> Dict[str, Any]:
+    raw = path.read_text(encoding="utf-8")
+    try:
+        import yaml
+
+        loaded = yaml.safe_load(raw) or {}
+    except ImportError:
+        if raw.strip().startswith("{"):
+            loaded = json.loads(raw)
+        else:
+            raise AIModelsConfigError(
+                f"AI models config requires PyYAML to parse {path}"
+            ) from None
+    except Exception as exc:
+        raise AIModelsConfigError(
+            f"Failed to parse AI models config {path}: {exc}"
+        ) from exc
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _merge_catalog_file(base: Dict[str, Any], extra: Dict[str, Any]) -> None:
+    for key in ("models",):
+        items = extra.get(key) or []
+        if items:
+            base.setdefault(key, [])
+            existing_ids = {str(m.get("id")) for m in base[key] if isinstance(m, dict)}
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                mid = str(item.get("id") or "")
+                if mid and mid not in existing_ids:
+                    base[key].append(item)
+                    existing_ids.add(mid)
 
 
 def get_timeouts() -> Dict[str, float]:
@@ -231,3 +265,139 @@ def routing_tiers_for_task(task: str) -> Dict[str, List[str]]:
             m for m in flat if m not in result["tier1"] and m not in result["tier2"]
         ]
     return result
+
+
+def get_health_monitor_config() -> Dict[str, Any]:
+    cfg = load_ai_models_config()
+    hm = cfg.get("healthMonitor") or {}
+    probe_tiers = hm.get("probeTiers") or {}
+    return {
+        "probeMaxTokens": int(hm.get("probeMaxTokens", 2)),
+        "probeConcurrency": int(hm.get("probeConcurrency", 5)),
+        "probeTiers": {
+            "critical": int(probe_tiers.get("critical", 300)),
+            "fallback": int(probe_tiers.get("fallback", 900)),
+        },
+        "warmupSuccessThreshold": int(hm.get("warmupSuccessThreshold", 3)),
+        "degradedLatencyMultiplier": float(hm.get("degradedLatencyMultiplier", 3)),
+        "degradedSuccessRateThreshold": float(hm.get("degradedSuccessRateThreshold", 0.95)),
+        "requestTelemetryWindowSeconds": int(hm.get("requestTelemetryWindowSeconds", 3600)),
+        "requestTelemetryWeight": float(hm.get("requestTelemetryWeight", 0.7)),
+        "scoreTieEpsilon": float(hm.get("scoreTieEpsilon", 0.05)),
+        "minSampleCountForRanking": int(hm.get("minSampleCountForRanking", 50)),
+        "confidenceFullSampleCount": int(hm.get("confidenceFullSampleCount", 500)),
+        "circuitConsecutiveFailures": int(hm.get("circuitConsecutiveFailures", 5)),
+        "circuitOpenSeconds": int(hm.get("circuitOpenSeconds", 300)),
+        "providerCircuitOpenSeconds": int(hm.get("providerCircuitOpenSeconds", 600)),
+        "rankingStabilitySeconds": int(hm.get("rankingStabilitySeconds", 1800)),
+        "rankingImprovementRatio": float(hm.get("rankingImprovementRatio", 0.20)),
+        "promotionCooldownSeconds": int(hm.get("promotionCooldownSeconds", 3600)),
+    }
+
+
+def _model_entry(model_id: str) -> Dict[str, Any]:
+    return dict(model_def(model_id) or {})
+
+
+def router_eligible(model_id: str) -> bool:
+    entry = _model_entry(model_id)
+    return bool(entry.get("routerEligible", False))
+
+
+_CHAT_PICKER_TASKS = frozenset(
+    {
+        "fast_chat",
+        "reasoning",
+        "coding",
+        "planner",
+        "summary",
+        "vision",
+        "file_analysis",
+        "attachment_read",
+    }
+)
+_INTERNAL_ONLY_ADAPTERS = frozenset(
+    {"nvidia_embed", "nvidia_rerank", "magpie_tts", "multimodal_stt"}
+)
+_INTERNAL_ONLY_TASKS = frozenset(
+    {"embedding", "rerank", "safety", "speech", "transcription", "image", "image_edit"}
+)
+
+
+def user_selectable(model_id: str) -> bool:
+    """Models shown in the user-facing model picker (beyond router pilot set)."""
+    entry = _model_entry(model_id)
+    if not entry:
+        return False
+    ui = get_model_ui(model_id)
+    if ui.get("selectable") or entry.get("routerEligible"):
+        return True
+    role = str(entry.get("runtimeRole") or "")
+    if role in ("llm", "vision"):
+        return True
+    tasks = set(entry.get("tasks") or [])
+    if not tasks or tasks <= _INTERNAL_ONLY_TASKS:
+        return False
+    adapter = str(entry.get("adapter") or "")
+    if adapter in _INTERNAL_ONLY_ADAPTERS:
+        return False
+    return bool(tasks & _CHAT_PICKER_TASKS)
+
+
+def runtime_router_model_ids() -> List[str]:
+    ids: List[str] = []
+    for entry in list_model_defs():
+        mid = str(entry.get("id") or "")
+        if mid and router_eligible(mid):
+            ids.append(mid)
+    return ids
+
+
+def get_model_probe_tier(model_id: str) -> Optional[str]:
+    entry = _model_entry(model_id)
+    tier = entry.get("probeTier")
+    return str(tier) if tier else None
+
+
+def models_for_probe_tier(tier: str) -> List[str]:
+    return [
+        mid
+        for mid in runtime_router_model_ids()
+        if get_model_probe_tier(mid) == tier
+    ]
+
+
+def get_model_capabilities(model_id: str) -> Dict[str, Any]:
+    entry = _model_entry(model_id)
+    caps = entry.get("capabilities") or {}
+    if isinstance(caps, dict) and caps:
+        return dict(caps)
+    role = str(entry.get("runtimeRole") or "")
+    tasks = set(entry.get("tasks") or [])
+    return {
+        "chat": "fast_chat" in tasks or role == "llm",
+        "coding": "coding" in tasks or role == "llm",
+        "reasoning": "reasoning" in tasks or role == "llm",
+        "vision": "vision" in tasks or role == "vision",
+        "toolCalling": True,
+        "jsonMode": True,
+        "streaming": True,
+    }
+
+
+def get_model_ui(model_id: str) -> Dict[str, Any]:
+    entry = _model_entry(model_id)
+    ui = entry.get("ui") or {}
+    if isinstance(ui, dict):
+        return dict(ui)
+    return {"selectable": router_eligible(model_id), "featured": False}
+
+
+def get_model_cost_class(model_id: str) -> str:
+    entry = _model_entry(model_id)
+    return str(entry.get("costClass") or "medium")
+
+
+def load_merged_catalog() -> Dict[str, Any]:
+    return load_ai_models_config()
+

@@ -1,21 +1,18 @@
 import { forwardRef, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  type BottomSheetModal as BottomSheetModalType,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { Check } from 'lucide-react-native';
 import { Text } from '@/components/ui/Text';
 import { Input } from '@/components/ui/Input';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/tokens';
-import { dismissBottomSheet } from '@/lib/bottom-sheet';
+import { AppBottomSheetModal, dismissBottomSheet, type BottomSheetModalType } from '@/lib/bottom-sheet';
 import {
   useSettingsStore,
   formatGenderLabel,
   ASSISTANT_NAME_MAX_LENGTH,
 } from '@/stores/settings';
+import { PickerIcon, resolvePersonalityIcon } from '@ai-assistant/icons';
 import { canCustomizeAssistantDisplayName } from '@ai-assistant/types';
 
 export const AssistantPickerSheet = forwardRef<BottomSheetModalType>(
@@ -50,7 +47,7 @@ export const AssistantPickerSheet = forwardRef<BottomSheetModalType>(
     };
 
     return (
-      <BottomSheetModal
+      <AppBottomSheetModal
         ref={ref}
         snapPoints={['55%', '85%']}
         onDismiss={handleDismiss}
@@ -96,6 +93,9 @@ export const AssistantPickerSheet = forwardRef<BottomSheetModalType>(
                   dismissBottomSheet(ref);
                 }}
                 style={[styles.row, { borderBottomColor: colors.border }]}>
+                <PickerIcon
+                  spec={resolvePersonalityIcon(preset.id, preset.gender)}
+                />
                 <View style={styles.rowText}>
                   <Text variant="bodyMedium">{preset.name}</Text>
                   <Text variant="caption" muted>
@@ -107,7 +107,7 @@ export const AssistantPickerSheet = forwardRef<BottomSheetModalType>(
             );
           })}
         </BottomSheetScrollView>
-      </BottomSheetModal>
+      </AppBottomSheetModal>
     );
   }
 );

@@ -20,13 +20,10 @@ Thumbs.db
 packages/database/generated/
 packages/database/prisma/.schema.staging.prisma
 
-services/whatsapp-bridge/data/
-data/uploads/
-data/wa-auth/
 services/gateway/data/wa-auth/
 services/gateway/data/uploads/
 
-services/ai-runtime/**/__pycache__/
+services/ai-runtime/qdrant_db/
 
 packages/database/prisma/dev.db
 packages/database/prisma/dev.db-journal

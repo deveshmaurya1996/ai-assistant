@@ -6,6 +6,13 @@ import {
 
 export type PermissionStatus = 'granted' | 'denied' | 'undetermined';
 
+export async function getMicPermissionStatus(): Promise<PermissionStatus> {
+  const current = await getRecordingPermissionsAsync();
+  if (current.granted) return 'granted';
+  if (current.canAskAgain === false) return 'denied';
+  return 'undetermined';
+}
+
 export async function requestMicPermission(): Promise<PermissionStatus> {
   const current = await getRecordingPermissionsAsync();
   if (current.granted) return 'granted';

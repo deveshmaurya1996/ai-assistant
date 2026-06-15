@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 import { ApiError } from '@ai-assistant/sdk';
 import { apiClient } from '@/lib/api-client';
 import { hasAuthCredentials } from '@/lib/auth-cookies';
-import { requestNotificationPermission } from './requestNotificationPermission';
+import { getNotificationPermissionStatus } from './requestNotificationPermission';
 import {
   clearPendingPushRegistration,
   getPendingPushRegistration,
@@ -91,13 +91,17 @@ export async function flushPendingPushRegistration(): Promise<boolean> {
 export async function registerPushTokenIfNeeded(
   reminderOverlayEnabled = false
 ): Promise<void> {
+  if (!hasAuthCredentials()) {
+    return;
+  }
+
   if (!Device.isDevice) {
     console.warn('[push] skipped — use a physical device for push tokens');
     return;
   }
 
   try {
-    const permission = await requestNotificationPermission();
+    const permission = await getNotificationPermissionStatus();
     if (permission !== 'granted') {
       console.warn('[push] skipped — notification permission not granted');
       return;
@@ -112,16 +116,6 @@ export async function registerPushTokenIfNeeded(
       platform,
       reminderOverlayEnabled,
     };
-
-    if (!hasAuthCredentials()) {
-      await savePendingPushRegistration({
-        token: registration.token,
-        platform: registration.platform,
-        prefs: { reminderOverlayEnabled },
-      });
-      await setReminderOverlayEnabledNative(reminderOverlayEnabled);
-      return;
-    }
 
     const result = await tryRegisterWithServer(registration);
     if (result === 'unauthorized') {

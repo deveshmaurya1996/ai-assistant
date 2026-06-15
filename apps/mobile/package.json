@@ -3,6 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@ai-assistant/icons": "workspace:*",
     "@ai-assistant/sdk": "workspace:*",
     "@ai-assistant/types": "workspace:*",
     "@better-auth/expo": "1.6.11",

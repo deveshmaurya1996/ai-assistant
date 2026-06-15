@@ -1,11 +1,8 @@
-import { useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
 import { Redirect } from 'expo-router';
 import { Drawer } from 'expo-router/drawer';
 import { DrawerContent } from '@/components/layout/DrawerContent';
 import { useTheme } from '@/theme/ThemeProvider';
 import { useThemedScreenOptions } from '@/theme/useThemedScreenOptions';
-import { promptOverlayPermissionIfNeeded } from '@/lib/overlay-prompt';
 import { ChatImagePreviewHost } from '@/features/chat/ChatImagePreviewHost';
 import { VoiceSessionHost } from '@/features/voice-assistant/VoiceSessionHost';
 import { ActionConfirmSheet } from '@/components/integrations/ActionConfirmSheet';
@@ -35,6 +32,7 @@ function AppDrawerLayoutContent() {
         onCancel={() => cancelPendingAction()}
       />
       <Drawer
+        backBehavior="history"
         drawerContent={(props) => <DrawerContent {...props} />}
         screenOptions={{
           ...screenOptions,
@@ -94,13 +92,6 @@ function AppDrawerLayoutContent() {
             swipeEnabled: false,
           }}
         />
-        <Drawer.Screen
-          name="memory"
-          options={{
-            drawerItemStyle: { display: 'none' },
-            swipeEnabled: false,
-          }}
-        />
       </Drawer>
     </>
   );
@@ -108,16 +99,6 @@ function AppDrawerLayoutContent() {
 
 export default function AppDrawerLayout() {
   const { session, loading } = useAuthStore();
-  const overlayPrompted = useRef(false);
-
-  useEffect(() => {
-    if (Platform.OS !== 'android' || overlayPrompted.current) return;
-    overlayPrompted.current = true;
-    const timer = setTimeout(() => {
-      void promptOverlayPermissionIfNeeded();
-    }, 800);
-    return () => clearTimeout(timer);
-  }, []);
 
   if (loading) {
     return <AppSplash />;

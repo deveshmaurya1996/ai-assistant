@@ -1,15 +1,11 @@
 import { forwardRef, useCallback, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import {
-  BottomSheetModal,
-  BottomSheetView,
-  type BottomSheetModal as BottomSheetModalType,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetView } from '@gorhom/bottom-sheet';
 import { Text } from '@/components/ui/Text';
 import { Button } from '@/components/ui/Button';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/tokens';
-import { dismissBottomSheet } from '@/lib/bottom-sheet';
+import { AppBottomSheetModal, dismissBottomSheet, type BottomSheetModalType } from '@/lib/bottom-sheet';
 import { apiClient } from '@/lib/api-client';
 import { formatChatMessagesForShare, shareText } from '@/lib/share';
 
@@ -51,7 +47,7 @@ export const ShareChatSheet = forwardRef<BottomSheetModalType, Props>(
     }, [sessionId, title, ref]);
 
     return (
-      <BottomSheetModal
+      <AppBottomSheetModal
         ref={ref}
         snapPoints={['40%']}
         enablePanDownToClose
@@ -81,7 +77,7 @@ export const ShareChatSheet = forwardRef<BottomSheetModalType, Props>(
             style={styles.button}
           />
         </BottomSheetView>
-      </BottomSheetModal>
+      </AppBottomSheetModal>
     );
   }
 );

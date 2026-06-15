@@ -5,8 +5,8 @@ from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from memory.rag_service import RAGService
-from observability import langfuse_span
+from rag.rag_service import RAGService
+from internal.observability import langfuse_span
 from models.registry import get_models_catalog
 from models import media
 from models.transcription import get_transcription_provider
@@ -15,11 +15,13 @@ from agents.supervisor import run_agent
 from api.chat import router as chat_router
 from api.image_chat import router as image_chat_router
 from api.providers import router as providers_router
+from api.model_admin import router as model_admin_router
 
 router = APIRouter()
 router.include_router(chat_router)
 router.include_router(image_chat_router)
 router.include_router(providers_router)
+router.include_router(model_admin_router)
 
 
 class DocumentItem(BaseModel):
@@ -139,7 +141,7 @@ async def memory_search(
 
     t0 = time.perf_counter()
     try:
-        from memory.embed_cache import cache_stats
+        from cache.embedding_cache import cache_stats
 
         rag = RAGService()
         results = await rag.search_context_async(

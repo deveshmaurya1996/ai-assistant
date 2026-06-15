@@ -55,9 +55,7 @@ function auditDockerfileCopySources() {
     'planner-config',
     'infra/supervisor/supervisord.conf',
     'services/ai-runtime/requirements.txt',
-    'services/cognitive-runtime/requirements.txt',
     'services/ai-runtime',
-    'services/cognitive-runtime',
   ]);
 
   for (const line of dockerfile.split('\n')) {

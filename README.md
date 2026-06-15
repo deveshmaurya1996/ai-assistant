@@ -2,10 +2,6 @@
 
 AI-native assistant with streaming chat, memory, multi-agent orchestration, voice, and cross-platform clients.
 
-For full AI implementation context (chat, tools, voice, RAG, models, file map), see **[docs/CORE_AI_README.md](docs/CORE_AI_README.md)**.
-
-For the AI OS evolution roadmap (capabilities, connectors, renames), see **[docs/AI_OS_EVOLUTION.md](docs/AI_OS_EVOLUTION.md)**.
-
 ## Architecture
 
 ```
@@ -121,8 +117,7 @@ pnpm catalog:validate   # catalog YAML consistency
 apps/mobile          Expo React Native client
 apps/web             Next.js dashboard
 services/gateway            Fastify API + Socket.IO + workers
-services/ai-runtime         Intelligence — models, RAG, voice
-services/cognitive-runtime  Planner + executor (Python library, mounted in ai-runtime)
+services/ai-runtime         Intelligence — models, RAG, voice, agent orchestration
 services/capability-runtime Capability execution (in-process in gateway)
 services/tool-runtime       Tool executor library (in-process in gateway)
 catalog/             Single source of truth (providers, capabilities, tools, policy)
@@ -169,7 +164,7 @@ Voice mode is a full **STT → LLM → TTS** pipeline through the API and AI ser
 
 Configure providers via root `.env`: `TRANSCRIPTION_*`, `TEXT_MODEL`, `OPENAI_API_KEY`, `POLLINATIONS_API_KEY`, `SPEECH_VOICE`, `VOICE_MODE`, etc. (see `.env.example`).
 
-**Provider routing:** AI service uses capability-based routers (`services/ai-runtime/orchestration/`, `services/ai-runtime/docs/ARCHITECTURE.md`). Pollinations is Tier-3 fallback only — not used for realtime duplex voice. Mobile never calls providers directly.
+**Provider routing:** AI service uses capability-based modules (`services/ai-runtime/orchestration/`, `services/ai-runtime/llm/`). Pollinations is Tier-3 fallback only — not used for realtime duplex voice. Mobile never calls providers directly.
 
 **Assistant APIs:** `GET /assistant/personalities`, `POST /assistant/context/evaluate`, `POST /assistant/proactive/score`, `GET /assistant/voice/mode`, `POST /assistant/voice/live/token` (stubs for Phase 4 Live).
 

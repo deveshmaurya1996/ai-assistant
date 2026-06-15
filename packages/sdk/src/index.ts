@@ -270,8 +270,19 @@ export class AssistantClient {
     return socket;
   }
 
-  async getModels() {
-    return this.request<ModelsResponse>('/settings/models');
+  async getModels(task = 'fast_chat') {
+    const q = task ? `?task=${encodeURIComponent(task)}` : '';
+    return this.request<ModelsResponse>(`/settings/models${q}`);
+  }
+
+  async setPreferredModel(preferredModelId: string | null) {
+    return this.request<{ ok: boolean; preferredModelId: string | null; mode: string }>(
+      '/settings/models/preferred',
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ preferredModelId }),
+      }
+    );
   }
 
   async listPersonalities() {

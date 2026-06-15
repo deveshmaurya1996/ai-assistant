@@ -6,7 +6,7 @@
     "postinstall": "node scripts/postinstall.mjs",
     "catalog:generate": "node packages/catalog-codegen/scripts/generate.mjs",
     "catalog:validate": "node packages/catalog-codegen/scripts/validate.mjs",
-    "build": "pnpm catalog:generate && pnpm catalog:validate && pnpm exec turbo run build --filter=@ai-assistant/config --filter=@ai-assistant/types --filter=@ai-assistant/telemetry --filter=@ai-assistant/events --filter=@ai-assistant/tool-schema --filter=@ai-assistant/permissions --filter=@ai-assistant/capabilities --filter=@ai-assistant/connectors --filter=@ai-assistant/platform --filter=@ai-assistant/workflows --filter=@ai-assistant/integration-runtime --filter=@ai-assistant/feature-flags --filter=@ai-assistant/database --filter=@ai-assistant/auth --filter=@ai-assistant/gateway --filter=@ai-assistant/sdk --filter=@ai-assistant/tool-runtime --filter=@ai-assistant/capability-runtime",
+    "build": "pnpm catalog:generate && pnpm catalog:validate && pnpm exec turbo run build --filter=@ai-assistant/config --filter=@ai-assistant/types --filter=@ai-assistant/icons --filter=@ai-assistant/telemetry --filter=@ai-assistant/events --filter=@ai-assistant/tool-schema --filter=@ai-assistant/permissions --filter=@ai-assistant/capabilities --filter=@ai-assistant/connectors --filter=@ai-assistant/platform --filter=@ai-assistant/workflows --filter=@ai-assistant/integration-runtime --filter=@ai-assistant/feature-flags --filter=@ai-assistant/database --filter=@ai-assistant/auth --filter=@ai-assistant/gateway --filter=@ai-assistant/sdk --filter=@ai-assistant/tool-runtime --filter=@ai-assistant/capability-runtime",
     "dev": "node scripts/ports.mjs up",
     "dev:down": "tilt down",
     "dev:gateway": "node scripts/with-env.mjs node scripts/dev.mjs serve gateway",
@@ -29,6 +29,7 @@
     "typescript": "~6.0.3"
   },
   "devDependencies": {
+    "@types/node": "^22.10.0",
     "is-unicode-supported": "^2.1.0",
     "prettier": "latest"
   },

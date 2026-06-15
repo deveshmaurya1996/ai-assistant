@@ -26,7 +26,6 @@ def ai_service():
             '.env',
             'planner-config',
             'services/ai-runtime',
-            'services/cognitive-runtime',
         ],
         env=active_port_env(),
         ignore=SERVICE_BUILD_IGNORE,

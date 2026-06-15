@@ -23,8 +23,8 @@ export function validatePlanner({ live = false, fixture = false, pytest = false 
   run('node packages/connectors/scripts/sync.mjs');
 
   if (pytest) {
-    console.log('[postinstall] cognitive-runtime pytest...');
-    run('python -m pytest services/cognitive-runtime/tests -q');
+    console.log('[postinstall] ai-runtime agent pytest...');
+    run('python -m pytest services/ai-runtime/tests -q');
     return;
   }
 

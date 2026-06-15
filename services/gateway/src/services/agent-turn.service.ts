@@ -26,6 +26,14 @@ export type AgentTurnInput = {
   fileRetrievalContext?: string;
   sessionContext?: string;
   timezone?: string;
+  preferredModelId?: string;
+  sessionModelId?: string;
+  modelAssignment?: {
+    assignedModelId: string;
+    assignedReason: string;
+    assignedAt: string;
+    fallbackCount: number;
+  };
 };
 
 export type ActionConfirmPayload = {
@@ -128,6 +136,8 @@ export async function runAgentTurn(
         file_retrieval_context: input.fileRetrievalContext ?? '',
         session_context: input.sessionContext ?? '',
         timezone: input.timezone,
+        preferred_model_id: input.preferredModelId,
+        session_model_id: input.sessionModelId,
       },
       { signal }
     );

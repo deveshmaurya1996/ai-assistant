@@ -1,4 +1,4 @@
-from memory.embed_cache import (
+from cache.embedding_cache import (
     cache_stats,
     get_cached_embedding,
     set_cached_embedding,

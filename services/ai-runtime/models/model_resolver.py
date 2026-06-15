@@ -80,7 +80,7 @@ _VISION_FALLBACK_TASKS = frozenset({"vision", "file_analysis"})
 
 
 def resolve_chain(task: str) -> List[str]:
-    from models.orchestration.circuit_breaker import circuit_breaker
+    from llm.provider_monitor import circuit_breaker
 
     candidates = routing_for_task(task)
     available = [
@@ -127,7 +127,7 @@ def litellm_kwargs(
     allow_thinking: Optional[bool] = None,
     speed_profile: Optional[str] = None,
 ) -> Dict[str, Any]:
-    from models.orchestration.param_policy import apply_task_policy
+    from llm.param_policy import apply_task_policy
 
     timeout = timeout_for_model(model_id, stream=stream)
     entry = model_def(model_id) or {}
@@ -220,6 +220,12 @@ _pollinations_base_url = pollinations_base_url
 
 
 def get_models_catalog() -> Dict[str, Any]:
+    from models.config_loader import (
+        get_model_cost_class,
+        get_model_ui,
+        router_eligible,
+    )
+
     models = []
     for entry in list_model_defs():
         mid = str(entry.get("id", ""))
@@ -232,6 +238,9 @@ def get_models_catalog() -> Dict[str, Any]:
                 "tier": entry.get("tier"),
                 "adapter": entry.get("adapter"),
                 "available": model_is_available(mid),
+                "routerEligible": router_eligible(mid),
+                "costClass": get_model_cost_class(mid),
+                "ui": get_model_ui(mid),
             }
         )
 

@@ -21,9 +21,8 @@ if (!token) {
   process.exit(1);
 }
 
-const samplePath = path.join(process.cwd(), 'services', 'ai-runtime', 'docs', 'ARCHITECTURE.md');
-const fallback = path.join(process.cwd(), 'README.md');
-const filePath = fs.existsSync(samplePath) ? samplePath : fallback;
+const samplePath = path.join(process.cwd(), 'README.md');
+const filePath = samplePath;
 const buffer = fs.readFileSync(filePath);
 const filename = path.basename(filePath);
 

@@ -476,3 +476,32 @@ model IntegrationMessage {
   @@index([threadId])
   @@index([sentAt])
 }
+
+model ModelRuntimeOverride {
+  id              String    @id @default(cuid())
+  modelId         String    @unique
+  enabled         Boolean?
+  forceTier       Int?
+  forcePrimary    Boolean   @default(false)
+  quarantined     Boolean   @default(false)
+  maintenanceMode Boolean   @default(false)
+  priority        Int       @default(0)
+  reason          String?
+  expiresAt       DateTime?
+  updatedBy       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model ModelRequestMetric {
+  id        String   @id @default(cuid())
+  modelId   String
+  task      String
+  latencyMs Int
+  success   Boolean
+  region    String   @default("global")
+  createdAt DateTime @default(now())
+
+  @@index([modelId, createdAt])
+  @@index([createdAt])
+}

@@ -2,6 +2,11 @@ import { resolveAssistantContext, normalizePersonalityId, type ChatAttachmentRef
 import { prisma, Prisma, Role, type ChatSessionKind as PrismaChatSessionKind } from '@ai-assistant/database';
 import { toChatAttachmentRef, uploadUserFile } from './file.service';
 import { updateSessionFileContext } from './file-registry.service';
+import {
+  getSessionModelAssignment,
+  persistSessionModelAssignment,
+} from './session-model-context.service';
+import { getUserPreferredModelId } from './user-model-preference.service';
 import { deleteEpisodicMemoryForSession, ingestConversationMemory } from './memory.service';
 import { buildAgentTurnInput } from './chat-turn-input';
 import { chatHistoryLimit, loadRecentChatHistory } from './chat-history.service';
@@ -442,6 +447,7 @@ export async function processChatMessage(params: {
   personalityId?: string;
   assistantDisplayName?: string;
   timezone?: string;
+  preferredModelId?: string;
   onChunk: (chunk: string, sessionId: string) => void | Promise<void>;
   onStatus?: (message: string, sessionId: string) => void | Promise<void>;
   onSessionCreated?: (sessionId: string) => void;
@@ -520,7 +526,12 @@ export async function processChatMessage(params: {
     personalityId: params.personalityId,
     assistantDisplayName: params.assistantDisplayName,
     timezone: deviceTimezone,
+    preferredModelId:
+      params.preferredModelId ?? (await getUserPreferredModelId(userId)),
+    modelAssignment: await getSessionModelAssignment(sessionId),
   });
+
+  const stickyModelId = turnInput.sessionModelId;
 
   let turn;
   try {
@@ -530,8 +541,14 @@ export async function processChatMessage(params: {
         onToken: (token) => onChunk(token, sessionId),
         onStatus: (message) => params.onStatus?.(message, sessionId),
         onActionConfirmRequired: params.onActionConfirmRequired,
-        onModelUsed: (modelId, label) =>
-          params.onModelUsed?.(sessionId, modelId, label),
+        onModelUsed: async (modelId, label) => {
+          const taskReason = turnInput.modelAssignment?.assignedReason ?? 'fast_chat';
+          await persistSessionModelAssignment(sessionId, modelId, taskReason, {
+            isFailover: stickyModelId != null && stickyModelId !== modelId,
+            previousModelId: stickyModelId,
+          });
+          params.onModelUsed?.(sessionId, modelId, label);
+        },
         onImageGenerated: async ({ imageBase64, mimeType }) => {
           const buffer = Buffer.from(imageBase64, 'base64');
           const ext = mimeType.includes('png') ? 'png' : 'jpg';

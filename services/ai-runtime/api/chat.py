@@ -9,13 +9,13 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from memory.rag_service import RAGService
+from rag.rag_service import RAGService
 from models.registry import get_models_catalog, get_rag_config, label_for, model_is_available
-from models.streaming import stream_completion_sse
+from models.streaming.completion import stream_completion_sse
 from models.streaming.completion import complete_text
 from models.streaming.title import generate_chat_title
 from models.task_router import classify_task, is_rag_relevant_query
-from observability import get_langfuse
+from internal.observability import get_langfuse
 from api.attachment_content import (
     collect_vision_urls,
     user_content_from_attachments as _user_content_from_attachments,
@@ -42,6 +42,8 @@ class ChatStreamRequest(BaseModel):
     personality_id: Optional[str] = None
     assistant_display_name: Optional[str] = None
     system_prompt: Optional[str] = None
+    preferred_model_id: Optional[str] = None
+    session_model_id: Optional[str] = None
 
 
 class ChatCompleteRequest(BaseModel):
@@ -56,6 +58,8 @@ class ChatCompleteRequest(BaseModel):
     personality_id: Optional[str] = None
     assistant_display_name: Optional[str] = None
     system_prompt: Optional[str] = None
+    preferred_model_id: Optional[str] = None
+    session_model_id: Optional[str] = None
 
 
 class ChatTitleRequest(BaseModel):
@@ -272,6 +276,8 @@ async def chat_stream(payload: ChatStreamRequest, request: Request):
                 deadline_ms=payload.deadline_ms,
                 task_locked=payload.task_locked,
                 cancel_event=cancel_event,
+                preferred_model_id=payload.preferred_model_id,
+                session_model_id=payload.session_model_id,
             ):
                 if cancel_on_disconnect and await request.is_disconnected():
                     cancel_event.set()

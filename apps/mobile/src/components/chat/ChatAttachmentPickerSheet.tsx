@@ -1,15 +1,11 @@
 import { forwardRef } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import {
-  BottomSheetModal,
-  BottomSheetView,
-  type BottomSheetModal as BottomSheetModalType,
-} from '@gorhom/bottom-sheet';
+import { BottomSheetView } from '@gorhom/bottom-sheet';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Text } from '@/components/ui/Text';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing, radii } from '@/theme/tokens';
-import { dismissBottomSheet } from '@/lib/bottom-sheet';
+import { AppBottomSheetModal, dismissBottomSheet, type BottomSheetModalType } from '@/lib/bottom-sheet';
 
 type Props = {
   onCamera: () => void | Promise<void>;
@@ -34,7 +30,7 @@ export const ChatAttachmentPickerSheet = forwardRef<BottomSheetModalType, Props>
     ];
 
     return (
-      <BottomSheetModal
+      <AppBottomSheetModal
         ref={ref}
         snapPoints={['35%']}
         enablePanDownToClose
@@ -72,7 +68,7 @@ export const ChatAttachmentPickerSheet = forwardRef<BottomSheetModalType, Props>
             );
           })}
         </BottomSheetView>
-      </BottomSheetModal>
+      </AppBottomSheetModal>
     );
   }
 );

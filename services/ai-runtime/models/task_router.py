@@ -81,7 +81,7 @@ def classify_task(query: str, explicit_task: Optional[str] = None) -> str:
 
 
 def is_rag_relevant_query(query: str) -> bool:
-    """Align with cognitive-runtime smart retrieval (see should_retrieve_rag_context)."""
+    """Align with smart retrieval in context_builder (see should_retrieve_rag_context)."""
     import os
 
     if os.getenv("RAG_RETRIEVAL_MODE", "smart").strip().lower() == "always":

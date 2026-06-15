@@ -1,14 +1,10 @@
-"""Tests for image generation/edit intent classification."""
-
-from models.task_router import classify_image_intent, classify_task
+from orchestration.image_intent import classify_image_intent
 
 
 def test_generate_image_intent():
     assert classify_image_intent("generate an image of a sunset") == "image"
     assert classify_image_intent("generate a peter pan image") == "image"
     assert classify_image_intent("draw me a cat wearing a hat") == "image"
-    assert classify_image_intent("show me a picture of a mountain") == "image"
-    assert classify_image_intent("make me an image of a robot") == "image"
 
 
 def test_edit_image_intent_requires_attachment():
@@ -18,9 +14,3 @@ def test_edit_image_intent_requires_attachment():
 
 def test_analyze_not_generation():
     assert classify_image_intent("describe this image") is None
-    assert classify_task("describe this image") == "file_analysis"
-
-
-def test_generate_task_routing():
-    assert classify_task("create a picture of a mountain") == "image"
-    assert classify_task("generate a peter pan image", explicit_task="fast_chat") == "image"

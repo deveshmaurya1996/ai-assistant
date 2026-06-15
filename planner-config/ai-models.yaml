@@ -39,6 +39,27 @@ orchestration:
     maxConcurrentPerTier: 2
     probeTimeoutSeconds: 8
 
+healthMonitor:
+  probeMaxTokens: 2
+  probeConcurrency: 5
+  probeTiers:
+    critical: 300
+    fallback: 900
+  warmupSuccessThreshold: 3
+  degradedLatencyMultiplier: 3
+  degradedSuccessRateThreshold: 0.95
+  requestTelemetryWindowSeconds: 3600
+  requestTelemetryWeight: 0.7
+  scoreTieEpsilon: 0.05
+  minSampleCountForRanking: 50
+  confidenceFullSampleCount: 500
+  circuitConsecutiveFailures: 5
+  circuitOpenSeconds: 300
+  providerCircuitOpenSeconds: 600
+  rankingStabilitySeconds: 1800
+  rankingImprovementRatio: 0.20
+  promotionCooldownSeconds: 3600
+
 speedProfiles:
   fast_response:
     task: fast_chat
@@ -125,7 +146,48 @@ models:
     label: DeepSeek V4 Flash
     provider: nvidia
     providerModel: deepseek-ai/deepseek-v4-flash
+    routerEligible: true
+    runtimeRole: llm
+    probeTier: critical
+    costClass: cheap
     tasks: [fast_chat, summary, title]
+    capabilities:
+      chat: true
+      coding: true
+      reasoning: true
+      vision: false
+      toolCalling: true
+      jsonMode: true
+      streaming: true
+    ui:
+      selectable: true
+      featured: true
+    tier: A
+    streamTimeout: 120
+    completeTimeout: 90
+    defaultParams:
+      temperature: 1.0
+      top_p: 0.95
+      max_tokens: 16384
+
+  - id: nvidia/deepseek-v4-pro
+    label: DeepSeek V4 Pro
+    provider: nvidia
+    providerModel: deepseek-ai/deepseek-v4-pro
+    routerEligible: true
+    runtimeRole: llm
+    probeTier: fallback
+    costClass: medium
+    tasks: [reasoning, coding]
+    capabilities:
+      chat: true
+      coding: true
+      reasoning: true
+      toolCalling: true
+      jsonMode: true
+      streaming: true
+    ui:
+      selectable: true
     tier: A
     streamTimeout: 120
     completeTimeout: 90
@@ -138,7 +200,21 @@ models:
     label: GLM 5.1
     provider: nvidia
     providerModel: z-ai/glm-5.1
+    routerEligible: true
+    runtimeRole: llm
+    probeTier: critical
+    costClass: medium
     tasks: [reasoning]
+    capabilities:
+      chat: true
+      coding: true
+      reasoning: true
+      toolCalling: true
+      jsonMode: true
+      streaming: true
+    ui:
+      selectable: true
+      featured: true
     tier: A
     streamTimeout: 120
     completeTimeout: 90
@@ -151,7 +227,20 @@ models:
     label: Qwen3 Next 80B
     provider: nvidia
     providerModel: qwen/qwen3-next-80b-a3b-instruct
+    routerEligible: true
+    runtimeRole: llm
+    probeTier: fallback
+    costClass: medium
     tasks: [coding]
+    capabilities:
+      chat: true
+      coding: true
+      reasoning: true
+      toolCalling: true
+      jsonMode: true
+      streaming: true
+    ui:
+      selectable: true
     tier: A
     streamTimeout: 90
     completeTimeout: 60
@@ -164,7 +253,20 @@ models:
     label: Nemotron 3 Ultra
     provider: nvidia
     providerModel: nvidia/nemotron-3-ultra-550b-a55b
+    routerEligible: true
+    runtimeRole: llm
+    probeTier: fallback
+    costClass: expensive
     tasks: [planner]
+    capabilities:
+      chat: true
+      coding: true
+      reasoning: true
+      toolCalling: true
+      jsonMode: true
+      streaming: true
+    ui:
+      selectable: true
     tier: A
     streamTimeout: 180
     completeTimeout: 120
@@ -211,7 +313,20 @@ models:
     label: Mistral Nemotron
     provider: nvidia
     providerModel: mistralai/mistral-nemotron
+    routerEligible: true
+    runtimeRole: llm
+    probeTier: fallback
+    costClass: medium
     tasks: [fast_chat, reasoning, coding, planner, summary]
+    capabilities:
+      chat: true
+      coding: true
+      reasoning: true
+      toolCalling: true
+      jsonMode: true
+      streaming: true
+    ui:
+      selectable: true
     tier: A
     streamTimeout: 90
     completeTimeout: 60
@@ -290,7 +405,17 @@ models:
     label: Llama 4 Maverick 17B
     provider: nvidia
     providerModel: meta/llama-4-maverick-17b-128e-instruct
+    routerEligible: true
+    runtimeRole: vision
+    probeTier: fallback
+    costClass: medium
     tasks: [vision]
+    capabilities:
+      vision: true
+      chat: true
+      streaming: true
+    ui:
+      selectable: true
     tier: C
     streamTimeout: 120
     completeTimeout: 90
@@ -298,6 +423,59 @@ models:
       temperature: 1.0
       top_p: 1.0
       max_tokens: 1024
+
+  - id: nvidia/qwen3.5-397b
+    label: Qwen 3.5 397B
+    provider: nvidia
+    providerModel: qwen/qwen3.5-397b-a17b
+    routerEligible: true
+    runtimeRole: vision
+    probeTier: fallback
+    costClass: expensive
+    tasks: [vision, file_analysis]
+    capabilities:
+      vision: true
+      chat: true
+      streaming: true
+    ui:
+      selectable: true
+    tier: C
+    streamTimeout: 180
+    completeTimeout: 120
+
+  - id: nvidia/nemotron-3-nano-omni
+    label: Nemotron 3 Nano Omni
+    provider: nvidia
+    providerModel: nvidia/nemotron-3-nano-omni
+    routerEligible: true
+    runtimeRole: vision
+    probeTier: fallback
+    costClass: medium
+    tasks: [vision, file_analysis]
+    capabilities:
+      vision: true
+      chat: true
+      streaming: true
+    ui:
+      selectable: true
+    tier: C
+
+  - id: nvidia/phi-4-multimodal-instruct
+    label: Phi-4 Multimodal Instruct
+    provider: nvidia
+    providerModel: microsoft/phi-4-multimodal-instruct
+    routerEligible: true
+    runtimeRole: vision
+    probeTier: fallback
+    costClass: cheap
+    tasks: [vision]
+    capabilities:
+      vision: true
+      chat: true
+      streaming: true
+    ui:
+      selectable: true
+    tier: C
 
   - id: nvidia/magpie-tts-zeroshot
     label: Magpie TTS Zeroshot
@@ -351,7 +529,20 @@ models:
     label: Groq Llama 3.3 70B
     provider: groq
     providerModel: llama-3.3-70b-versatile
+    routerEligible: true
+    runtimeRole: llm
+    probeTier: critical
+    costClass: cheap
     contextWindow: 128000
+    capabilities:
+      chat: true
+      coding: true
+      reasoning: true
+      toolCalling: true
+      jsonMode: true
+      streaming: true
+    ui:
+      selectable: true
     raceTier: 1
     tasks: [fast_chat, reasoning, coding, planner, summary, attachment_read]
     streamTimeout: 5
@@ -376,6 +567,19 @@ models:
     label: Groq GPT-OSS 120B
     provider: groq
     providerModel: openai/gpt-oss-120b
+    routerEligible: true
+    runtimeRole: llm
+    probeTier: fallback
+    costClass: medium
+    capabilities:
+      chat: true
+      coding: true
+      reasoning: true
+      toolCalling: true
+      jsonMode: true
+      streaming: true
+    ui:
+      selectable: true
     raceTier: 1
     tasks: [reasoning, coding]
     streamTimeout: 8

@@ -3,6 +3,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+_env_loaded = False
+
 
 def find_monorepo_root() -> Path:
     current = Path(__file__).resolve().parent
@@ -32,7 +34,77 @@ def resolve_env_file(root: Path) -> Path | None:
 
 
 def load_monorepo_env() -> None:
+    global _env_loaded
+    if _env_loaded:
+        return
     root = find_monorepo_root()
     env_path = resolve_env_file(root)
     if env_path:
         load_dotenv(env_path)
+    _env_loaded = True
+
+
+def load_service_env() -> None:
+    """Alias for cognitive orchestration modules."""
+    load_monorepo_env()
+
+
+def _ensure_env() -> None:
+    if not _env_loaded:
+        load_monorepo_env()
+
+
+def _public_api_url_from_env() -> str:
+    raw = (
+        os.getenv("API_PUBLIC_URL", "").strip()
+        or os.getenv("GATEWAY_URL", "").strip()
+    )
+    if raw:
+        return raw.rstrip("/")
+    port = os.getenv("API_PORT", "3000")
+    return f"http://localhost:{port}"
+
+
+def resolve_public_api_url() -> str:
+    _ensure_env()
+    return _public_api_url_from_env()
+
+
+def resolve_internal_gateway_url() -> str:
+    """Loopback gateway URL for in-container calls."""
+    _ensure_env()
+    explicit = os.getenv("GATEWAY_INTERNAL_URL", "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    if os.getenv("NODE_ENV") == "production" or os.getenv("RENDER") == "true":
+        port = os.getenv("API_PORT") or os.getenv("PORT") or "10000"
+        return f"http://127.0.0.1:{port}"
+    return resolve_public_api_url()
+
+
+def resolve_tool_runtime_url() -> str:
+    _ensure_env()
+    explicit = os.getenv("TOOL_RUNTIME_URL", "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    return f"{resolve_internal_gateway_url()}/internal/tools"
+
+
+def resolve_capability_runtime_url() -> str:
+    _ensure_env()
+    explicit = os.getenv("CAPABILITY_RUNTIME_URL", "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+    return f"{resolve_internal_gateway_url()}/internal/capabilities"
+
+
+def resolve_ai_service_url() -> str:
+    _ensure_env()
+    explicit = (
+        os.getenv("INTELLIGENCE_UPSTREAM_URL", "").strip()
+        or os.getenv("AI_SERVICE_URL", "").strip()
+    )
+    if explicit:
+        return explicit.rstrip("/")
+    port = os.getenv("AI_PORT", os.getenv("PORT", "8000"))
+    return f"http://localhost:{port}"

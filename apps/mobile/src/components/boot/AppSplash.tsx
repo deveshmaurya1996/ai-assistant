@@ -39,7 +39,7 @@ export function AppSplash({ ready = false, onComplete, playVideo = false }: Prop
 
   return (
     <View style={[styles.root, { backgroundColor: splashBackground }]}>
-      <SplashLogo size={180} ready={ready} onExitComplete={finish} />
+      <SplashLogo size={150} ready={ready} onExitComplete={finish} />
     </View>
   );
 }

@@ -2,7 +2,6 @@
 node_modules/
 **/node_modules/
 services/ai-runtime/venv/
-services/cognitive-runtime/venv/
 **/__pycache__/
 *.pyc
 .pytest_cache/

@@ -26,9 +26,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 COPY services/ai-runtime/requirements.txt ./services/ai-runtime/requirements.txt
-COPY services/cognitive-runtime/requirements.txt ./services/cognitive-runtime/requirements.txt
-RUN pip install --no-cache-dir -r services/ai-runtime/requirements.txt \
- && pip install --no-cache-dir -r services/cognitive-runtime/requirements.txt
+RUN pip install --no-cache-dir -r services/ai-runtime/requirements.txt
 
 FROM python:3.11-slim-bookworm AS runtime
 WORKDIR /app
@@ -48,23 +46,22 @@ COPY --from=node_build /app/services/capability-runtime ./services/capability-ru
 COPY connectors ./connectors
 COPY catalog ./catalog
 COPY services/ai-runtime ./services/ai-runtime
-COPY services/cognitive-runtime ./services/cognitive-runtime
-COPY --from=pruner /app/services/cognitive-runtime/capability_manifest.json ./services/cognitive-runtime/capability_manifest.json
+COPY --from=pruner /app/services/ai-runtime/capability_manifest.json ./services/ai-runtime/capability_manifest.json
 COPY planner-config ./planner-config
 COPY infra/supervisor/supervisord.conf ./infra/supervisor/supervisord.conf
 
 RUN BETTER_AUTH_SECRET=docker-build-smoke-test-only-not-used-at-runtime-00 \
- && test -f /app/services/cognitive-runtime/capability_manifest.json \
- && test -f /app/services/cognitive-runtime/orchestration/agent_pipeline.py \
+ && test -f /app/services/ai-runtime/capability_manifest.json \
+ && test -f /app/services/ai-runtime/orchestration/agent_pipeline.py \
  && uvicorn --version \
  && cd /app/services/ai-runtime \
- && PYTHONPATH=/app/services/ai-runtime:/app/services/cognitive-runtime python -c "from main import app; assert any(getattr(r,'path',None)=='/v1/agent/turn' for r in app.routes)" \
+ && PYTHONPATH=/app/services/ai-runtime python -c "from main import app; assert any(getattr(r,'path',None)=='/v1/agent/turn' for r in app.routes)" \
  && cd /app/services/gateway \
  && node -e "require('@ai-assistant/telemetry/register');require('@ai-assistant/auth');require('@ai-assistant/database');require('fs').accessSync('dist/index.js')"
 
 ENV NODE_ENV=production
 ENV INTELLIGENCE_UPSTREAM_URL=http://127.0.0.1:8000
-ENV PYTHONPATH=/app/services/ai-runtime:/app/services/cognitive-runtime
+ENV PYTHONPATH=/app/services/ai-runtime
 
 EXPOSE 10000
 ENV API_PORT=10000

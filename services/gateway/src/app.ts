@@ -18,6 +18,7 @@ import { agentRoutes } from './routes/agent.routes';
 import { memoryRoutes } from './routes/memory.routes';
 import { automationRoutes } from './routes/automation.routes';
 import { settingsRoutes } from './routes/settings.routes';
+import { adminModelRoutes } from './routes/admin-model.routes';
 import { voiceRoutes } from './routes/voice.routes';
 import { assistantRoutes } from './routes/assistant.routes';
 import { imageRoutes } from './routes/image.routes';
@@ -101,6 +102,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(memoryRoutes, { prefix: '/memory' });
   app.register(automationRoutes, { prefix: '/automations' });
   app.register(settingsRoutes, { prefix: '/settings' });
+  app.register(adminModelRoutes, { prefix: '/admin' });
   app.register(voiceRoutes, { prefix: '/voice' });
   app.register(assistantRoutes, { prefix: '/assistant' });
   app.register(imageRoutes, { prefix: '/image' });

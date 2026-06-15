@@ -7,7 +7,7 @@ if "qdrant_client" not in sys.modules:
     sys.modules["qdrant_client"] = _qc
     sys.modules["qdrant_client.http"] = _qc
 
-from memory.rag_service import RAGService
+from rag.rag_service import RAGService
 
 
 def test_search_prefers_session_then_fallback():
