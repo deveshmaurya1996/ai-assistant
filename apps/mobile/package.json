@@ -89,11 +89,12 @@
     "ios": "node scripts/expo-cli.mjs run:ios",
     "web": "node scripts/expo-cli.mjs start --web",
     "lint": "node scripts/expo-cli.mjs lint",
-    "eas-build-post-install": "cd ../.. && pnpm --filter @ai-assistant/types build && pnpm --filter @ai-assistant/sdk build",
+    "eas-build-post-install": "cd ../.. && pnpm --filter @ai-assistant/types build && pnpm --filter @ai-assistant/sdk build && pnpm --filter @ai-assistant/icons build",
     "release:sync": "node ../../scripts/sync-mobile-release.mjs",
     "release:sync:eas": "node ../../scripts/sync-mobile-release.mjs --from-eas",
     "eas:build:android:prod": "node scripts/sync-root-easignore.mjs && pnpm exec eas build -p android --profile production && node ../../scripts/sync-mobile-release.mjs --from-eas",
     "eas:build:android:preview": "node scripts/sync-root-easignore.mjs && pnpm exec eas build -p android --profile preview && node ../../scripts/sync-mobile-release.mjs --from-eas",
+    "build:apk:local": "node scripts/build-production-apk.mjs",
     "eas:update:production": "pnpm exec eas update --channel production --environment production",
     "eas:update:preview": "pnpm exec eas update --channel preview --environment preview"
   },

@@ -22,7 +22,8 @@
     "verify:docker": "node scripts/verify-docker.mjs",
     "mobile:android": "pnpm --filter @ai-assistant/mobile android",
     "mobile:release": "pnpm --filter @ai-assistant/mobile release:sync",
-    "mobile:eas": "node scripts/mobile-eas.mjs"
+    "mobile:eas": "node scripts/mobile-eas.mjs",
+    "mobile:apk": "pnpm --filter @ai-assistant/mobile build:apk:local"
   },
   "dependencies": {
     "turbo": "latest",

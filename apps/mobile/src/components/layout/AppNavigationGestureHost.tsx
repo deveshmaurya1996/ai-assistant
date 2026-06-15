@@ -18,8 +18,31 @@ type AppNavigationGestureHostProps = {
 };
 
 export function AppNavigationGestureHost({ children }: AppNavigationGestureHostProps) {
-  const pathname = usePathname();
   const { openDrawer, closeDrawer, hasDrawer } = useDrawerNavigation();
+
+  if (!hasDrawer) {
+    return <Animated.View style={styles.fill}>{children}</Animated.View>;
+  }
+
+  return (
+    <DrawerNavigationGestureHost openDrawer={openDrawer} closeDrawer={closeDrawer}>
+      {children}
+    </DrawerNavigationGestureHost>
+  );
+}
+
+type DrawerNavigationGestureHostProps = {
+  children: ReactNode;
+  openDrawer: () => void;
+  closeDrawer: () => void;
+};
+
+function DrawerNavigationGestureHost({
+  children,
+  openDrawer,
+  closeDrawer,
+}: DrawerNavigationGestureHostProps) {
+  const pathname = usePathname();
   const drawerProgress = useDrawerProgress();
   const onSettingsScreen = pathname.includes('/settings');
   const onSchedulerScreen = pathname.includes('/automations');
@@ -68,7 +91,7 @@ export function AppNavigationGestureHost({ children }: AppNavigationGestureHostP
     drawerOpenRef.current = drawerGestureActive;
   }, [drawerGestureActive]);
 
-  const enabled = hasDrawer && !onSchedulerScreen && !onSettingsScreen;
+  const enabled = !onSchedulerScreen && !onSettingsScreen;
 
   const handlePanEnd = useCallback(
     (translationX: number, velocityX: number) => {
@@ -110,7 +133,7 @@ export function AppNavigationGestureHost({ children }: AppNavigationGestureHostP
     [enabled, handlePanEnd]
   );
 
-  if (!hasDrawer || onSchedulerScreen) {
+  if (onSchedulerScreen) {
     return <Animated.View style={styles.fill}>{children}</Animated.View>;
   }
 

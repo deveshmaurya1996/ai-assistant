@@ -1,6 +1,11 @@
+const path = require('path');
 const { getDefaultConfig } = require('expo/metro-config');
 
-const config = getDefaultConfig(__dirname);
+const projectRoot = process.env.EXPO_PROJECT_ROOT
+  ? path.resolve(process.env.EXPO_PROJECT_ROOT)
+  : __dirname;
+
+const config = getDefaultConfig(projectRoot);
 
 const upstreamResolveRequest = config.resolver.resolveRequest;
 
