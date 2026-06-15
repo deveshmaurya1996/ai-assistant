@@ -3,7 +3,6 @@ import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import client from 'prom-client';
 import { config } from '@ai-assistant/config';
-import { prisma } from '@ai-assistant/database';
 import { registerBetterAuth } from './plugins/better-auth';
 import { registerRateLimit } from './plugins/rate-limit';
 import { registerInternalAuth } from './plugins/internal-auth';
@@ -79,20 +78,6 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.get('/metrics', async (_, reply) => {
     reply.header('Content-Type', register.contentType);
     return register.metrics();
-  });
-
-  app.get('/health/ready', async (_, reply) => {
-    try {
-      await prisma.$queryRaw`SELECT 1`;
-      return { status: 'ready', database: 'ok' };
-    } catch (err) {
-      reply.code(503);
-      return {
-        status: 'degraded',
-        database: 'error',
-        message: err instanceof Error ? err.message : 'unknown',
-      };
-    }
   });
 
   await registerBetterAuth(app);

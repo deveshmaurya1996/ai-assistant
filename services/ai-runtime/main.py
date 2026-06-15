@@ -1,15 +1,23 @@
-import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from api.health import router as health_router
 from env_loader import load_monorepo_env
+from internal.bootstrap import RuntimeBootstrap
 from internal.observability import init_observability, instrument_fastapi
+from request_id_middleware import RequestIdLogFilter, RequestIdMiddleware
 
 load_monorepo_env()
 init_observability()
+
+logger = logging.getLogger(__name__)
+bootstrap = RuntimeBootstrap()
+
+INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev-internal-token")
 
 
 class TraceContextMiddleware:
@@ -37,125 +45,38 @@ class TraceContextMiddleware:
         except Exception:
             await self.app(scope, receive, send)
 
-from api.router import router as api_router
-from api.agent import router as agent_router, warm_agent_modules
-from rag.rag_service import RAGService
-from request_id_middleware import RequestIdLogFilter, RequestIdMiddleware
-from models.config_loader import get_rag_config, load_ai_models_config
-from models.voice import FFMPEG_INSTALL_HINT, ensure_ffmpeg_on_path, ffmpeg_available
-from models.registry import get_models_catalog, log_startup_summary
 
-logger = logging.getLogger(__name__)
-
-app = FastAPI(title="AI Assistant Intelligence Runtime")
-app.add_middleware(RequestIdMiddleware)
-app.add_middleware(TraceContextMiddleware)
-instrument_fastapi(app)
-
-app.include_router(api_router, prefix="/v1")
-app.include_router(agent_router)
-
-logging.getLogger().addFilter(RequestIdLogFilter())
-
-INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev-internal-token")
-
-
-@app.middleware("http")
-async def internal_auth_middleware(request, call_next):
-    if "/internal/" in request.url.path:
-        header = request.headers.get("x-internal-token")
-        if header != INTERNAL_SERVICE_TOKEN:
-            return JSONResponse(status_code=403, content={"error": "Forbidden"})
-    return await call_next(request)
-
-
-@app.on_event("startup")
-async def on_startup():
-    load_ai_models_config(reload=True)
-    log_startup_summary()
-    if ensure_ffmpeg_on_path():
-        logger.info("[voice] ffmpeg available for transcription preprocessing")
-    else:
-        logger.warning("[voice] ffmpeg not found — %s", FFMPEG_INSTALL_HINT)
-    catalog = get_models_catalog()
-    for task, chain in catalog.get("taskChains", {}).items():
-        if not chain:
-            logger.warning(
-                "Task %s has no available models — check API keys in .env",
-                task,
-            )
-    rag_cfg = get_rag_config()
-    if rag_cfg.get("warmEmbedderOnStartup", True):
-        try:
-            await RAGService.warm_embedder()
-        except Exception as exc:
-            logger.warning("[rag] warm embedder failed: %s", exc)
-    probe_on_startup = os.getenv("HEALTH_PROBE_ON_STARTUP", "false").lower() in (
-        "1",
-        "true",
-        "yes",
-    )
-    if probe_on_startup:
-        from internal.diagnostics import probe_providers_once
-
-        try:
-            await probe_providers_once()
-        except Exception as exc:
-            logger.warning("[health-probe] startup probe failed: %s", exc)
-    try:
-        warm_agent_modules()
-        logger.info("[intelligence] agent orchestration modules warmed")
-    except Exception as exc:
-        logger.warning("[intelligence] agent warm import failed: %s", exc)
-    try:
-        from llm.health_monitor import start_health_monitor_loops
-
-        await start_health_monitor_loops()
-    except Exception as exc:
-        logger.warning("[health-probe] monitor start failed: %s", exc)
-    try:
-        from api.model_admin import start_daily_capability_probes
-
-        await start_daily_capability_probes()
-    except Exception as exc:
-        logger.warning("[cap-probe] daily probe start failed: %s", exc)
-
-
-@app.get("/")
-def read_root():
-    return {"status": "AI Orchestration Layer is running"}
-
-
-@app.get("/health")
-def health():
-    return {"status": "ok", "service": "intelligence", "ai": True, "cognitive": True}
-
-
-@app.on_event("shutdown")
-async def on_shutdown():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await bootstrap.start(app)
+    yield
+    await bootstrap.shutdown()
     logger.info("[intelligence] shutdown complete")
 
 
-@app.get("/health/ready")
-def health_ready():
-    qdrant_url = os.getenv("QDRANT_URL", "").strip()
-    if not qdrant_url:
-        return {"status": "ready", "qdrant": "local"}
-    try:
-        from rag.rag_service import _qdrant_client_from_env
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="AI Assistant Intelligence Runtime",
+        lifespan=lifespan,
+    )
+    app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(TraceContextMiddleware)
+    instrument_fastapi(app)
+    app.include_router(health_router)
+    logging.getLogger().addFilter(RequestIdLogFilter())
 
-        client = _qdrant_client_from_env()
-        client.get_collections()
-        return {"status": "ready", "qdrant": "ok"}
-    except Exception as err:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "status": "degraded",
-                "qdrant": "error",
-                "message": str(err),
-            },
-        )
+    @app.middleware("http")
+    async def internal_auth_middleware(request, call_next):
+        if "/internal/" in request.url.path:
+            header = request.headers.get("x-internal-token")
+            if header != INTERNAL_SERVICE_TOKEN:
+                return JSONResponse(status_code=403, content={"error": "Forbidden"})
+        return await call_next(request)
+
+    return app
+
+
+app = create_app()
 
 
 if __name__ == "__main__":

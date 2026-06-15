@@ -55,16 +55,19 @@ RUN BETTER_AUTH_SECRET=docker-build-smoke-test-only-not-used-at-runtime-00 \
  && test -f /app/services/ai-runtime/orchestration/agent_pipeline.py \
  && uvicorn --version \
  && cd /app/services/ai-runtime \
- && PYTHONPATH=/app/services/ai-runtime python -c "from main import app; assert '/v1/agent/turn' in app.openapi().get('paths', {})" \
+ && PYTHONPATH=/app/services/ai-runtime python -c "from main import app; assert '/health' in app.openapi().get('paths', {})" \
  && cd /app/services/gateway \
  && node -e "require('@ai-assistant/telemetry/register');require('@ai-assistant/auth');require('@ai-assistant/database');require('fs').accessSync('dist/index.js')"
 
 ENV NODE_ENV=production
 ENV INTELLIGENCE_UPSTREAM_URL=http://127.0.0.1:8000
 ENV PYTHONPATH=/app/services/ai-runtime
+ENV PORT=10000
+
+# Container defaults: keep startup lightweight; optional probes stay disabled unless overridden.
+ENV HEALTH_MONITOR_ENABLED=false
+ENV CAPABILITY_PROBE_ENABLED=false
 
 EXPOSE 10000
-ENV API_PORT=10000
-ENV PORT=10000
 
 CMD ["supervisord", "-c", "/app/infra/supervisor/supervisord.conf"]

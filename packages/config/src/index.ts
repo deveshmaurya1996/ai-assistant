@@ -39,13 +39,17 @@ function envInt(key: string, fallback: number): number {
 
 const nodeEnv = envOptional('NODE_ENV', 'development');
 
+function resolveApiPort(): number {
+  return envInt('API_PORT', envInt('PORT', 3000));
+}
+
 function resolvePublicApiUrl(): string {
   const fromEnv =
     process.env.API_PUBLIC_URL?.trim() ||
     process.env.GATEWAY_URL?.trim() ||
     process.env.BETTER_AUTH_URL?.trim();
   if (fromEnv) return fromEnv.replace(/\/$/, '');
-  return `http://localhost:${envInt('API_PORT', 3000)}`;
+  return `http://localhost:${resolveApiPort()}`;
 }
 
 function resolveIntelligenceUpstreamUrl(): string {
@@ -102,7 +106,7 @@ export interface AppConfig {
 export const config: AppConfig = {
   nodeEnv,
   isDev: nodeEnv !== 'production',
-  apiPort: envInt('API_PORT', 3000),
+  apiPort: resolveApiPort(),
   gatewayUrl: publicApiUrl,
   aiServiceUrl: resolveIntelligenceUpstreamUrl(),
   databaseUrl: envOptional(
