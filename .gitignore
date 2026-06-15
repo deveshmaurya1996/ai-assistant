@@ -49,5 +49,7 @@ app.json
 
 *.tsbuildinfo
 
-# Firebase admin SDK keys (secrets — upload to EAS only)
+# Firebase / Google config (secrets — upload to EAS only)
 *firebase-adminsdk*.json
+google-services.json
+GoogleService-Info.plist

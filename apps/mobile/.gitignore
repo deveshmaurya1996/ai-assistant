@@ -35,8 +35,10 @@ yarn-error.*
 # local env files
 .env*.local
 
-# Firebase admin SDK keys (upload to EAS only — never commit)
+# Firebase / Google config (upload to EAS only — never commit)
 *firebase-adminsdk*.json
+google-services.json
+GoogleService-Info.plist
 
 # typescript
 *.tsbuildinfo
