@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional
 
+from orchestration.heuristics.whatsapp import extract_contact_name
+
 
 def looks_like_jid(value: str) -> bool:
     return "@" in value
@@ -36,12 +38,18 @@ def resolve_whatsapp_jid_from_search(
 def enrich_whatsapp_send_to(
     pending_confirm: List[Dict[str, Any]],
     completed: List[Dict[str, Any]],
+    original_query: str = "",
 ) -> None:
     """Fill send_message 'to' JID from completed search_chats (main.py confirm path)."""
     for pending in pending_confirm:
         if pending.get("tool") != "whatsapp.send_message":
             continue
         args = pending.setdefault("args", {})
+        to_val = str(args.get("to", "")).strip().lower()
+        if not to_val or to_val in {"contact", "recipient", "them", "him", "her"}:
+            hint = extract_contact_name(original_query)
+            if hint:
+                args["to"] = hint
         if looks_like_jid(str(args.get("to", ""))):
             continue
         for done in completed:

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { isBenignBaileysDecryptError } from '../baileys-log-policy.js';
+import { isBenignBaileysDecryptError, isBenignBaileysInitQueryError } from '../baileys-log-policy.js';
 
 describe('isBenignBaileysDecryptError', () => {
   it('ignores unrelated log messages', () => {
@@ -52,6 +52,25 @@ describe('isBenignBaileysDecryptError', () => {
         },
         'failed to decrypt message'
       ),
+      false
+    );
+  });
+});
+
+describe('isBenignBaileysInitQueryError', () => {
+  it('treats init query 408 timeout as benign', () => {
+    assert.equal(
+      isBenignBaileysInitQueryError(
+        { message: 'Timed Out', output: { statusCode: 408 } },
+        "unexpected error in 'init queries'"
+      ),
+      true
+    );
+  });
+
+  it('ignores other errors', () => {
+    assert.equal(
+      isBenignBaileysInitQueryError({ message: 'Timed Out' }, 'socket closed'),
       false
     );
   });

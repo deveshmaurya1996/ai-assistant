@@ -87,6 +87,36 @@ async def test_plan_tools_whatsapp_unread_does_not_plan_send():
 
 
 @pytest.mark.asyncio
+async def test_plan_tools_send_email_does_not_plan_whatsapp():
+    result = await plan_tools(
+        "send a email to deveshone123@gmail.com with subject test and body hello",
+        "Ready for AI: google, whatsapp.",
+        "user-1",
+        manifest_caps={
+            "email.send_email",
+            "messaging.send_message",
+            "messaging.search_chats",
+        },
+        manifest_connections=[
+            {"id": "google_user-1", "providerId": "google"},
+            {"id": "whatsapp_user-1", "providerId": "whatsapp"},
+        ],
+        manifest_connection_states=[
+            {"providerId": "google", "state": "ready"},
+            {"providerId": "whatsapp", "state": "ready"},
+        ],
+    )
+    assert result["planner"] == "heuristic"
+    tool_names = [t.get("tool") for t in result["tools"]]
+    assert "email.send_email" in tool_names
+    assert "whatsapp.send_message" not in tool_names
+    send_tool = next(t for t in result["tools"] if t.get("tool") == "email.send_email")
+    assert send_tool["args"]["to"] == "deveshone123@gmail.com"
+    assert send_tool["args"]["subject"] == "test"
+    assert send_tool["args"]["body"] == "hello"
+
+
+@pytest.mark.asyncio
 async def test_plan_tools_send_message_plans_search_and_send():
     result = await plan_tools(
         "send message to John: hello there",

@@ -10,14 +10,12 @@ import {
 } from 'react';
 import type { AssistantSocket, ChatMessage } from '@ai-assistant/sdk';
 import type {
-  ActionConfirmRequiredPayload,
   ChatAttachmentRef,
   ChatErrorPayload,
   ChatStatusPayload,
 } from '@ai-assistant/types';
 import { apiClient } from '@/lib/api-client';
 import { formatChatSocketError } from '@/lib/format-ai-error';
-import { useChatActionConfirmBridge } from './chatActionConfirmBridge';
 import { useSettingsStore } from '@/stores/settings';
 import { useOverlaySessionStore } from '@/features/overlay/overlaySessionStore';
 import { useChatSidebarStore } from './chatSidebarStore';
@@ -81,13 +79,6 @@ export function ChatSocketProvider({
   const [socket, setSocket] = useState<AssistantSocket | null>(null);
   const socketRef = useRef<AssistantSocket | null>(null);
   const listenerMapRef = useRef(new Map<string, ListenerEntry>());
-  const lastSentRef = useRef<{
-    text: string;
-    chatSessionId?: string;
-    source?: 'chat' | 'voice';
-    personalityId?: string;
-    assistantDisplayName?: string;
-  } | null>(null);
   const activeTurnSessionRef = useRef<string | null>(null);
   const turnTimeoutsRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const activeStreamKeyRef = useRef<string>(PENDING_CHAT_STREAM_KEY);
@@ -424,25 +415,6 @@ export function ChatSocketProvider({
         });
         syncSidebarAttention(data.chatSessionId);
       });
-
-      connected.on('chat:action_confirm_required', (payload: ActionConfirmRequiredPayload) => {
-        if (payload.tool.startsWith('whatsapp.')) {
-          const { sessions } = useChatStreamStore.getState();
-          for (const key of Object.keys(sessions)) {
-            if (sessions[key]?.isGenerating) {
-              abortTurn(key);
-            }
-          }
-          return;
-        }
-        useChatActionConfirmBridge.getState().setPending(payload);
-        const { sessions } = useChatStreamStore.getState();
-        for (const key of Object.keys(sessions)) {
-          if (sessions[key]?.isGenerating) {
-            abortTurn(key);
-          }
-        }
-      });
     })();
 
     return () => {
@@ -456,7 +428,6 @@ export function ChatSocketProvider({
       socket?.disconnect();
       socketRef.current = null;
       setSocket(null);
-      useChatActionConfirmBridge.getState().registerHandlers(null);
     };
   }, [
     sessionToken,
@@ -517,7 +488,6 @@ export function ChatSocketProvider({
         syncSidebarAttention(sessionId);
       }
       scheduleTurnTimeout(sessionKey);
-      useChatActionConfirmBridge.getState().setPending(null);
 
       const payload: {
         text: string;
@@ -538,27 +508,6 @@ export function ChatSocketProvider({
       if (sessionId) payload.chatSessionId = sessionId;
       if (opts?.confirmed) payload.confirmed = true;
       if (attachments.length > 0) payload.attachments = attachments;
-
-      lastSentRef.current = payload;
-
-      useChatActionConfirmBridge.getState().registerHandlers({
-        confirm: () => {
-          const last = lastSentRef.current;
-          if (!last || !socketRef.current) return;
-          useChatActionConfirmBridge.getState().setPending(null);
-          const key = streamKeyForSession(last.chatSessionId ?? null);
-          activeStreamKeyRef.current = key;
-          beginTurn(key);
-          scheduleTurnTimeout(key);
-          socketRef.current.emit('chat:message', { ...last, confirmed: true });
-        },
-        cancel: () => {
-          useChatActionConfirmBridge.getState().setPending(null);
-          const last = lastSentRef.current;
-          const key = streamKeyForSession(last?.chatSessionId ?? null);
-          abortTurn(key);
-        },
-      });
 
       socket.emit('chat:message', payload);
       return true;

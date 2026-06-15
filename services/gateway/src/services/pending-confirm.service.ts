@@ -1,8 +1,11 @@
+import { resolveRecipientCandidate } from '../whatsapp/recipient-hint';
+
 export interface PendingConfirm {
   tool: string;
   args: Record<string, unknown>;
   originalText: string;
   userId: string;
+  displayTo?: string;
   expiresAt: number;
 }
 
@@ -30,15 +33,28 @@ export function clearPendingConfirm(chatSessionId: string): void {
   pendingConfirms.delete(chatSessionId);
 }
 
-export function usesInlineConfirm(tool: string): boolean {
-  return tool.startsWith('whatsapp.');
+export function usesInlineConfirm(_tool: string): boolean {
+  return true;
 }
 
-export function buildConfirmText(tool: string, args: Record<string, unknown>): string {
+export function buildConfirmText(
+  tool: string,
+  args: Record<string, unknown>,
+  originalText?: string
+): string {
   if (tool === 'whatsapp.send_message') {
     const message = String(args.message ?? '').trim();
-    const to = String(args.to ?? 'contact').trim();
-    return `I'm about to send: "${message}" to ${to}. Reply yes to send, or no to cancel.`;
+    const displayTo =
+      String(args.displayTo ?? '').trim() ||
+      resolveRecipientCandidate(String(args.to ?? ''), originalText).trim() ||
+      'contact';
+    return `I'm about to send: "${message}" to ${displayTo}. Reply yes to send, or no to cancel.`;
+  }
+
+  if (tool === 'gmail.send' || tool === 'email.send_email') {
+    const to = String(args.to ?? 'recipient');
+    const subject = String(args.subject ?? '').trim();
+    return `I'm about to send an email to ${to}${subject ? ` with subject "${subject}"` : ''}. Reply yes to send, or no to cancel.`;
   }
 
   return `Please confirm ${tool}. Reply yes to confirm, or no to cancel.`;

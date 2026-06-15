@@ -24,7 +24,11 @@ import {
   setPendingConfirm,
   usesInlineConfirm,
 } from './pending-confirm.service';
-import { executeIntegrationTool } from './integration-exec.service';
+import {
+  executeIntegrationTool,
+  formatConfirmedActionResult,
+  prepareWhatsAppSendArgs,
+} from './integration-exec.service';
 
 export type ChatHistoryMessage = { role: string; content: string };
 
@@ -611,7 +615,69 @@ export async function processChatMessage(params: {
     const payload = turn.confirmPayload;
 
     if (usesInlineConfirm(payload.tool)) {
-      const confirmText = buildConfirmText(payload.tool, payload.args);
+      if (payload.tool === 'whatsapp.send_message') {
+        try {
+          const prepared = await prepareWhatsAppSendArgs(userId, payload.args, text);
+          const confirmText = buildConfirmText(
+            payload.tool,
+            { ...prepared.args, displayTo: prepared.displayTo },
+            text
+          );
+          await onChunk(confirmText, sessionId);
+
+          setPendingConfirm(sessionId, {
+            tool: payload.tool,
+            args: prepared.args,
+            originalText: text,
+            userId,
+            displayTo: prepared.displayTo,
+          });
+
+          const assistantMessage = await prisma.message.create({
+            data: {
+              chatSessionId: sessionId,
+              role: 'ASSISTANT',
+              content: confirmText,
+              metadata: buildAssistantMessageMetadata(assistantContext),
+            },
+          });
+
+          void maybeAutoTitleSession({
+            userId,
+            sessionId,
+            userMessage: text.trim() || turnInput.query,
+            assistantMessage: confirmText,
+            onTitleUpdated,
+          });
+
+          return {
+            sessionId,
+            userMessage: mapApiMessage(userMessage),
+            assistantMessage: mapApiMessage(assistantMessage),
+            requiresConfirmation: true,
+            inlineConfirm: true,
+          };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : 'Could not prepare WhatsApp message';
+          const assistantText = `Could not send message: ${errMsg}`;
+          await onChunk(assistantText, sessionId);
+          const assistantMessage = await prisma.message.create({
+            data: {
+              chatSessionId: sessionId,
+              role: 'ASSISTANT',
+              content: assistantText,
+              metadata: buildAssistantMessageMetadata(assistantContext),
+            },
+          });
+          return {
+            sessionId,
+            userMessage: mapApiMessage(userMessage),
+            assistantMessage: mapApiMessage(assistantMessage),
+          };
+        }
+      }
+
+      const confirmText = buildConfirmText(payload.tool, payload.args, text);
       await onChunk(confirmText, sessionId);
 
       setPendingConfirm(sessionId, {
@@ -646,34 +712,6 @@ export async function processChatMessage(params: {
         inlineConfirm: true,
       };
     }
-
-    params.onActionConfirmRequired?.(payload);
-
-    const modalConfirmText = 'Please confirm this action to continue.';
-    const assistantMessage = await prisma.message.create({
-      data: {
-        chatSessionId: sessionId,
-        role: 'ASSISTANT',
-        content: modalConfirmText,
-        metadata: buildAssistantMessageMetadata(assistantContext),
-      },
-    });
-
-    void maybeAutoTitleSession({
-      userId,
-      sessionId,
-      userMessage: text.trim() || turnInput.query,
-      assistantMessage: modalConfirmText,
-      onTitleUpdated,
-    });
-
-    return {
-      sessionId,
-      userMessage: mapApiMessage(userMessage),
-      assistantMessage: mapApiMessage(assistantMessage),
-      requiresConfirmation: true,
-      modalConfirm: true,
-    };
   }
 
   const accumulated = turn.fullText;
@@ -727,7 +765,7 @@ async function loadTurnContext(userId: string, sessionId: string) {
   return { dbHistory };
 }
 
-export async function processInlineConfirmAccept(params: {
+export async function processPendingConfirmAccept(params: {
   userId: string;
   chatSessionId: string;
   pending: {
@@ -735,6 +773,7 @@ export async function processInlineConfirmAccept(params: {
     args: Record<string, unknown>;
     originalText: string;
     userId: string;
+    displayTo?: string;
   };
   replyText: string;
   ragEnabled?: boolean;
@@ -771,21 +810,10 @@ export async function processInlineConfirmAccept(params: {
     source: agentSource,
     confirmed: true,
     chatSessionId,
+    originalText: pending.originalText,
   });
 
-  let assistantText: string;
-  if (!outcome.success) {
-    assistantText = `Could not complete the action: ${outcome.error ?? 'unknown error'}`;
-  } else if (pending.tool === 'whatsapp.send_message') {
-    const sent = outcome.result as { to?: string; sent?: boolean } | undefined;
-    const to = sent?.to ?? String(pending.args.to ?? 'contact');
-    assistantText = sent?.sent === false ? `Could not send to ${to}.` : `Message sent to ${to}.`;
-  } else {
-    assistantText =
-      typeof outcome.result === 'string'
-        ? outcome.result
-        : 'Action completed successfully.';
-  }
+  const assistantText = formatConfirmedActionResult(pending.tool, outcome, pending);
 
   await onChunk(assistantText, chatSessionId);
 

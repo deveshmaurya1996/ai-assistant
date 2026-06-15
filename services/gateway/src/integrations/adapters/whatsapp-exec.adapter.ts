@@ -1,5 +1,6 @@
 import { sessionManager } from '../../whatsapp/session-manager';
 import { resolveBridgeSessionForUser } from '../../whatsapp/session-resolve';
+import { formatWhatsAppUserError } from '../../whatsapp/baileys-connection';
 import type { GatewayExecAdapter, GatewayExecContext, ToolExecutionOutcome } from '../types';
 import { registerGatewayExecAdapter } from '../exec-registry';
 
@@ -37,21 +38,12 @@ async function executeWhatsAppTool(
     }
     case 'whatsapp.send_message': {
       const message = String(args.message ?? '').trim();
-      let to = String(args.to ?? '').trim();
+      const to = String(args.to ?? '').trim();
       if (!message) {
         return { success: false, tool, error: 'message is required' };
       }
-      if (!to.includes('@') && to.replace(/\D/g, '').length < 10) {
-        const { chats } = await sessionManager.searchChats(sessionId, to);
-        const jid = chats[0]?.jid;
-        if (!jid) {
-          return {
-            success: false,
-            tool,
-            error: `Could not find WhatsApp contact "${to}". Try a phone number (e.g. +1…) or a name from your chats.`,
-          };
-        }
-        to = jid;
+      if (!to) {
+        return { success: false, tool, error: 'to is required' };
       }
       const sent = await sessionManager.sendMessage(sessionId, to, message);
       return { success: true, tool, result: { ...sent, connectionId } };
@@ -62,7 +54,10 @@ async function executeWhatsAppTool(
       return { success: true, tool, result };
     }
     case 'whatsapp.read_chat': {
-      const chatId = String(args.chatId ?? args.jid ?? '');
+      const chatId = String(args.chatId ?? args.jid ?? args.query ?? '').trim();
+      if (!chatId) {
+        return { success: false, tool, error: 'chatId or contact name is required' };
+      }
       const limit = Number(args.limit ?? 25);
       const result = await sessionManager.readChat(sessionId, chatId, limit);
       return { success: true, tool, result };
@@ -96,11 +91,12 @@ export async function executeWhatsAppDirect(
       params.tool
     );
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'WhatsApp action failed';
+    const raw = err instanceof Error ? err.message : 'WhatsApp action failed';
+    const msg = formatWhatsAppUserError(raw);
     const hint =
-      msg.toLowerCase().includes('timed out') || msg.toLowerCase().includes('timeout')
-        ? ' Ensure your phone has internet and WhatsApp is open, then try again.'
-        : '';
+      msg.toLowerCase().includes('timed out') || msg.toLowerCase().includes('try again')
+        ? ''
+        : ' Ensure your phone has internet and WhatsApp is open, then try again.';
     return { success: false, tool: params.tool, error: msg + hint };
   }
 }

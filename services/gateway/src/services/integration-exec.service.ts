@@ -6,11 +6,22 @@ import {
   type ToolExecutionOutcome,
 } from '../integrations';
 import { capabilityRuntimeFetch, toolRuntimeFetch } from '../lib/runtime-clients';
+import {
+  extractContactHintFromQuery,
+  isEmailSendQuery,
+  isPlaceholderRecipient,
+  resolveRecipientCandidate,
+} from '../whatsapp/recipient-hint';
 
 export type { ToolExecutionOutcome };
 
 const WHATSAPP_POLL_MS = 120_000;
 const GENERIC_POLL_MS = 60_000;
+
+export type PreparedWhatsAppSend = {
+  args: { to: string; message: string };
+  displayTo: string;
+};
 
 async function pollExecution(
   executionId: string,
@@ -58,39 +69,96 @@ async function pollExecution(
   };
 }
 
-export async function resolveWhatsAppRecipient(
+export async function resolveWhatsAppRecipientJid(
   userId: string,
   to: string,
-  connectionId?: string,
-  _chatSessionId?: string
+  originalText?: string,
+  connectionId?: string
 ): Promise<string> {
-  const trimmed = to.trim();
-  if (trimmed.includes('@')) return trimmed;
-  const digits = trimmed.replace(/\D/g, '');
-  if (digits.length >= 10) return trimmed;
+  const candidate = resolveRecipientCandidate(to, originalText).trim();
+  if (isPlaceholderRecipient(candidate)) {
+    throw new Error(
+      'Could not figure out who to message. Say the contact name or phone number, e.g. "send msg to ...".'
+    );
+  }
+  if (candidate.includes('@')) return candidate;
+
+  const digits = candidate.replace(/\D/g, '');
+  if (digits.length >= 10) return candidate;
 
   const outcome = await executeWhatsAppDirect({
     userId,
     tool: 'whatsapp.search_chats',
-    args: { query: trimmed },
+    args: { query: candidate },
     connectionId,
   });
 
   if (!outcome.success) {
     throw new Error(
       outcome.error ??
-        `Could not find WhatsApp contact "${trimmed}". Try a phone number (e.g. +1…) or a name from your chats.`
+        `Could not find WhatsApp contact "${candidate}". Try a phone number or a name from your chats.`
     );
   }
 
-  const chats = (outcome.result as { chats?: Array<{ jid?: string }> } | undefined)?.chats ?? [];
+  const chats =
+    (outcome.result as { chats?: Array<{ jid?: string }> } | undefined)?.chats ?? [];
   const jid = chats[0]?.jid;
   if (!jid) {
     throw new Error(
-      `Could not find WhatsApp contact "${trimmed}". Try a phone number (e.g. +1…) or a name from your chats.`
+      `Could not find WhatsApp contact "${candidate}". Try a phone number or a name from your chats.`
     );
   }
   return jid;
+}
+
+function normalizeWhatsAppMessageBody(message: string, originalText: string): string {
+  const msg = message.trim();
+  const query = originalText.trim();
+  if (!msg || !query) return msg;
+
+  const saying = query.match(/\b(?:saying|with)\s+(.+)$/i);
+  if (saying?.[1]?.trim()) return saying[1].trim();
+
+  const colon = query.match(/[:,-]\s*(.+)$/);
+  if (colon?.[1]?.trim()) return colon[1].trim();
+
+  if (msg !== query && !msg.toLowerCase().startsWith('send ')) {
+    return msg;
+  }
+
+  const contact = extractContactHintFromQuery(query);
+  if (!contact) return msg;
+
+  const stripped = query
+    .replace(new RegExp(`\\b${contact.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'), ' ')
+    .replace(/^send(?:\s+a)?(?:\s+whatsapp)?(?:\s+message)?(?:\s+to)?\s*/i, '')
+    .replace(/^(?:message|text)\s+/i, '')
+    .trim();
+  return stripped.length >= 1 ? stripped : msg;
+}
+
+export async function prepareWhatsAppSendArgs(
+  userId: string,
+  args: Record<string, unknown>,
+  originalText: string,
+  connectionId?: string
+): Promise<PreparedWhatsAppSend> {
+  if (isEmailSendQuery(originalText)) {
+    throw new Error(
+      'That looks like an email request, not a WhatsApp message. Try "send an email to address@example.com".'
+    );
+  }
+  const contactHint = resolveRecipientCandidate(String(args.to ?? ''), originalText);
+  const message = normalizeWhatsAppMessageBody(String(args.message ?? ''), originalText);
+  const jid = await resolveWhatsAppRecipientJid(userId, contactHint, originalText, connectionId);
+  const displayTo = isPlaceholderRecipient(contactHint)
+    ? extractContactHintFromQuery(originalText) ?? contactHint
+    : contactHint;
+
+  return {
+    args: { to: jid, message },
+    displayTo: displayTo.trim() || jid.split('@')[0] || jid,
+  };
 }
 
 async function executeViaSkillRuntime(params: {
@@ -143,6 +211,7 @@ export async function executeIntegrationTool(params: {
   confirmed: boolean;
   connectionId?: string;
   chatSessionId?: string;
+  originalText?: string;
 }): Promise<ToolExecutionOutcome> {
   let args = { ...params.args };
 
@@ -152,11 +221,11 @@ export async function executeIntegrationTool(params: {
       try {
         args = {
           ...args,
-          to: await resolveWhatsAppRecipient(
+          to: await resolveWhatsAppRecipientJid(
             params.userId,
             to,
-            params.connectionId,
-            params.chatSessionId
+            params.originalText,
+            params.connectionId
           ),
         };
       } catch (err) {
@@ -176,5 +245,29 @@ export async function executeIntegrationTool(params: {
     return gatewayOutcome;
   }
 
-  return executeViaSkillRuntime(params);
+  return executeViaSkillRuntime({ ...params, args });
+}
+
+export function formatConfirmedActionResult(
+  tool: string,
+  outcome: ToolExecutionOutcome,
+  pending: { args: Record<string, unknown>; displayTo?: string }
+): string {
+  if (!outcome.success) {
+    const err = outcome.error ?? 'Something went wrong';
+    if (tool === 'whatsapp.send_message') return `Could not send WhatsApp message: ${err}`;
+    if (tool === 'gmail.send' || tool === 'email.send_email') return `Could not send email: ${err}`;
+    return `Could not complete the action: ${err}`;
+  }
+
+  if (tool === 'whatsapp.send_message') {
+    const to = pending.displayTo ?? pending.args.to ?? 'recipient';
+    return `Message sent to ${to}.`;
+  }
+  if (tool === 'gmail.send' || tool === 'email.send_email') {
+    const to = String(pending.args.to ?? 'recipient');
+    return `Email sent to ${to}.`;
+  }
+
+  return typeof outcome.result === 'string' ? outcome.result : 'Action completed successfully.';
 }

@@ -1,7 +1,7 @@
 import NodeCache from '@cacheable/node-cache';
 import pino from 'pino';
 import type { Logger } from 'pino';
-import { isBenignBaileysDecryptError } from './baileys-log-policy';
+import { isBenignBaileysDecryptError, isBenignBaileysInitQueryError } from './baileys-log-policy';
 import { shouldIgnoreWhatsAppJid } from './jid-policy';
 
 type MsgRetryCounterCache = {
@@ -38,6 +38,15 @@ export function createBaileysLogger(): Logger {
           )
         ) {
           return this.debug(context, message ?? 'benign decrypt skip');
+        }
+        if (
+          level === 50 &&
+          isBenignBaileysInitQueryError(
+            context.err as { message?: string; output?: { statusCode?: number }; statusCode?: number },
+            message
+          )
+        ) {
+          return this.warn(context, message ?? 'init queries timed out (non-fatal)');
         }
         return method.apply(this, args);
       },

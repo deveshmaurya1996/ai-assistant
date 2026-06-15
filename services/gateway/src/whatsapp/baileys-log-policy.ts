@@ -17,6 +17,22 @@ function errText(err: DecryptLogContext['err']): string {
   return [err.type, err.name, err.message].filter(Boolean).join(' ');
 }
 
+type BaileysLogErr = {
+  message?: string;
+  output?: { statusCode?: number };
+  statusCode?: number;
+};
+
+export function isBenignBaileysInitQueryError(
+  err: BaileysLogErr | undefined,
+  message?: string
+): boolean {
+  if (message !== "unexpected error in 'init queries'") return false;
+  const text = err?.message ?? '';
+  const code = err?.output?.statusCode ?? err?.statusCode;
+  return code === 408 || /timed out/i.test(text);
+}
+
 export function isBenignBaileysDecryptError(
   context: DecryptLogContext,
   message?: string

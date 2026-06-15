@@ -9,6 +9,19 @@ import {
 } from './baileys-socket-support';
 import { isActionableWhatsAppJid } from './jid-policy';
 import {
+  isTransientWhatsAppDisconnect,
+  shouldSyncFullWhatsAppHistory,
+} from './baileys-connection';
+import {
+  createLidContactIndex,
+  ingestBaileysContact,
+  ingestMessageJidMapping,
+  isLidJid,
+  isPlaceholderDisplayName,
+  type LidContactIndex,
+  resolveWhatsAppDisplayName,
+} from './display-name';
+import {
   countSyncedThreads,
   loadChatsFromDb,
   loadMessagesFromDb,
@@ -144,6 +157,7 @@ export class SessionManager {
   private messageCache = new Map<string, Map<string, CachedMessage[]>>();
   private unreadCounts = new Map<string, Map<string, number>>();
   private rawMessageCache = new Map<string, Map<string, unknown>>();
+  private lidIndex = new Map<string, LidContactIndex>();
   private qrSignaled = new Set<string>();
   private authEpoch = new Map<string, number>();
   private reconnecting = new Set<string>();
@@ -284,7 +298,6 @@ export class SessionManager {
       void this.persistSessionMetaNow(current);
     }
 
-    // Baileys: after close/restartRequired the current socket is unusable — drop it immediately.
     this.teardownSocket(sessionId);
     this.reconnecting.add(sessionId);
 
@@ -600,6 +613,28 @@ export class SessionManager {
     return session;
   }
 
+  async resolveChatJid(sessionId: string, target: string): Promise<string> {
+    const trimmed = target.trim();
+    if (!trimmed) {
+      throw new Error('chatId is required');
+    }
+    if (trimmed.includes('@')) {
+      return trimmed;
+    }
+    const digits = normalizePhone(trimmed);
+    if (digits.length >= 10) {
+      return `${digits}@s.whatsapp.net`;
+    }
+    const { chats } = await this.searchChats(sessionId, trimmed);
+    const jid = chats[0]?.jid;
+    if (!jid) {
+      throw new Error(
+        `Could not find WhatsApp chat for "${trimmed}". Try the exact contact name or phone number.`
+      );
+    }
+    return jid;
+  }
+
   async sendMessage(
     sessionId: string,
     to: string,
@@ -610,7 +645,7 @@ export class SessionManager {
       throw new Error('Session not active. Link WhatsApp first.');
     }
     const sock = await this.ensureSocket(sessionId);
-    const jid = toJid(to);
+    const jid = to.includes('@') || normalizePhone(to).length >= 10 ? toJid(to) : await this.resolveChatJid(sessionId, to);
     const result = await sock.sendMessage(jid, { text: message });
     return {
       sent: true,
@@ -665,7 +700,6 @@ export class SessionManager {
     return { chats: matches.slice(0, 20) };
   }
 
-  /** After cold start, Baileys may still be syncing chats — wait briefly. */
   private async waitForChatCache(
     sessionId: string,
     sock: BaileysSocket,
@@ -773,9 +807,13 @@ export class SessionManager {
           this.storeMessages(sessionId, chat.jid, fromDb);
         }
       }
+      const senderLabel = this.resolveChatDisplayName(sessionId, chat.jid, {
+        chatName: chat.name,
+        pushName: last && !last.fromMe ? last.pushName : undefined,
+      });
       items.push({
         chatId: chat.jid,
-        sender: chat.name || chat.jid.split('@')[0] || 'Unknown',
+        sender: senderLabel,
         preview: last?.body?.slice(0, 500) ?? '(no preview yet)',
         timestamp: last?.timestamp ?? new Date().toISOString(),
         unreadCount: unread,
@@ -789,7 +827,12 @@ export class SessionManager {
     if (sliced.length === 0) {
       const dbItems = await loadUnreadFromDb(sessionId, limit);
       if (dbItems.length > 0) {
-        sliced = dbItems;
+        sliced = dbItems.map((item) => ({
+          ...item,
+          sender: this.resolveChatDisplayName(sessionId, item.chatId, {
+            chatName: item.sender,
+          }),
+        }));
       } else if (chats.length === 0) {
         const syncedThreads = await countSyncedThreads(sessionId);
         if (syncedThreads === 0) {
@@ -828,7 +871,7 @@ export class SessionManager {
       throw new Error('Session not active. Link WhatsApp first.');
     }
 
-    const jid = chatId.includes('@') ? chatId : toJid(chatId);
+    const jid = await this.resolveChatJid(sessionId, chatId);
     let cached = this.messageCache.get(sessionId)?.get(jid) ?? [];
 
     if (cached.length < limit) {
@@ -863,14 +906,18 @@ export class SessionManager {
       }
     }
 
-    const chatName =
-      this.chatCache.get(sessionId)?.find((c) => c.jid === jid)?.name ??
-      jid.split('@')[0] ??
-      'Unknown';
+    const chatName = this.resolveChatDisplayName(sessionId, jid, {
+      chatName: this.chatCache.get(sessionId)?.find((c) => c.jid === jid)?.name,
+    });
 
     const messages = cached.slice(-limit).map((m) => ({
       id: m.id,
-      sender: m.fromMe ? 'You' : m.pushName || chatName,
+      sender: m.fromMe
+        ? 'You'
+        : this.resolveChatDisplayName(sessionId, jid, {
+            chatName,
+            pushName: m.pushName,
+          }),
       body: m.body,
       timestamp: m.timestamp,
       fromMe: m.fromMe,
@@ -946,7 +993,16 @@ export class SessionManager {
 
     if (rawItems?.length) {
       for (const item of rawItems) {
-        const msg = item as { key?: { id?: string; remoteJid?: string } };
+        const msg = item as {
+          key?: {
+            id?: string;
+            remoteJid?: string;
+            remoteJidAlt?: string;
+            participant?: string;
+            participantAlt?: string;
+          };
+        };
+        ingestMessageJidMapping(this.getLidIndex(sessionId), msg.key);
         const id = msg.key?.id;
         const itemJid = msg.key?.remoteJid ?? jid;
         if (id) this.storeRawMessage(sessionId, itemJid, id, item);
@@ -962,13 +1018,47 @@ export class SessionManager {
     map.set(jid, (map.get(jid) ?? 0) + 1);
   }
 
+  private getLidIndex(sessionId: string): LidContactIndex {
+    let index = this.lidIndex.get(sessionId);
+    if (!index) {
+      index = createLidContactIndex();
+      this.lidIndex.set(sessionId, index);
+    }
+    return index;
+  }
+
+  private chatNamesByJid(sessionId: string): Map<string, string> {
+    return new Map((this.chatCache.get(sessionId) ?? []).map((c) => [c.jid, c.name]));
+  }
+
+  private resolveChatDisplayName(
+    sessionId: string,
+    jid: string,
+    input: { chatName?: string; pushName?: string } = {}
+  ): string {
+    return resolveWhatsAppDisplayName(jid, this.getLidIndex(sessionId), {
+      ...input,
+      chatNamesByJid: this.chatNamesByJid(sessionId),
+    });
+  }
+
   private upsertChatCache(sessionId: string, entry: ChatEntry): void {
     const list = this.chatCache.get(sessionId) ?? [];
     const idx = list.findIndex((c) => c.jid === entry.jid);
+    const resolvedName = this.resolveChatDisplayName(sessionId, entry.jid, {
+      chatName: entry.name,
+    });
+    const normalized: ChatEntry = { ...entry, name: resolvedName };
     if (idx >= 0) {
-      list[idx] = { ...list[idx], ...entry };
+      const prev = list[idx]!;
+      const name = !isPlaceholderDisplayName(normalized.name, entry.jid)
+        ? normalized.name
+        : !isPlaceholderDisplayName(prev.name, entry.jid)
+          ? prev.name
+          : normalized.name;
+      list[idx] = { ...prev, ...normalized, name };
     } else {
-      list.push(entry);
+      list.push(normalized);
     }
     this.chatCache.set(sessionId, list);
   }
@@ -987,12 +1077,15 @@ export class SessionManager {
     });
   }
 
-  private mapChatRows(chats: unknown[]): Array<{ jid: string; name: string; unreadCount?: number }> {
+  private mapChatRows(
+    sessionId: string,
+    chats: unknown[]
+  ): Array<{ jid: string; name: string; unreadCount?: number }> {
     const rows: Array<{ jid: string; name: string; unreadCount?: number }> = [];
     for (const chat of chats) {
       const c = chat as { id?: string; name?: string; unreadCount?: number };
       const jid = c.id ?? '';
-      const name = c.name ?? jid.split('@')[0] ?? jid;
+      const name = this.resolveChatDisplayName(sessionId, jid, { chatName: c.name });
       if (jid && isActionableWhatsAppJid(jid)) rows.push({ jid, name, unreadCount: c.unreadCount });
     }
     return rows;
@@ -1002,7 +1095,7 @@ export class SessionManager {
     for (const chat of chats) {
       const c = chat as { id?: string; name?: string; unreadCount?: number };
       const jid = c.id ?? '';
-      const name = c.name ?? jid.split('@')[0] ?? jid;
+      const name = this.resolveChatDisplayName(sessionId, jid, { chatName: c.name });
       if (!jid || !isActionableWhatsAppJid(jid)) continue;
       this.upsertChatCache(sessionId, {
         jid,
@@ -1024,7 +1117,9 @@ export class SessionManager {
       const jid = u.id ?? '';
       if (!jid || !isActionableWhatsAppJid(jid)) continue;
       const existing = this.chatCache.get(sessionId)?.find((c) => c.jid === jid);
-      const name = u.name ?? existing?.name ?? jid.split('@')[0] ?? jid;
+      const name = this.resolveChatDisplayName(sessionId, jid, {
+        chatName: u.name ?? existing?.name,
+      });
       this.upsertChatCache(sessionId, {
         jid,
         name,
@@ -1069,7 +1164,6 @@ export class SessionManager {
     );
   }
 
-  /** Baileys: request pairing code only after the first QR-ready connection.update. */
   private async waitForPairingReady(
     sessionId: string,
     sock: BaileysSocket,
@@ -1111,12 +1205,23 @@ export class SessionManager {
     }
 
     const existing = this.sockets.get(sessionId);
-    if (existing) return existing;
+    if (existing) {
+      const session = this.sessions.get(sessionId);
+      if (session?.status === 'active') {
+        return this.ensureActiveSocketReady(sessionId, existing);
+      }
+      return existing;
+    }
 
     if (this.starting.has(sessionId)) {
-      await this.waitForSocket(sessionId, 15_000);
+      const session = this.sessions.get(sessionId);
+      const waitOpen = session?.status === 'active';
+      await this.waitForSocket(sessionId, waitOpen ? 90_000 : 15_000, waitOpen);
       const sock = this.sockets.get(sessionId);
-      if (sock) return sock;
+      if (sock) {
+        if (waitOpen) return this.ensureActiveSocketReady(sessionId, sock);
+        return sock;
+      }
     }
 
     if (!this.sessions.get(sessionId)) {
@@ -1126,7 +1231,9 @@ export class SessionManager {
     this.starting.add(sessionId);
     try {
       await this.startSocket(sessionId);
-      await this.waitForSocket(sessionId, 15_000);
+      const session = this.sessions.get(sessionId);
+      const waitOpen = session?.status === 'active';
+      await this.waitForSocket(sessionId, waitOpen ? 90_000 : 15_000, waitOpen);
     } finally {
       this.starting.delete(sessionId);
     }
@@ -1135,15 +1242,64 @@ export class SessionManager {
     if (!sock) {
       throw new Error('WhatsApp socket failed to start — try Connect again');
     }
+    const session = this.sessions.get(sessionId);
+    if (session?.status === 'active') {
+      return this.ensureActiveSocketReady(sessionId, sock);
+    }
     return sock;
   }
 
-  private async waitForSocket(sessionId: string, timeoutMs: number): Promise<void> {
+  private async waitForSocket(
+    sessionId: string,
+    timeoutMs: number,
+    waitOpen = false
+  ): Promise<void> {
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
-      if (this.sockets.has(sessionId)) return;
+      if (!this.sockets.has(sessionId)) {
+        await new Promise((r) => setTimeout(r, 200));
+        continue;
+      }
+      if (!waitOpen || this.connectionPhases.get(sessionId) === 'open') return;
       await new Promise((r) => setTimeout(r, 200));
     }
+  }
+
+  private async waitForConnectionOpen(sessionId: string, timeoutMs: number): Promise<void> {
+    if (this.connectionPhases.get(sessionId) === 'open') return;
+
+    const sock = this.sockets.get(sessionId);
+    if (!sock) {
+      throw new Error('WhatsApp is still connecting — try again in a moment');
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        sock.ev.off('connection.update', onUpdate);
+        reject(new Error('WhatsApp is still connecting — try again in a moment'));
+      }, timeoutMs);
+
+      const onUpdate = (update: { connection?: string }) => {
+        if (update.connection === 'open') {
+          clearTimeout(timer);
+          sock.ev.off('connection.update', onUpdate);
+          resolve();
+        }
+      };
+      sock.ev.on('connection.update', onUpdate);
+    });
+  }
+
+  private async ensureActiveSocketReady(sessionId: string, sock: BaileysSocket): Promise<BaileysSocket> {
+    const phase = this.connectionPhases.get(sessionId);
+    if (phase === 'close') {
+      this.teardownSocket(sessionId);
+      return this.ensureSocket(sessionId);
+    }
+    if (phase !== 'open') {
+      await this.waitForConnectionOpen(sessionId, 60_000);
+    }
+    return this.sockets.get(sessionId) ?? sock;
   }
 
   private async startSocket(sessionId: string): Promise<void> {
@@ -1182,8 +1338,11 @@ export class SessionManager {
     if (isLinking && expirePairingLeaseIfNeeded(session)) {
       void this.persistSessionMetaNow(session);
     }
-    const wantsFullHistory =
-      !isLinking && (!session.historySyncComplete || syncedThreads < 25);
+    const wantsFullHistory = shouldSyncFullWhatsAppHistory(
+      isLinking,
+      session.historySyncComplete,
+      syncedThreads
+    );
 
     const sock = baileys.default({
       version,
@@ -1197,8 +1356,9 @@ export class SessionManager {
         keys: baileys.makeCacheableSignalKeyStore(authState.keys, logger),
       },
       markOnlineOnConnect: false,
+      fireInitQueries: isLinking,
       syncFullHistory: wantsFullHistory,
-      shouldSyncHistoryMessage: () => true,
+      shouldSyncHistoryMessage: () => wantsFullHistory,
       shouldIgnoreJid: createShouldIgnoreJid(),
       msgRetryCounterCache: createMsgRetryCounterCache(),
       getMessage: async (key: { remoteJid?: string | null; id?: string | null }) => {
@@ -1222,12 +1382,12 @@ export class SessionManager {
 
     sock.ev.on('chats.set', (chats) => {
       this.ingestChats(sessionId, chats);
-      void syncWhatsAppChatsBatch(sessionId, this.mapChatRows(chats));
+      void syncWhatsAppChatsBatch(sessionId, this.mapChatRows(sessionId, chats));
     });
 
     sock.ev.on('chats.upsert', (chats) => {
       this.ingestChats(sessionId, chats);
-      void syncWhatsAppChatsBatch(sessionId, this.mapChatRows(chats));
+      void syncWhatsAppChatsBatch(sessionId, this.mapChatRows(sessionId, chats));
     });
 
     sock.ev.on('chats.update', (updates: unknown[]) => {
@@ -1255,7 +1415,7 @@ export class SessionManager {
       };
       if (payload.chats?.length) {
         this.ingestChats(sessionId, payload.chats);
-        void syncWhatsAppChatsBatch(sessionId, this.mapChatRows(payload.chats));
+        void syncWhatsAppChatsBatch(sessionId, this.mapChatRows(sessionId, payload.chats));
       }
       if (payload.messages?.length) {
         const batch: Array<{ jid: string; message: CachedMessage; displayName?: string }> = [];
@@ -1266,7 +1426,10 @@ export class SessionManager {
           const parsed = this.parseBaileysMessages(jid, [item]);
           if (parsed.length > 0) {
             this.storeMessages(sessionId, jid, parsed, [item]);
-            const chatName = this.chatCache.get(sessionId)?.find((c) => c.jid === jid)?.name;
+            const chatName = this.resolveChatDisplayName(sessionId, jid, {
+              chatName: this.chatCache.get(sessionId)?.find((c) => c.jid === jid)?.name,
+              pushName: parsed[0]?.pushName,
+            });
             for (const m of parsed) {
               batch.push({ jid, message: m, displayName: chatName });
             }
@@ -1302,12 +1465,14 @@ export class SessionManager {
         if (parsed.length === 0) continue;
         const m = parsed[0]!;
         this.storeMessages(sessionId, jid, [m], [item]);
-        const chatName = this.chatCache.get(sessionId)?.find((c) => c.jid === jid)?.name;
+        const chatName = this.resolveChatDisplayName(sessionId, jid, {
+          chatName: this.chatCache.get(sessionId)?.find((c) => c.jid === jid)?.name,
+          pushName: m.pushName,
+        });
         void syncWhatsAppMessage(sessionId, jid, m, chatName);
         if (!m.fromMe && type === 'notify') {
           this.bumpUnread(sessionId, jid);
-          const name = m.pushName ?? jid.split('@')[0] ?? jid;
-          this.upsertChatCache(sessionId, { jid, name });
+          this.upsertChatCache(sessionId, { jid, name: chatName });
         }
       }
     });
@@ -1315,11 +1480,22 @@ export class SessionManager {
     sock.ev.on('contacts.upsert', (contacts) => {
       const rows: Array<{ jid: string; name: string }> = [];
       for (const contact of contacts) {
-        const jid = contact.id ?? '';
-        const name = contact.name ?? contact.notify ?? jid.split('@')[0] ?? jid;
-        if (jid) {
-          this.upsertChatCache(sessionId, { jid, name });
-          rows.push({ jid, name });
+        const c = contact as {
+          id?: string;
+          jid?: string;
+          lid?: string;
+          name?: string;
+          notify?: string;
+          verifiedName?: string;
+        };
+        const contactName = ingestBaileysContact(this.getLidIndex(sessionId), c);
+        const ids = new Set(
+          [c.id, c.jid, c.lid].filter((value): value is string => Boolean(value?.trim()))
+        );
+        for (const jid of ids) {
+          const resolved = this.resolveChatDisplayName(sessionId, jid, { chatName: contactName });
+          this.upsertChatCache(sessionId, { jid, name: resolved });
+          rows.push({ jid, name: resolved });
         }
       }
       if (rows.length > 0) {
@@ -1475,6 +1651,19 @@ export class SessionManager {
             { sessionId, statusCode },
             'WhatsApp transient disconnect during pairing — recovering'
           );
+          this.recoverLinkingAfterClose(sessionId, {
+            resetAuth: false,
+            invalidatePairing: false,
+          });
+          return;
+        }
+
+        if (
+          current.status === 'active' &&
+          !this.starting.has(sessionId) &&
+          isTransientWhatsAppDisconnect(statusCode, baileys.DisconnectReason)
+        ) {
+          logger.info({ sessionId, statusCode }, 'WhatsApp active session disconnected — reconnecting');
           this.recoverLinkingAfterClose(sessionId, {
             resetAuth: false,
             invalidatePairing: false,

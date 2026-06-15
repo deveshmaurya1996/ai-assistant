@@ -25,6 +25,7 @@ import { useAuthStore } from '@/stores/auth';
 import {
   getMicPermissionStatus,
   openAppSettings,
+  requestMicPermission,
   type PermissionStatus,
 } from '@/features/voice/requestVoicePermissions';
 import {
@@ -207,13 +208,26 @@ export function SettingsHome() {
             value={autoSendAfterTranscribe}
             onValueChange={(v) => void setAutoSend(v)}
           />
-          <View style={styles.statusRow}>
-            <Text variant="caption" muted>
-              Microphone:{' '}
-              {micStatus ? formatMicPermissionStatus(micStatus) : 'Unknown'}
-            </Text>
-            <Button label="Open settings" variant="ghost" onPress={openAppSettings} />
-          </View>
+          <Text variant="caption" muted style={{ marginTop: spacing.xs }}>
+            Microphone: {micStatus ? formatMicPermissionStatus(micStatus) : 'Unknown'}
+          </Text>
+          {micStatus !== 'granted' ? (
+            <Button
+              label={
+                micStatus === 'denied' ? 'Open microphone settings' : 'Enable microphone'
+              }
+              variant="secondary"
+              style={{ marginTop: spacing.sm }}
+              onPress={async () => {
+                if (micStatus === 'denied') {
+                  await openAppSettings();
+                  return;
+                }
+                const status = await requestMicPermission();
+                setMicStatus(status);
+              }}
+            />
+          ) : null}
         </SettingsSection>
 
         <SettingsSection title="Notifications">
@@ -324,17 +338,6 @@ export function SettingsHome() {
           </Text>
         </SettingsSection>
 
-        <SettingsSection title="Account">
-          <Button
-            label="Sign out"
-            variant="danger"
-            onPress={async () => {
-              await signOut();
-              router.replace('/(auth)/welcome');
-            }}
-          />
-        </SettingsSection>
-
         <SettingsSection title="About">
           <Text variant="bodyMedium">AI Assistant</Text>
           <Text variant="caption" muted style={{ marginTop: spacing.xs }}>
@@ -355,6 +358,21 @@ export function SettingsHome() {
             © {new Date().getFullYear()} AI Assistant
           </Text>
         </SettingsSection>
+
+        <Button
+          label="Sign out"
+          variant="secondary"
+          labelColor={colors.danger}
+          style={{
+            marginTop: spacing.lg,
+            backgroundColor: `${colors.danger}26`,
+            borderColor: `${colors.danger}40`,
+          }}
+          onPress={async () => {
+            await signOut();
+            router.replace('/(auth)/welcome');
+          }}
+        />
       </ScrollView>
       <AssistantPickerSheet ref={assistantSheetRef} />
       <ModelPickerSheet ref={modelSheetRef} />
@@ -381,8 +399,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
     paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
-    marginBottom: spacing.sm,
+    paddingBottom: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   profileText: {
@@ -397,10 +414,4 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   rowEnd: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: spacing.sm,
-  },
 });

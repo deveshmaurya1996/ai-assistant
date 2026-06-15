@@ -3,7 +3,11 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Set
 
-from orchestration.integration_intent import is_read_intent, is_send_intent
+from orchestration.integration_intent import (
+    is_email_send_intent,
+    is_read_intent,
+    is_send_intent,
+)
 
 _CONTACT_STOP_WORDS = frozenset(
     {
@@ -45,10 +49,14 @@ def extract_contact_name(query: str) -> str | None:
     if not is_send_intent(query):
         return None
     patterns = [
-        r"send(?:\s+a)?\s+message\s+to\s+([A-Za-z][\w\s'-]{0,40}?)(?:\s+[:,-]|\s+saying|\s*$)",
-        r"text\s+([A-Za-z][\w'-]+)",
-        r"message\s+to\s+([A-Za-z][\w'-]+)",
-        r"to\s+([A-Za-z][\w'-]+)\s*[:,-]",
+        r"send(?:\s+a)?\s+message\s+to\s+([A-Za-z][\w\s'.-]{0,40}?)(?:\s+[:,-]|\s+saying|\s+that|\s+with|\s*$)",
+        r"send\s+([A-Za-z][\w'.-]+)(?:\s+[:,-]|\s+(?:a\s+)?message|\s+saying|\s+hello|\s+hi\b)",
+        r"text\s+([A-Za-z][\w'.-]+)",
+        r"message\s+to\s+([A-Za-z][\w'.-]+)",
+        r"whatsapp\s+([A-Za-z][\w'.-]+)",
+        r"(?:^|\s)to\s+([A-Za-z][\w'.-]+)(?:\s+[:,-]|\s+saying|\s+with|\s*$)",
+        r"(?:^|\s)for\s+([A-Za-z][\w'.-]+)(?:\s+[:,-]|\s+saying|\s+with|\s*$)",
+        r"send\s+.+\s+to\s+([A-Za-z][\w'.-]+)\s*$",
     ]
     for pattern in patterns:
         m = re.search(pattern, query, re.IGNORECASE)
@@ -60,7 +68,7 @@ def extract_contact_name(query: str) -> str | None:
 
 
 def parse_whatsapp_send_args(query: str) -> Dict[str, str]:
-    contact = extract_contact_name(query) or "contact"
+    contact = extract_contact_name(query) or ""
     message = query
     colon = re.search(r"[:,-]\s*(.+)$", query)
     if colon:
@@ -196,7 +204,7 @@ def heuristic_whatsapp_read(query: str, available_caps: Set[str]) -> List[Dict[s
 def heuristic_whatsapp_send(
     query: str, available_caps: Set[str]
 ) -> List[Dict[str, Any]]:
-    if not is_send_intent(query) or is_read_intent(query):
+    if not is_send_intent(query) or is_read_intent(query) or is_email_send_intent(query):
         return []
 
     out: List[Dict[str, Any]] = []

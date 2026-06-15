@@ -6,6 +6,7 @@ import { getToolDefinition, isPlatformTool, validateToolArgs } from '@ai-assista
 import type { ToolSource } from '@ai-assistant/types';
 import { decryptCredentials, encryptCredentials } from './encryption';
 import { executePlatformTool } from './platform-tools';
+import { gatewayInternalFetch } from './gateway-internal';
 
 import {
   createExecution,
@@ -129,6 +130,33 @@ export async function startExecution(input: StartExecutionInput): Promise<Execut
   return record;
 }
 
+async function executeWhatsAppViaGateway(record: ExecutionRecord): Promise<unknown> {
+  const res = await gatewayInternalFetch('/internal/integrations/whatsapp/execute', {
+    method: 'POST',
+    body: JSON.stringify({
+      userId: record.userId,
+      tool: record.tool,
+      args: record.args,
+      source: record.source,
+      confirmed: record.confirmed,
+      connectionId: record.connectionId,
+      chatSessionId: record.chatSessionId,
+    }),
+  });
+
+  if (res.status === 428) {
+    const body = (await res.json()) as { error?: string };
+    throw new Error(body.error ?? 'Confirmation required');
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? ((await res.text()) || 'WhatsApp action failed'));
+  }
+
+  const body = (await res.json()) as { result?: unknown };
+  return body.result ?? body;
+}
+
 async function runExecution(
   record: ExecutionRecord,
   encryptedCredentials: string | null,
@@ -161,6 +189,32 @@ async function runExecution(
         tool: record.tool,
         status: 'completed',
         result: result.data,
+      });
+      return;
+    }
+
+    if (record.tool.startsWith('whatsapp.')) {
+      const result = await executeWhatsAppViaGateway(record);
+      updateExecution(record.executionId, {
+        status: 'completed',
+        result,
+        progress: 100,
+      });
+      await prisma.toolInvocation.updateMany({
+        where: { executionId: record.executionId },
+        data: {
+          status: 'COMPLETED',
+          result: result as object,
+          completedAt: new Date(),
+        },
+      });
+      recordToolExecution(record.userId, record.tool);
+      await publishEvent(EventNames.TOOL_COMPLETED, {
+        userId: record.userId,
+        executionId: record.executionId,
+        tool: record.tool,
+        status: 'completed',
+        result,
       });
       return;
     }

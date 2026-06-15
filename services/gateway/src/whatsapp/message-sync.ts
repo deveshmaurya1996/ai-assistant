@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { prisma, Prisma } from '@ai-assistant/database';
 import type { CachedMessage, ChatEntry, UnreadChatItem } from './session-manager';
+import { isPlaceholderDisplayName } from './display-name';
 import { getWhatsAppAuthRoot } from './auth-paths';
 import { ensureAuthDirLocal } from './auth-remote';
 
@@ -80,7 +81,7 @@ export async function syncWhatsAppChatsBatch(
             lastMessageAt: chat.lastMessageAt ?? new Date(),
           },
           update: {
-            displayName: chat.name,
+            displayName: chat.name && !isPlaceholderDisplayName(chat.name, chat.jid) ? chat.name : undefined,
             ...(typeof chat.unreadCount === 'number' ? { unreadCount: chat.unreadCount } : {}),
             ...(chat.lastMessageAt ? { lastMessageAt: chat.lastMessageAt } : {}),
             updatedAt: new Date(),
@@ -122,7 +123,8 @@ export async function syncWhatsAppMessage(
           typeof unreadCount === 'number' ? unreadCount : message.fromMe ? 0 : 1,
       },
       update: {
-        displayName: displayName ?? undefined,
+        displayName:
+          displayName && !isPlaceholderDisplayName(displayName, jid) ? displayName : undefined,
         lastMessageAt: new Date(message.timestamp),
         updatedAt: new Date(),
         ...(typeof unreadCount === 'number'
@@ -186,7 +188,8 @@ export async function syncWhatsAppHistoryMessages(
           unreadCount: 0,
         },
         update: {
-          displayName: displayName ?? undefined,
+          displayName:
+            displayName && !isPlaceholderDisplayName(displayName, jid) ? displayName : undefined,
           lastMessageAt: new Date(message.timestamp),
           updatedAt: new Date(),
         },

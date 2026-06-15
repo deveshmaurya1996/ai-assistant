@@ -6,7 +6,7 @@ import { getRequestSession, headersFromSocketHandshake } from '../utils/session'
 import type { ChatOutgoingPayload } from '@ai-assistant/types';
 import {
   processChatMessage,
-  processInlineConfirmAccept,
+  processPendingConfirmAccept,
   processInlineConfirmCancel,
 } from '../services/chat.service';
 import {
@@ -173,7 +173,7 @@ export function setupSocketIO(fastify: FastifyInstance) {
               const reply = isConfirmReply(trimmedText);
               if (reply === 'yes') {
                 clearPendingConfirm(chatSessionId);
-                const result = await processInlineConfirmAccept({
+                const result = await processPendingConfirmAccept({
                   userId,
                   chatSessionId,
                   pending,
@@ -265,13 +265,6 @@ export function setupSocketIO(fastify: FastifyInstance) {
             onTitleUpdated: (sessionId, title) => {
               socket.emit('chat:title_updated', { chatSessionId: sessionId, title });
             },
-            onActionConfirmRequired: (payload) => {
-              socket.emit('chat:action_confirm_required', {
-                tool: payload.tool,
-                args: payload.args,
-                executionId: payload.executionId,
-              });
-            },
           });
 
           if ('aborted' in result && result.aborted) {
@@ -287,13 +280,11 @@ export function setupSocketIO(fastify: FastifyInstance) {
           }
 
           if ('requiresConfirmation' in result && result.requiresConfirmation) {
-            if ('inlineConfirm' in result && result.inlineConfirm) {
-              socket.emit('chat:message_saved', { message: result.userMessage });
-              socket.emit('chat:end', {
-                message: result.assistantMessage!,
-                chatSessionId: result.sessionId,
-              });
-            }
+            socket.emit('chat:message_saved', { message: result.userMessage });
+            socket.emit('chat:end', {
+              message: result.assistantMessage!,
+              chatSessionId: result.sessionId,
+            });
             return;
           }
 
@@ -322,6 +313,63 @@ export function setupSocketIO(fastify: FastifyInstance) {
           });
         } finally {
           endChatTurn(socket.id, activeTurnSessionKey);
+        }
+      })();
+    });
+
+    socket.on('chat:confirm_pending', async (data: { chatSessionId?: string }) => {
+      await authReady;
+      if (!userId) {
+        socket.emit('chat:error', { error: 'Unauthorized. Please authenticate first.' });
+        return;
+      }
+      const chatSessionId = data.chatSessionId?.trim();
+      if (!chatSessionId) {
+        socket.emit('chat:error', { error: 'chatSessionId is required' });
+        return;
+      }
+
+      void (async () => {
+        const turnAbort = beginChatTurn(socket.id, chatSessionId);
+        try {
+          const pending = getPendingConfirm(chatSessionId);
+          if (!pending || pending.userId !== userId) {
+            socket.emit('chat:error', {
+              chatSessionId,
+              error: 'No pending action to confirm.',
+            });
+            return;
+          }
+          clearPendingConfirm(chatSessionId);
+          const result = await processPendingConfirmAccept({
+            userId,
+            chatSessionId,
+            pending,
+            replyText: 'yes',
+            agentSource: 'chat',
+            signal: turnAbort.signal,
+            onChunk: (chunk, sessionId) => {
+              socket.emit('chat:chunk', { chunk, chatSessionId: sessionId });
+            },
+            onTitleUpdated: (sessionId, title) => {
+              socket.emit('chat:title_updated', { chatSessionId: sessionId, title });
+            },
+          });
+          socket.emit('chat:message_saved', { message: result.userMessage });
+          socket.emit('chat:end', {
+            message: result.assistantMessage!,
+            chatSessionId: result.sessionId,
+          });
+        } catch (err) {
+          const message =
+            err instanceof AppError
+              ? err.message
+              : err instanceof Error
+                ? err.message
+                : 'Unknown error';
+          socket.emit('chat:error', { chatSessionId, error: message, details: message });
+        } finally {
+          endChatTurn(socket.id, chatSessionId);
         }
       })();
     });

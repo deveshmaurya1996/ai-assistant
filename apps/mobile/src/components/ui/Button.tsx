@@ -7,6 +7,7 @@ type Props = {
   label: string;
   onPress: () => void;
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  labelColor?: string;
   disabled?: boolean;
   loading?: boolean;
   style?: ViewStyle;
@@ -16,6 +17,7 @@ export function Button({
   label,
   onPress,
   variant = 'primary',
+  labelColor,
   disabled,
   loading,
   style,
@@ -32,7 +34,8 @@ export function Button({
           : 'transparent';
 
   const fg =
-    variant === 'primary' || variant === 'danger' ? colors.onPrimary : colors.text;
+    labelColor ??
+    (variant === 'primary' || variant === 'danger' ? colors.onPrimary : colors.text);
 
   return (
     <Pressable

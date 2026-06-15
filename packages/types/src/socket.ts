@@ -158,9 +158,14 @@ export interface ServerToClientEvents {
   'voice:interrupted': (data: VoiceInterruptedPayload) => void;
 }
 
+export interface ChatConfirmPendingPayload {
+  chatSessionId: string;
+}
+
 export interface ClientToServerEvents {
   authenticate: (token: string) => void;
   'chat:message': (data: ChatOutgoingPayload) => void;
+  'chat:confirm_pending': (data: ChatConfirmPendingPayload) => void;
   'chat:abort': (data: ChatAbortPayload) => void;
   'voice:turn_start': (data: VoiceTurnStartPayload) => void;
   'voice:turn_audio': (data: VoiceTurnAudioPayload) => void;

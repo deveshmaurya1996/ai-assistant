@@ -7,7 +7,7 @@ from orchestration.heuristics.calendar import (
     heuristic_calendar_cancel,
 )
 from orchestration.heuristics.drive import heuristic_drive, heuristic_drive_get_content
-from orchestration.heuristics.email import heuristic_email
+from orchestration.heuristics.email import heuristic_email, heuristic_email_send
 from orchestration.heuristics.helpers import dedupe_cap_items
 from orchestration.heuristics.inbox import heuristic_inbox_check
 from orchestration.heuristics.whatsapp import (
@@ -32,6 +32,7 @@ def run_heuristics(
         out.extend(heuristic_inbox_check(query, available_caps, connected))
         out.extend(heuristic_whatsapp_read(query, available_caps))
     out.extend(heuristic_email(query, available_caps))
+    out.extend(heuristic_email_send(query, available_caps))
 
     cancel_items = heuristic_calendar_cancel(query, available_caps, connected)
     if cancel_items:

@@ -290,7 +290,7 @@ async def _stage_planner(state: PipelineState) -> AsyncIterator[str | bytes]:
         if pending_confirm and not payload.confirmed:
             from orchestration.contacts import enrich_whatsapp_send_to
 
-            enrich_whatsapp_send_to(pending_confirm, completed)
+            enrich_whatsapp_send_to(pending_confirm, completed, payload.query)
             yield sse_frame(
                 "action_confirm",
                 {

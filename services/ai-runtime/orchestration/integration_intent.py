@@ -119,6 +119,15 @@ def is_send_intent(query: str) -> bool:
     )
 
 
+def is_email_send_intent(query: str) -> bool:
+    q = query.lower()
+    if not re.search(r"\b(send|compose|write|draft)\b", q):
+        return False
+    if re.search(r"\b(email|e-mail|gmail)\b", q):
+        return True
+    return bool(re.search(r"[\w.+-]+@[\w.-]+\.\w+", query))
+
+
 def _detect_unsupported_apps(query: str) -> List[str]:
     q = f" {query.lower()} "
     found: List[str] = []

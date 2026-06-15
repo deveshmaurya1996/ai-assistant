@@ -5,8 +5,6 @@ import { DrawerCloseGesture } from '@/components/layout/DrawerCloseGesture';
 import { useAppDrawerScreenOptions } from '@/components/layout/AppDrawerSwipeOptions';
 import { ChatImagePreviewHost } from '@/features/chat/ChatImagePreviewHost';
 import { VoiceSessionHost } from '@/features/voice-assistant/VoiceSessionHost';
-import { ActionConfirmSheet } from '@/components/integrations/ActionConfirmSheet';
-import { useChatActionConfirmBridge } from '@/features/chat/chatActionConfirmBridge';
 import { useAuthStore } from '@/stores/auth';
 import { AppSplash } from '@/components/boot/AppSplash';
 import { Routes } from '@/lib/routes';
@@ -14,22 +12,10 @@ import { ActiveChatSessionTracker } from '@/features/chat/ActiveChatSessionTrack
 
 function ShellDrawerContent() {
   const drawerScreenOptions = useAppDrawerScreenOptions();
-  const pendingAction = useChatActionConfirmBridge((s) => s.pendingAction);
-  const confirmPendingAction = useChatActionConfirmBridge((s) => s.confirmPendingAction);
-  const cancelPendingAction = useChatActionConfirmBridge((s) => s.cancelPendingAction);
-
-  const showModalConfirm =
-    Boolean(pendingAction) && !pendingAction?.tool.startsWith('whatsapp.');
 
   return (
     <>
       <ActiveChatSessionTracker />
-      <ActionConfirmSheet
-        visible={showModalConfirm}
-        payload={pendingAction}
-        onConfirm={() => confirmPendingAction()}
-        onCancel={() => cancelPendingAction()}
-      />
       <Drawer
         backBehavior="history"
         drawerContent={(props) => (
