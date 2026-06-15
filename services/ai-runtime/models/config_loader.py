@@ -139,6 +139,15 @@ def timeout_for_model(model_id: str, *, stream: bool) -> float:
     return fallback
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if raw in ("1", "true", "yes"):
+        return True
+    if raw in ("0", "false", "no"):
+        return False
+    return default
+
+
 def get_rag_config() -> Dict[str, Any]:
     cfg = load_ai_models_config()
     rag = cfg.get("rag") or {}
@@ -148,7 +157,10 @@ def get_rag_config() -> Dict[str, Any]:
         "timeoutSeconds": float(rag.get("timeoutSeconds", 5)),
         "limit": int(rag.get("limit", 3)),
         "factLimit": int(rag.get("factLimit", 5)),
-        "warmEmbedderOnStartup": bool(rag.get("warmEmbedderOnStartup", True)),
+        "warmEmbedderOnStartup": _env_bool(
+            "WARM_EMBEDDER_ON_STARTUP",
+            bool(rag.get("warmEmbedderOnStartup", True)),
+        ),
         "embeddingModel": str(rag.get("embeddingModel", "nvidia/nv-embed-v1")),
         "providerModel": str(rag.get("providerModel", "nvidia/nv-embed-v1")),
         "rerankModel": str(rag.get("rerankModel", "nvidia/rerank-qa-mistral-4b")),

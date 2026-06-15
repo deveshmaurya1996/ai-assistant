@@ -23,7 +23,7 @@ export interface BaileysSocket {
 export interface BaileysModule {
   default: (opts: Record<string, unknown>) => BaileysSocket;
   Browsers: { macOS: (browser: string) => unknown };
-  DisconnectReason: { loggedOut: number; restartRequired: number };
+  DisconnectReason: { loggedOut: number; restartRequired: number; connectionReplaced: number; timedOut: number; connectionClosed: number };
   fetchLatestBaileysVersion: () => Promise<{ version: unknown }>;
   jidNormalizedUser: (jid: string) => string;
   makeCacheableSignalKeyStore: (keys: unknown, logger: unknown) => unknown;

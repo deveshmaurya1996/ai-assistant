@@ -21,6 +21,7 @@ from env_loader import (
     resolve_tool_runtime_url,
 )
 from orchestration.agent_pipeline import iter_agent_turn_sse
+from tools.clients.gateway_client import internal_headers
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +109,11 @@ async def invalidate_manifest(body: ManifestInvalidateRequest):
 async def tools_available(user_id: str | None = None):
     async with httpx.AsyncClient() as client:
         params = {"userId": user_id} if user_id else {}
-        res = await client.get(f"{TOOL_RUNTIME_URL}/v1/tools/available", params=params)
+        res = await client.get(
+            f"{TOOL_RUNTIME_URL}/v1/tools/available",
+            params=params,
+            headers=internal_headers(),
+        )
         res.raise_for_status()
         return res.json()
 
@@ -129,9 +134,12 @@ async def agent_diagnostics(user_id: str):
         CAPABILITY_RUNTIME_URL,
         "/v1/integrations/manifest",
         {"userId": user_id},
+        internal_headers(),
     )
-    tool_runtime = await _probe(TOOL_RUNTIME_URL, "/health")
-    capability_runtime = await _probe(CAPABILITY_RUNTIME_URL, "/health")
+    tool_runtime = await _probe(TOOL_RUNTIME_URL, "/health", None, internal_headers())
+    capability_runtime = await _probe(
+        CAPABILITY_RUNTIME_URL, "/health", None, internal_headers()
+    )
     ai_runtime = await _probe(AI_SERVICE_URL, "/health")
 
     return {
@@ -189,6 +197,7 @@ async def execute_tool(payload: ToolCallRequest):
         res = await client.post(
             f"{TOOL_RUNTIME_URL}/v1/executions",
             json=payload.model_dump(),
+            headers=internal_headers(),
         )
         if res.status_code == 428:
             return {"requiresConfirmation": True, "error": res.json()}

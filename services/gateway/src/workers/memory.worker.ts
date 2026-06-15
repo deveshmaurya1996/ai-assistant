@@ -1,14 +1,11 @@
 import { Queue, Worker } from 'bullmq';
 import { config } from '@ai-assistant/config';
+import { createBullMqWorkerConnection, getBullMqQueueConnection } from '../lib/bullmq-redis';
 
 export const MEMORY_QUEUE_NAME = 'memory-queue';
 
 let memoryQueue: Queue | null = null;
 let memoryWorker: Worker | null = null;
-
-function getConnection() {
-  return { url: config.redisUrl };
-}
 
 export function getMemoryQueue(): Queue | null {
   return memoryQueue;
@@ -26,7 +23,7 @@ export async function enqueueMemoryJob(
 
 export function startMemoryWorker(): Worker | null {
   try {
-    memoryQueue = new Queue(MEMORY_QUEUE_NAME, { connection: getConnection() });
+    memoryQueue = new Queue(MEMORY_QUEUE_NAME, { connection: getBullMqQueueConnection() });
 
     memoryWorker = new Worker(
       MEMORY_QUEUE_NAME,
@@ -34,7 +31,7 @@ export function startMemoryWorker(): Worker | null {
         console.info('[memory-queue] job received', job.name, job.id);
       },
       {
-        connection: getConnection(),
+        connection: createBullMqWorkerConnection(),
         concurrency: config.memoryConcurrency,
       }
     );

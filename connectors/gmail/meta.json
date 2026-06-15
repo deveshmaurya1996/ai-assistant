@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "providerIds": ["google"],
   "domains": ["email"],
-  "description": "Read, search, send, reply, draft, and star Gmail messages",
+  "description": "Gmail: unread, read, search, send, reply, draft, star (delete not supported)",
   "implementation": "GoogleConnector",
   "integrationModule": "google"
 }

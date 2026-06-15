@@ -19,6 +19,9 @@ async function checkRedis(): Promise<boolean> {
     connectTimeout: 2_000,
     lazyConnect: true,
   });
+  redis.on('error', (err) => {
+    console.warn('[redis:health-probe]', err.message);
+  });
   try {
     await redis.connect();
     const pong = await redis.ping();

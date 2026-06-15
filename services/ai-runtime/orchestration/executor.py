@@ -52,7 +52,10 @@ async def _poll_execution(
 ) -> Dict[str, Any]:
     for _ in range(max_attempts):
         await asyncio.sleep(0.5)
-        status_res = await client.get(f"{TOOL_RUNTIME_URL}/v1/executions/{execution_id}")
+        status_res = await client.get(
+            f"{TOOL_RUNTIME_URL}/v1/executions/{execution_id}",
+            headers=internal_headers(),
+        )
         if status_res.status_code >= 400:
             return {"tool": tool_name, "status": "failed", "error": status_res.text}
         status_data = status_res.json()
@@ -250,7 +253,11 @@ async def execute_planned_tools(
                 if connection_id:
                     exec_body["connectionId"] = connection_id
 
-            res = await client.post(f"{CAPABILITY_RUNTIME_URL}/v1/execute", json=exec_body)
+            res = await client.post(
+                f"{CAPABILITY_RUNTIME_URL}/v1/execute",
+                json=exec_body,
+                headers=internal_headers(),
+            )
             if res.status_code == 428:
                 body = res.json()
                 results.append(

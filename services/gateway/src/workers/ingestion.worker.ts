@@ -4,6 +4,7 @@ import { config } from '@ai-assistant/config';
 import { prisma } from '@ai-assistant/database';
 import { EventNames, publishEvent } from '@ai-assistant/events';
 import { getConnector } from '@ai-assistant/integration-runtime';
+import { createBullMqWorkerConnection, getBullMqQueueConnection } from '../lib/bullmq-redis';
 import { processFileAsset } from '../jobs/process-file';
 
 export const INGESTION_QUEUE_NAME = 'ingestion-queue';
@@ -11,10 +12,6 @@ export const LEGACY_SYNC_QUEUE_NAME = 'sync-queue';
 
 let ingestionQueue: Queue | null = null;
 let ingestionWorker: Worker | null = null;
-
-function getConnection() {
-  return { url: config.redisUrl };
-}
 
 function decryptCredentials(ciphertext: string): string {
   const ALGORITHM = 'aes-256-gcm';
@@ -71,7 +68,7 @@ export async function enqueueIngestionJob(
 
 export function startIngestionWorker(): Worker | null {
   try {
-    ingestionQueue = new Queue(INGESTION_QUEUE_NAME, { connection: getConnection() });
+    ingestionQueue = new Queue(INGESTION_QUEUE_NAME, { connection: getBullMqQueueConnection() });
 
     ingestionWorker = new Worker(
       INGESTION_QUEUE_NAME,
@@ -88,7 +85,7 @@ export function startIngestionWorker(): Worker | null {
         await syncConnection(connectionId);
       },
       {
-        connection: getConnection(),
+        connection: createBullMqWorkerConnection(),
         concurrency: config.ingestionConcurrency,
         limiter: { max: 5, duration: 1000 },
       }

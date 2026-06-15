@@ -4,26 +4,66 @@
 
 - id: send_to_contact
   query: send message to John saying hello
-  output: '{"capabilities":[{"capability":"communication.chat.search","args":{"query":"John"},"provider":"whatsapp"},{"capability":"messaging.send_message","args":{"to":"John","message":"hello"},"provider":"whatsapp"}]}'
+  output: '{"capabilities":[{"capability":"messaging.search_chats","args":{"query":"John"},"provider":"whatsapp"},{"capability":"messaging.send_message","args":{"to":"John","message":"hello"},"provider":"whatsapp"}]}'
+
+- id: read_contact_chat
+  query: what did Sarah say on whatsapp
+  output: '{"capabilities":[{"capability":"messaging.search_chats","args":{"query":"Sarah"},"provider":"whatsapp"},{"capability":"messaging.read_chat","args":{"query":"Sarah","limit":25},"provider":"whatsapp"}]}'
+
+- id: whatsapp_search_history
+  query: search whatsapp for invoice
+  output: '{"capabilities":[{"capability":"messaging.search_messages","args":{"query":"invoice","limit":20},"provider":"whatsapp"}]}'
 
 - id: gmail_unread
   query: check my gmail unread
   output: '{"capabilities":[{"capability":"email.list_unread","args":{"maxResults":15},"provider":"google"}]}'
 
-- id: calendar_yesterday
-  query: what meetings did I have yesterday
-  output: '{"capabilities":[{"capability":"calendar.list_upcoming","args":{"maxResults":25},"provider":"google"}]}'
+- id: gmail_search
+  query: find emails from amazon this week
+  output: '{"capabilities":[{"capability":"email.search","args":{"query":"from:amazon newer_than:7d","maxResults":15},"provider":"google"}]}'
+
+- id: gmail_send
+  query: send an email to boss about vacation
+  output: '{"capabilities":[{"capability":"email.send_email","args":{"to":"boss@company.com","subject":"Vacation request","body":"..."},"provider":"google"}]}'
+
+- id: gmail_reply
+  query: reply to the latest email saying thanks
+  output: '{"capabilities":[{"capability":"email.read_email","args":{},"provider":"google"},{"capability":"email.reply_email","args":{"body":"Thanks!"},"provider":"google"}]}'
+
+- id: calendar_upcoming
+  query: what meetings do I have today
+  output: '{"capabilities":[{"capability":"calendar.list_upcoming","args":{"maxResults":15},"provider":"google"}]}'
+
+- id: calendar_create
+  query: schedule a team sync tomorrow at 3pm for 30 minutes
+  output: '{"capabilities":[{"capability":"calendar.create_event","args":{"summary":"Team sync","durationMinutes":30},"provider":"google"}]}'
+
+- id: calendar_cancel
+  query: cancel my 2pm meeting
+  output: '{"capabilities":[{"capability":"calendar.list_upcoming","args":{"maxResults":20},"provider":"google"},{"capability":"calendar.cancel_event","args":{},"provider":"google"}]}'
 
 - id: drive_search
   query: find my budget spreadsheet in google drive
   output: '{"capabilities":[{"capability":"drive.search","args":{"query":"budget spreadsheet","maxResults":10},"provider":"google"}]}'
 
+- id: drive_summarize
+  query: summarize my resume pdf from drive
+  output: '{"capabilities":[{"capability":"drive.search","args":{"query":"resume","maxResults":5},"provider":"google"},{"capability":"drive.get_content","args":{},"provider":"google"}]}'
+
+- id: cross_app_search
+  query: search everywhere for contract
+  output: '{"capabilities":[{"capability":"resources.search","args":{"query":"contract","limit":20},"provider":"platform"}]}'
+
 - id: conversational_no_tools
   query: how are you doing today
   output: '{"capabilities":[]}'
 
-- id: scheduling_handoff
+- id: scheduling_handoff_reminder
   query: remind me tomorrow at 8am to stand up
+  output: '{"capabilities":[]}'
+
+- id: scheduling_handoff_send_later
+  query: send whatsapp to john tomorrow at 3pm saying hi
   output: '{"capabilities":[]}'
 
 - id: disconnected_no_plan

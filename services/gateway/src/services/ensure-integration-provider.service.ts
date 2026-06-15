@@ -1,20 +1,5 @@
 import { prisma } from '@ai-assistant/database';
-
-const PROVIDER_DEFS: Record<
-  string,
-  { name: string; authType: string; scopes: string[] }
-> = {
-  google: {
-    name: 'Google Workspace',
-    authType: 'oauth2',
-    scopes: ['gmail', 'calendar', 'drive'],
-  },
-  whatsapp: {
-    name: 'WhatsApp',
-    authType: 'device_link',
-    scopes: ['messages'],
-  },
-};
+import { PROVIDER_DEFS } from '../integrations/provider-defs';
 
 export async function ensureIntegrationProvider(providerId: string): Promise<void> {
   const def = PROVIDER_DEFS[providerId];
@@ -31,6 +16,17 @@ export async function ensureIntegrationProvider(providerId: string): Promise<voi
       scopes: def.scopes,
       isEnabled: true,
     },
-    update: {},
+    update: {
+      name: def.name,
+      authType: def.authType,
+      scopes: def.scopes,
+      isEnabled: true,
+    },
   });
+}
+
+export async function bootstrapIntegrationProviders(): Promise<void> {
+  await Promise.all(
+    Object.keys(PROVIDER_DEFS).map((providerId) => ensureIntegrationProvider(providerId))
+  );
 }

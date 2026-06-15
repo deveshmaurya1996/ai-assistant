@@ -2,14 +2,11 @@ import { Queue, Worker } from 'bullmq';
 import { config } from '@ai-assistant/config';
 import { prisma, Prisma } from '@ai-assistant/database';
 import { WorkflowSchema, executeWorkflow, type WorkflowAction } from '@ai-assistant/workflows';
+import { createBullMqWorkerConnection, getBullMqQueueConnection } from '../lib/bullmq-redis';
 import { capabilityRuntimeFetch, toolRuntimeFetch } from '../lib/runtime-clients';
 
 let workflowQueue: Queue | null = null;
 let workflowWorker: Worker | null = null;
-
-function getConnection() {
-  return { url: config.redisUrl };
-}
 
 export async function enqueueWorkflowRun(workflowId: string) {
   if (!workflowQueue) throw new Error('Workflow queue not initialized');
@@ -41,7 +38,7 @@ export async function unscheduleWorkflow(workflowId: string) {
 
 export function startWorkflowWorker(): Worker | null {
   try {
-    workflowQueue = new Queue('workflow-queue', { connection: getConnection() });
+    workflowQueue = new Queue('workflow-queue', { connection: getBullMqQueueConnection() });
     workflowWorker = new Worker(
       'workflow-queue',
       async (job) => {
@@ -113,7 +110,7 @@ export function startWorkflowWorker(): Worker | null {
         });
       },
       {
-        connection: getConnection(),
+        connection: createBullMqWorkerConnection(),
         concurrency: config.workflowConcurrency,
       }
     );

@@ -1,38 +1,16 @@
 import { capabilityFromLegacyTool } from '@ai-assistant/capabilities';
 import type { ToolSource } from '@ai-assistant/types';
-import { sessionManager } from '../whatsapp/session-manager';
-import { resolveBridgeSessionForUser } from '../whatsapp/session-resolve';
+import {
+  executeGatewayTool,
+  executeWhatsAppDirect,
+  type ToolExecutionOutcome,
+} from '../integrations';
 import { capabilityRuntimeFetch, toolRuntimeFetch } from '../lib/runtime-clients';
 
-export type ToolExecutionOutcome = {
-  success: boolean;
-  tool: string;
-  result?: unknown;
-  error?: string;
-};
+export type { ToolExecutionOutcome };
 
-const WHATSAPP_OP_TIMEOUT_MS = Number(process.env.WHATSAPP_OP_TIMEOUT_MS ?? 90_000);
 const WHATSAPP_POLL_MS = 120_000;
 const GENERIC_POLL_MS = 60_000;
-
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)),
-      ms
-    );
-    promise.then(
-      (v) => {
-        clearTimeout(timer);
-        resolve(v);
-      },
-      (e) => {
-        clearTimeout(timer);
-        reject(e);
-      }
-    );
-  });
-}
 
 async function pollExecution(
   executionId: string,
@@ -80,91 +58,6 @@ async function pollExecution(
   };
 }
 
-async function executeWhatsAppDirect(params: {
-  userId: string;
-  tool: string;
-  args: Record<string, unknown>;
-  connectionId?: string;
-}): Promise<ToolExecutionOutcome> {
-  const resolved = await resolveBridgeSessionForUser(params.userId, params.connectionId);
-  if (!resolved) {
-    return {
-      success: false,
-      tool: params.tool,
-      error:
-        'WhatsApp is not connected or the session could not be restored. Open Connect Apps, link WhatsApp, and wait until it shows Active.',
-    };
-  }
-
-  const { sessionId, connectionId } = resolved;
-
-  try {
-    return await withTimeout(
-      (async (): Promise<ToolExecutionOutcome> => {
-        switch (params.tool) {
-          case 'whatsapp.search_chats': {
-            const query = String(params.args.query ?? '');
-            const { chats } = await sessionManager.searchChats(sessionId, query);
-            return { success: true, tool: params.tool, result: { chats } };
-          }
-          case 'whatsapp.send_message': {
-            const message = String(params.args.message ?? '').trim();
-            let to = String(params.args.to ?? '').trim();
-            if (!message) {
-              return { success: false, tool: params.tool, error: 'message is required' };
-            }
-            if (!to.includes('@') && to.replace(/\D/g, '').length < 10) {
-              const { chats } = await sessionManager.searchChats(sessionId, to);
-              const jid = chats[0]?.jid;
-              if (!jid) {
-                return {
-                  success: false,
-                  tool: params.tool,
-                  error: `Could not find WhatsApp contact "${to}". Try a phone number (e.g. +1…) or a name from your chats.`,
-                };
-              }
-              to = jid;
-            }
-            const sent = await sessionManager.sendMessage(sessionId, to, message);
-            return { success: true, tool: params.tool, result: { ...sent, connectionId } };
-          }
-          case 'whatsapp.list_unread': {
-            const limit = Number(params.args.limit ?? 20);
-            const result = await sessionManager.listUnread(sessionId, limit);
-            return { success: true, tool: params.tool, result };
-          }
-          case 'whatsapp.read_chat': {
-            const chatId = String(params.args.chatId ?? params.args.jid ?? '');
-            const limit = Number(params.args.limit ?? 25);
-            const result = await sessionManager.readChat(sessionId, chatId, limit);
-            return { success: true, tool: params.tool, result };
-          }
-          default:
-            return {
-              success: false,
-              tool: params.tool,
-              error: `Unsupported WhatsApp tool: ${params.tool}`,
-            };
-        }
-      })(),
-      WHATSAPP_OP_TIMEOUT_MS,
-      params.tool
-    );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : 'WhatsApp action failed';
-    const hint =
-      msg.toLowerCase().includes('timed out') || msg.toLowerCase().includes('timeout')
-        ? ' Ensure your phone has internet and WhatsApp is open, then try again.'
-        : '';
-    return {
-      success: false,
-      tool: params.tool,
-      error: msg + hint,
-    };
-  }
-}
-
-/** Resolve a name to WhatsApp JID (direct session manager). */
 export async function resolveWhatsAppRecipient(
   userId: string,
   to: string,
@@ -273,13 +166,14 @@ export async function executeIntegrationTool(params: {
     }
   }
 
-  if (params.tool.startsWith('whatsapp.')) {
-    return executeWhatsAppDirect({
-      userId: params.userId,
-      tool: params.tool,
-      args,
-      connectionId: params.connectionId,
-    });
+  const gatewayOutcome = await executeGatewayTool({
+    userId: params.userId,
+    tool: params.tool,
+    args,
+    connectionId: params.connectionId,
+  });
+  if (gatewayOutcome) {
+    return gatewayOutcome;
   }
 
   return executeViaSkillRuntime(params);

@@ -155,10 +155,11 @@ export async function integrationRoutes(fastify: FastifyInstance) {
           status: c.status,
         }))
       );
+
       return reply.send(
         connections.map((c) => {
-          const runtimeHealthy = health.get(c.id) === true;
-          const meta = (c.metadata ?? {}) as { lastHealthError?: string | null };
+          const healthResult = health.get(c.id);
+          const runtimeHealthy = healthResult?.healthy === true;
           return {
             id: c.id,
             providerId: c.providerId,
@@ -170,8 +171,8 @@ export async function integrationRoutes(fastify: FastifyInstance) {
             runtimeHealthy,
             aiReady: c.status === 'ACTIVE' && runtimeHealthy,
             healthError:
-              c.status === 'ACTIVE' && !runtimeHealthy && meta.lastHealthError
-                ? meta.lastHealthError
+              c.status === 'ACTIVE' && !runtimeHealthy && healthResult?.error
+                ? healthResult.error
                 : null,
           };
         })
@@ -535,26 +536,6 @@ export async function integrationRoutes(fastify: FastifyInstance) {
         return sendPairingResponse(session);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Pairing failed';
-        if (connection.status === 'PENDING' && message.includes('Session not found')) {
-          try {
-            await sessionManager.restartPendingSession(bridgeSessionId);
-            const session = await requestPairing();
-            return sendPairingResponse(session);
-          } catch {
-            /* fall through */
-          }
-        }
-        if (connection.status === 'PENDING' && !forceRefresh) {
-          try {
-            const session = await sessionManager.requestPairingCode(bridgeSessionId, phoneNumber, {
-              countryCode,
-              forceRefresh: true,
-            });
-            return sendPairingResponse(session);
-          } catch {
-            /* fall through */
-          }
-        }
         return reply.code(400).send({ error: message });
       }
     } catch (error) {

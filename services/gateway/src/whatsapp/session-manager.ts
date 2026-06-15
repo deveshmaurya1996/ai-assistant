@@ -67,7 +67,7 @@ export interface SessionState {
   updatedAt: string;
 }
 
-export const PAIRING_REQUEST_TIMEOUT_MS = 45_000;
+export const PAIRING_REQUEST_TIMEOUT_MS = 20_000;
 
 export interface ChatEntry {
   jid: string;
@@ -164,7 +164,7 @@ export class SessionManager {
     return this.reconnecting.has(sessionId);
   }
 
-  private async waitForReconnect(sessionId: string, timeoutMs = 90_000): Promise<void> {
+  private async waitForReconnect(sessionId: string, timeoutMs = 20_000): Promise<void> {
     const started = Date.now();
     while (this.reconnecting.has(sessionId) && Date.now() - started < timeoutMs) {
       await new Promise((r) => setTimeout(r, 200));
@@ -267,7 +267,7 @@ export class SessionManager {
     const existing = this.sockets.get(sessionId);
     if (existing) return existing;
 
-    return this.ensureSocket(sessionId, { fromReconnect: options?.fromReconnect });
+    return this.ensureSocket(sessionId, { fromReconnect: options?.fromReconnect ?? true });
   }
 
   private recoverLinkingAfterClose(
@@ -284,13 +284,14 @@ export class SessionManager {
       void this.persistSessionMetaNow(current);
     }
 
+    // Baileys: after close/restartRequired the current socket is unusable — drop it immediately.
+    this.teardownSocket(sessionId);
     this.reconnecting.add(sessionId);
 
     const reconnect = async () => {
       try {
         await runLinkingOp(sessionId, async () => {
           await drainAuthPersistence(sessionId);
-          this.teardownSocket(sessionId);
           if (options.resetAuth && !preserveLease) {
             await this.resetLinkingAuth(sessionId);
           }
@@ -325,8 +326,71 @@ export class SessionManager {
       return session;
     }
 
+    if (session.status === 'disconnected' && (await this.hasRegisteredCredentials(sessionId))) {
+      const restored = await this.tryRestoreStoredSession(sessionId);
+      const current = this.sessions.get(sessionId) ?? session;
+      if (restored && current.status === 'active') {
+        return current;
+      }
+    }
+
     await this.ensureLinkingSocket(sessionId);
     return this.sessions.get(sessionId) ?? session;
+  }
+
+  async bootstrapActiveSession(sessionId: string): Promise<boolean> {
+    try {
+      const session = await this.loadSessionRecord(sessionId);
+      if (session.status !== 'active') {
+        return false;
+      }
+      await this.ensureSocket(sessionId);
+      return true;
+    } catch (err) {
+      logger.warn({ err, sessionId }, 'WhatsApp bootstrap skip');
+      return false;
+    }
+  }
+
+  private async hasRegisteredCredentials(sessionId: string): Promise<boolean> {
+    const authDir = authDirFor(sessionId);
+    try {
+      await ensureAuthDirLocal(sessionId, authDir);
+      const raw = await readFile(path.join(authDir, 'creds.json'), 'utf8');
+      const creds = JSON.parse(raw) as { registered?: boolean };
+      return creds.registered === true;
+    } catch {
+      return false;
+    }
+  }
+
+  async tryRestoreStoredSession(sessionId: string): Promise<boolean> {
+    try {
+      const session = await this.loadSessionRecord(sessionId);
+      if (session.status === 'pending') return false;
+
+      if (session.status !== 'active') {
+        if (!(await this.hasRegisteredCredentials(sessionId))) return false;
+        session.status = 'active';
+        session.updatedAt = new Date().toISOString();
+        await this.persistSessionMetaNow(session);
+      }
+
+      await this.ensureSocket(sessionId);
+
+      const deadline = Date.now() + 20_000;
+      while (Date.now() < deadline) {
+        if (this.connectionPhases.get(sessionId) === 'open') {
+          void repairWhatsAppConnectionMetadata(session.userId, sessionId);
+          return true;
+        }
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      return this.connectionPhases.get(sessionId) === 'open';
+    } catch (err) {
+      logger.warn({ err, sessionId }, 'WhatsApp stored session restore failed');
+      return false;
+    }
   }
 
   async getLinkingSessionState(sessionId: string): Promise<SessionState> {
@@ -340,7 +404,22 @@ export class SessionManager {
     expirePairingLeaseIfNeeded(live);
     const current = this.sessions.get(sessionId) ?? live;
 
-    if (this.reconnecting.has(sessionId) || live.pairingAccepted || isLinkingOpLocked(sessionId)) {
+    if (this.reconnecting.has(sessionId) || isLinkingOpLocked(sessionId)) {
+      return current;
+    }
+
+    if (live.pairingAccepted) {
+      if (
+        !this.sockets.has(sessionId) &&
+        !this.starting.has(sessionId) &&
+        !this.reconnecting.has(sessionId)
+      ) {
+        void runLinkingOp(sessionId, () =>
+          this.ensureLinkingSocket(sessionId, { fromReconnect: true })
+        ).catch((err) => {
+          logger.warn({ err, sessionId }, 'WhatsApp post-pairing reconnect failed');
+        });
+      }
       return current;
     }
 
@@ -350,7 +429,7 @@ export class SessionManager {
       !this.starting.has(sessionId) &&
       !leaseActive
     ) {
-      void this.ensureLinkingSocket(sessionId).catch((err) => {
+      void runLinkingOp(sessionId, () => this.ensureLinkingSocket(sessionId)).catch((err) => {
         logger.warn({ err, sessionId }, 'WhatsApp background linking socket start failed');
       });
     } else if (
@@ -425,7 +504,7 @@ export class SessionManager {
     this.sessions.set(sessionId, session);
     this.chatCache.set(sessionId, []);
     await this.persistSessionMetaNow(session);
-    void this.ensureLinkingSocket(sessionId).catch((err) => {
+    void runLinkingOp(sessionId, () => this.ensureLinkingSocket(sessionId)).catch((err) => {
       logger.warn({ err, sessionId }, 'WhatsApp socket start failed');
     });
     return session;
@@ -483,6 +562,14 @@ export class SessionManager {
       return session;
     }
 
+    if (
+      !forceRefresh &&
+      session.pairingPhone === normalized &&
+      isPairingLeaseActive(session)
+    ) {
+      return session;
+    }
+
     logger.info({ sessionId, pairingPhone: normalized }, 'Requesting WhatsApp pairing code');
 
     const existingSock = this.sockets.get(sessionId);
@@ -501,35 +588,15 @@ export class SessionManager {
       throw new Error('Session already registered — disconnect WhatsApp and tap Connect again');
     }
 
-    try {
-      await sock.waitForSocketOpen();
-    } catch {
-      throw new Error('WhatsApp is still connecting — wait a moment and try again');
-    }
+    await this.waitForPairingReady(sessionId, sock, PAIRING_REQUEST_TIMEOUT_MS);
 
-    let code: string;
-    try {
-      code = await Promise.race([
-        sock.requestPairingCode(normalized),
-        new Promise<string>((_, reject) => {
-          setTimeout(
-            () => reject(new Error('Pairing timed out — tap Get new code')),
-            PAIRING_REQUEST_TIMEOUT_MS
-          );
-        }),
-      ]);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Pairing code request failed';
-      throw new Error(
-        `Could not start phone linking for ${normalized}. Check the number matches your WhatsApp account. (${message})`
-      );
-    }
+    const code = await sock.requestPairingCode(normalized);
 
     issuePairingLease(session, {
       phone: normalized,
       code: formatPairingCode(code),
     });
-    await this.persistSessionMetaNow(session);
+    void this.persistSessionMetaNow(session);
     return session;
   }
 
@@ -1002,43 +1069,36 @@ export class SessionManager {
     );
   }
 
-  private async waitForConnectionPhase(
+  /** Baileys: request pairing code only after the first QR-ready connection.update. */
+  private async waitForPairingReady(
     sessionId: string,
-    phase: 'connecting' | 'open',
+    sock: BaileysSocket,
     timeoutMs: number
   ): Promise<void> {
-    const sock = this.sockets.get(sessionId);
-    if (!sock) {
-      await this.waitForSocket(sessionId, timeoutMs);
-    }
-    const activeSock = this.sockets.get(sessionId);
-    if (!activeSock) {
-      throw new Error('WhatsApp socket failed to start');
-    }
+    if (this.qrSignaled.has(sessionId)) return;
 
-    const currentPhase = this.connectionPhases.get(sessionId);
-    if (phase === 'connecting' && (currentPhase === 'connecting' || currentPhase === 'open')) {
-      return;
-    }
-    if (phase === 'open' && this.sessions.get(sessionId)?.status === 'active') {
-      return;
-    }
-
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
-        activeSock.ev.off('connection.update', onUpdate);
-        reject(new Error('WhatsApp connection timed out — try again'));
+        sock.ev.off('connection.update', onUpdate);
+        reject(new Error('WhatsApp is still connecting — try again'));
       }, timeoutMs);
 
-      const onUpdate = (update: { connection?: string }) => {
-        if (update.connection === phase) {
+      const onUpdate = (update: { qr?: string }) => {
+        if (update.qr) {
+          this.qrSignaled.add(sessionId);
           clearTimeout(timeout);
-          activeSock.ev.off('connection.update', onUpdate);
+          sock.ev.off('connection.update', onUpdate);
           resolve();
         }
       };
 
-      activeSock.ev.on('connection.update', onUpdate);
+      sock.ev.on('connection.update', onUpdate);
+
+      if (this.qrSignaled.has(sessionId)) {
+        clearTimeout(timeout);
+        sock.ev.off('connection.update', onUpdate);
+        resolve();
+      }
     });
   }
 
@@ -1054,7 +1114,7 @@ export class SessionManager {
     if (existing) return existing;
 
     if (this.starting.has(sessionId)) {
-      await this.waitForSocket(sessionId, 30_000);
+      await this.waitForSocket(sessionId, 15_000);
       const sock = this.sockets.get(sessionId);
       if (sock) return sock;
     }
@@ -1066,7 +1126,7 @@ export class SessionManager {
     this.starting.add(sessionId);
     try {
       await this.startSocket(sessionId);
-      await this.waitForSocket(sessionId, 30_000);
+      await this.waitForSocket(sessionId, 15_000);
     } finally {
       this.starting.delete(sessionId);
     }
@@ -1129,7 +1189,6 @@ export class SessionManager {
       version,
       logger,
       printQRInTerminal: false,
-      // Chrome fingerprint is required for QR + phone pairing (Desktop breaks linking).
       browser: isLinking
         ? baileys.Browsers.macOS('Chrome')
         : baileys.Browsers.macOS('Desktop'),
@@ -1300,11 +1359,13 @@ export class SessionManager {
         current.updatedAt = new Date().toISOString();
         void this.persistSessionMeta(current, true);
         await persistBaileysAuth();
+        await drainAuthPersistence(sessionId);
       }
 
       if (update.connection === 'open') {
         current.status = 'active';
         current.pairingAccepted = false;
+        current.pairingInProgress = false;
         this.clearPairingState(current, false);
         current.updatedAt = new Date().toISOString();
         void this.persistSessionMeta(current, true);
@@ -1334,7 +1395,19 @@ export class SessionManager {
       if (update.connection === 'close') {
         const statusCode = getDisconnectStatusCode(update.lastDisconnect?.error);
         const wasLinking = this.isLinking(current);
-        const conflictReplaced = statusCode === 440;
+        const conflictReplaced = statusCode === baileys.DisconnectReason.connectionReplaced;
+
+        if (current.pairingAccepted) {
+          const loggedOut = statusCode === baileys.DisconnectReason.loggedOut;
+          logger.info({ sessionId, statusCode }, 'WhatsApp pairing accepted — reconnecting');
+          if (!loggedOut) {
+            this.recoverLinkingAfterClose(sessionId, {
+              resetAuth: false,
+              invalidatePairing: false,
+            });
+          }
+          return;
+        }
 
         if (conflictReplaced) {
           if (wasLinking) {
@@ -1377,6 +1450,19 @@ export class SessionManager {
 
         if (statusCode === baileys.DisconnectReason.restartRequired) {
           logger.info({ sessionId }, 'WhatsApp restart required after pairing — reconnecting');
+          this.recoverLinkingAfterClose(sessionId, {
+            resetAuth: false,
+            invalidatePairing: false,
+          });
+          return;
+        }
+
+        if (
+          wasLinking &&
+          (statusCode === baileys.DisconnectReason.timedOut ||
+            statusCode === baileys.DisconnectReason.connectionClosed)
+        ) {
+          logger.info({ sessionId, statusCode }, 'WhatsApp link session timed out — refreshing socket');
           this.recoverLinkingAfterClose(sessionId, {
             resetAuth: false,
             invalidatePairing: false,

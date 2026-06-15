@@ -1,6 +1,7 @@
 import { Queue, Worker } from 'bullmq';
 import { prisma } from '@ai-assistant/database';
 import { config } from '@ai-assistant/config';
+import { createBullMqWorkerConnection, getBullMqQueueConnection } from '../lib/bullmq-redis';
 import { fireAutomation } from './automation.handler';
 import { fireReminder } from './reminder.handler';
 import { nextFireFromCron } from './cron-utils';
@@ -15,10 +16,6 @@ const QUEUE_NAME = 'scheduled-jobs';
 let jobQueue: Queue | null = null;
 let jobWorker: Worker | null = null;
 let queueReady = false;
-
-function getConnection() {
-  return { url: config.redisUrl };
-}
 
 function jobId(kind: string, entityId: string): string {
   return `${kind}-${entityId}`;
@@ -137,7 +134,7 @@ export async function rehydrateAll(): Promise<void> {
 
 export function startScheduler(): Worker | null {
   try {
-    jobQueue = new Queue(QUEUE_NAME, { connection: getConnection() });
+    jobQueue = new Queue(QUEUE_NAME, { connection: getBullMqQueueConnection() });
     queueReady = true;
 
     jobWorker = new Worker(
@@ -151,7 +148,7 @@ export function startScheduler(): Worker | null {
         }
       },
       {
-        connection: getConnection(),
+        connection: createBullMqWorkerConnection(),
         concurrency: config.schedulerConcurrency,
       }
     );

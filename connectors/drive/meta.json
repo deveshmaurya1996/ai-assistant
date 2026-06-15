@@ -5,7 +5,7 @@
   "providerIds": ["google"],
   "domains": ["files"],
   "capabilityIds": ["drive.search", "drive.get_content"],
-  "description": "Search and read Google Drive files",
+  "description": "Drive: search files by name and read/summarize document content",
   "implementation": "GoogleConnector",
   "integrationModule": "google"
 }

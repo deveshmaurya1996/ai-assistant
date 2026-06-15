@@ -29,6 +29,7 @@ import { CountryPhoneField } from '@/components/integrations/CountryPhoneField';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing, radii } from '@/theme/tokens';
 import { apiClient } from '@/lib/api-client';
+import { Routes } from '@/lib/routes';
 import {
   buildE164Phone,
   DEFAULT_CALLING_CODE,
@@ -62,17 +63,6 @@ const STEPS_CODE = [
   'Enter the number on your WhatsApp account',
   'Tap Continue — then enter the code on your phone',
 ];
-
-function isRecoverableSessionError(message: string): boolean {
-  const lower = message.toLowerCase();
-  return (
-    lower.includes('not ready') ||
-    lower.includes('expired') ||
-    lower.includes('connect again') ||
-    lower.includes('tap connect') ||
-    lower.includes('session expired')
-  );
-}
 
 function applyPhoneFromE164(e164: string): {
   countryCode: CountryCode;
@@ -132,22 +122,6 @@ function getLinkStatus(
     return {
       label: 'Code accepted — finishing link… keep this screen open',
       color: WHATSAPP_DARK,
-      showSpinner: true,
-      prominent: true,
-    };
-  }
-  if (session?.pairingReconnecting && session?.pairingCode) {
-    return {
-      label: 'Reconnecting… keep this screen open',
-      color: WHATSAPP_DARK,
-      showSpinner: true,
-      prominent: true,
-    };
-  }
-  if (session?.pairingReconnecting) {
-    return {
-      label: 'Reconnecting…',
-      color: colors.textMuted,
       showSpinner: true,
       prominent: true,
     };
@@ -339,9 +313,10 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
 
   const hasActivePairing =
     mode === 'code' &&
-    !!session?.pairingCode &&
-    !isPairingExpired(session) &&
-    !session.pairingInvalidated;
+    ((!!session?.pairingCode &&
+      !isPairingExpired(session) &&
+      !session.pairingInvalidated) ||
+      !!session?.pairingAccepted);
 
   const pairingCodeExpired =
     !!session?.pairingCode && (isPairingExpired(session) || session.pairingExpired);
@@ -355,7 +330,7 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
     setFinishing(true);
     try {
       await apiClient.activateConnection(connectionId);
-      router.replace('/(app)/integrations');
+      router.replace(Routes.integrations);
     } catch (e) {
       linkedRef.current = false;
       const message = e instanceof ApiError ? e.message : 'Could not complete linking';
@@ -393,7 +368,7 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
     try {
       const challenge = await apiClient.connectProvider('whatsapp');
       if (challenge.state === 'ready') {
-        router.replace('/(app)/integrations');
+        router.replace(Routes.integrations);
         return;
       }
       await refreshSession();
@@ -501,18 +476,6 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
       applyPairingResponse(data);
     } catch (e) {
       const message = e instanceof ApiError ? e.message : 'Could not get pairing code';
-      if (isRecoverableSessionError(message)) {
-        try {
-          const recovered = await apiClient.requestWhatsAppPairing(connectionId, digits, {
-            ...pairingOptions,
-            forceRefresh: true,
-          });
-          applyPairingResponse(recovered);
-          return;
-        } catch {
-          /* fall through to alert */
-        }
-      }
       Alert.alert('Pairing code', message);
     } finally {
       setPairingLoading(false);
@@ -525,6 +488,16 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
   ];
 
   const linkStatus = getLinkStatus(session, loading, finishing, colors);
+  const pairingReconnecting = !!session?.pairingReconnecting;
+  const pairingFinishing = !!session?.pairingAccepted || finishing;
+  const pairingActionLoading = pairingLoading || pairingReconnecting || pairingFinishing;
+
+  const pairingActionLabel = (fallback: string) => {
+    if (pairingFinishing) return 'Finishing link…';
+    if (pairingReconnecting) return 'Reconnecting…';
+    if (pairingLoading) return 'Getting code…';
+    return fallback;
+  };
 
   const startOverButton = (
     <Button
@@ -551,9 +524,9 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
             </Text>
             {linkStatus.prominent ? (
               <View style={styles.statusInline}>
-                {linkStatus.showSpinner ? (
+                {/* {linkStatus.showSpinner ? (
                   <ActivityIndicator size="small" color={linkStatus.color} />
-                ) : null}
+                ) : null} */}
                 <Text
                   variant="caption"
                   numberOfLines={1}
@@ -635,10 +608,10 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
                 ? startOverButton
                 : (
                   <Button
-                    label={pairingLoading ? 'Getting code…' : 'Get new code'}
+                    label={pairingActionLabel('Get new code')}
                     variant="secondary"
-                    loading={pairingLoading}
-                    disabled={pairingLoading || finishing}
+                    loading={pairingActionLoading}
+                    disabled={pairingActionLoading || finishing}
                     onPress={() => void handleRequestPairing(true)}
                   />
                 )}
@@ -684,16 +657,12 @@ export function WhatsAppLinkScreen({ connectionId }: Props) {
                 ? startOverButton
                 : (
                   <Button
-                    label={
-                      pairingLoading
-                        ? 'Getting code…'
-                        : pairingCodeExpired || session?.pairingInvalidated
-                          ? 'Get new code'
-                          : 'Continue'
-                    }
+                    label={pairingActionLabel(
+                      pairingCodeExpired || session?.pairingInvalidated ? 'Get new code' : 'Continue'
+                    )}
                     variant="primary"
-                    loading={pairingLoading}
-                    disabled={pairingLoading || finishing}
+                    loading={pairingActionLoading}
+                    disabled={pairingActionLoading || finishing}
                     style={{ backgroundColor: WHATSAPP_GREEN }}
                     onPress={() =>
                       void handleRequestPairing(

@@ -5,3 +5,11 @@
 - id: inbox_automation
   query: check my inbox every morning at 8
   output: '{"actions":[{"tool":"automation.create","args":{"query":"Check Gmail and WhatsApp for important unread items","cronExpression":"0 8 * * *"}}],"clarification":null,"schedulingIntent":false}'
+
+- id: scheduled_whatsapp_nudge
+  query: remind me to text john tomorrow at 3pm saying I will be late
+  output: '{"actions":[{"tool":"reminder.create","args":{"title":"Text John","userPrompt":"remind me to text john tomorrow at 3pm saying I will be late","recurrence":"NONE"}}],"clarification":null,"schedulingIntent":false}'
+
+- id: scheduled_email_nudge
+  query: remind me friday at 5pm to email hr about leave
+  output: '{"actions":[{"tool":"reminder.create","args":{"title":"Email HR about leave","userPrompt":"remind me friday at 5pm to email hr about leave","recurrence":"NONE"}}],"clarification":null,"schedulingIntent":false}'

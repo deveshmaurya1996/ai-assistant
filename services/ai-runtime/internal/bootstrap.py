@@ -30,13 +30,16 @@ async def _run_deferred_warmup() -> None:
         except Exception as exc:
             logger.warning("[health-probe] startup probe failed: %s", exc)
 
-    try:
-        from api.agent import warm_agent_modules
+    if os.getenv("WARM_AGENT_MODULES", "true").lower() in ("1", "true", "yes"):
+        try:
+            from api.agent import warm_agent_modules
 
-        warm_agent_modules()
-        logger.info("[intelligence] agent orchestration modules warmed")
-    except Exception as exc:
-        logger.warning("[intelligence] agent warm import failed: %s", exc)
+            warm_agent_modules()
+            logger.info("[intelligence] agent orchestration modules warmed")
+        except Exception as exc:
+            logger.warning("[intelligence] agent warm import failed: %s", exc)
+    else:
+        logger.info("[intelligence] agent module warmup skipped (WARM_AGENT_MODULES=false)")
 
     try:
         from llm.health_monitor import start_health_monitor_loops

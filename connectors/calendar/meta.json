@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "providerIds": ["google"],
   "domains": ["calendar"],
-  "description": "List, create, and cancel Google Calendar events",
+  "description": "Calendar: list upcoming events, schedule meetings, cancel events",
   "implementation": "GoogleConnector",
   "integrationModule": "google"
 }

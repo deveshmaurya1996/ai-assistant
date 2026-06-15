@@ -68,10 +68,6 @@ export const ModelPickerSheet = forwardRef<BottomSheetModalType>(function ModelP
           use it when available.
         </Text>
 
-        {modelsLoading && !models?.length ? (
-          <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.lg }} />
-        ) : null}
-
         <Pressable
           onPress={() => void selectModel(null)}
           disabled={savingId !== undefined}
@@ -93,6 +89,10 @@ export const ModelPickerSheet = forwardRef<BottomSheetModalType>(function ModelP
             <Check color={colors.primary} size={20} />
           ) : null}
         </Pressable>
+
+        {modelsLoading && !models?.length ? (
+          <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.lg }} />
+        ) : null}
 
         {sorted.map((model) => {
           const selected = preferredModelId === model.id;

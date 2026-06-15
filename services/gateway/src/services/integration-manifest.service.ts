@@ -7,16 +7,17 @@ import {
   type ProviderConnectionState,
 } from '@ai-assistant/capabilities';
 import { formatConnectorsForPlanner } from '@ai-assistant/connectors';
-import { assessConnectionsHealth } from './integration-health.service';
+import { assessConnectionsHealth, type ConnectionHealthResult } from './integration-health.service';
+import { bootstrapIntegrationProviders } from './ensure-integration-provider.service';
 
 function resolveProviderState(
   providerId: string,
   connections: Array<{ id: string; providerId: string; status: string }>,
-  health: Map<string, boolean>
+  health: Map<string, ConnectionHealthResult>
 ): ConnectionStateKind {
   const row = connections.find((c) => c.providerId === providerId);
   if (!row || row.status !== 'ACTIVE') return 'not_connected';
-  return health.get(row.id) === true ? 'ready' : 'offline';
+  return health.get(row.id)?.healthy === true ? 'ready' : 'offline';
 }
 
 export async function buildUserIntegrationManifest(userId: string): Promise<{
@@ -27,6 +28,8 @@ export async function buildUserIntegrationManifest(userId: string): Promise<{
   supportedProviders: string[];
   unhealthyNotes: string[];
 }> {
+  await bootstrapIntegrationProviders();
+
   const enabledProviders = await prisma.integrationProvider.findMany({
     where: { isEnabled: true },
     select: { id: true },
@@ -42,11 +45,11 @@ export async function buildUserIntegrationManifest(userId: string): Promise<{
 
   const activeRows = allConnections.filter((c) => c.status === 'ACTIVE');
   const health = await assessConnectionsHealth(userId, activeRows);
-  const healthyRows = activeRows.filter((row) => health.get(row.id) === true);
+  const healthyRows = activeRows.filter((row) => health.get(row.id)?.healthy === true);
   const unhealthyNotes: string[] = [];
 
   for (const row of activeRows) {
-    if (health.get(row.id) === true) continue;
+    if (health.get(row.id)?.healthy === true) continue;
     unhealthyNotes.push(
       `${row.providerId} is linked in the app but offline — reconnect in Connect Apps.`
     );

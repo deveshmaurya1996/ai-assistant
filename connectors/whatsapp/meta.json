@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "providerIds": ["whatsapp"],
   "domains": ["messaging"],
-  "description": "Read, search, and send WhatsApp messages (delete not supported)",
+  "description": "WhatsApp: list unread, read chats, search messages, send (delete not supported)",
   "implementation": "WhatsAppConnector",
   "integrationModule": "whatsapp"
 }

@@ -8,6 +8,7 @@ import httpx
 from env_loader import resolve_tool_runtime_url
 from tools.registry import CAPABILITY_TO_TOOL, normalize_planned_item
 from context.context_builder import fetch_integration_manifest
+from tools.clients.gateway_client import internal_headers
 
 TOOL_RUNTIME_URL = resolve_tool_runtime_url()
 
@@ -63,6 +64,7 @@ async def available_tools(
             res = await client.get(
                 f"{TOOL_RUNTIME_URL}/v1/tools/available",
                 params={"userId": user_id},
+                headers=internal_headers(),
             )
             if res.status_code == 200:
                 data = res.json()

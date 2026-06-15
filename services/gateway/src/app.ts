@@ -37,6 +37,7 @@ import { mobileRoutes } from './routes/mobile.routes';
 import { setupSocketIO } from './socket';
 import { startAllWorkers } from './workers/queues';
 import { logProductionReadiness } from './lib/production-readiness';
+import { bootstrapIntegrationProviders } from './services/ensure-integration-provider.service';
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -108,6 +109,10 @@ export async function buildApp(): Promise<FastifyInstance> {
   setupSocketIO(app);
   startAllWorkers();
   void logProductionReadiness(app.log);
+
+  void bootstrapIntegrationProviders().catch((err) => {
+    app.log.warn({ err }, 'Integration provider bootstrap failed');
+  });
 
   void import('./whatsapp/session-bootstrap.js').then(({ bootstrapWhatsAppSessions }) =>
     bootstrapWhatsAppSessions()

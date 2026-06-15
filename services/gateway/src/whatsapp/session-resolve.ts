@@ -4,7 +4,7 @@ import { prisma, Prisma } from '@ai-assistant/database';
 import { getWhatsAppAuthRoot } from './auth-paths';
 import { ensureAuthDirLocal, listRemoteSessionIds, usesRemoteWhatsAppAuth } from './auth-remote';
 import { sessionManager } from './session-manager';
-import { markConnectionActive } from './connection-lifecycle';
+import { markConnectionActive, markWhatsAppDisconnectedForUser } from './connection-lifecycle';
 
 type SessionMeta = {
   sessionId?: string;
@@ -31,24 +31,46 @@ async function isSessionActive(sessionId: string): Promise<boolean> {
   return meta?.status === 'active';
 }
 
-export async function findLatestActiveBridgeSession(userId: string): Promise<string | null> {
-  const prefix = `wa_${userId}_`;
-  let sessionIds: string[];
-
-  if (usesRemoteWhatsAppAuth()) {
-    sessionIds = (await listRemoteSessionIds()).filter((id) => id.startsWith(prefix));
-  } else {
-    const root = getWhatsAppAuthRoot();
-    try {
-      const entries = await readdir(root, { withFileTypes: true });
-      sessionIds = entries
-        .filter((ent) => ent.isDirectory() && ent.name.startsWith(prefix))
-        .map((ent) => ent.name);
-    } catch {
-      return null;
-    }
+async function hasRegisteredCredentials(sessionId: string): Promise<boolean> {
+  const authDir = path.join(getWhatsAppAuthRoot(), sessionId);
+  try {
+    await ensureAuthDirLocal(sessionId, authDir);
+    const raw = await readFile(path.join(authDir, 'creds.json'), 'utf8');
+    const creds = JSON.parse(raw) as { registered?: boolean };
+    return creds.registered === true;
+  } catch {
+    return false;
   }
+}
 
+async function ensureSessionUsable(sessionId: string): Promise<boolean> {
+  if (await isSessionActive(sessionId)) {
+    return sessionManager.bootstrapActiveSession(sessionId);
+  }
+  if (await hasRegisteredCredentials(sessionId)) {
+    return sessionManager.tryRestoreStoredSession(sessionId);
+  }
+  return false;
+}
+
+async function listBridgeSessionIdsForUser(userId: string): Promise<string[]> {
+  const prefix = `wa_${userId}_`;
+  if (usesRemoteWhatsAppAuth()) {
+    return (await listRemoteSessionIds()).filter((id) => id.startsWith(prefix));
+  }
+  const root = getWhatsAppAuthRoot();
+  try {
+    const entries = await readdir(root, { withFileTypes: true });
+    return entries
+      .filter((ent) => ent.isDirectory() && ent.name.startsWith(prefix))
+      .map((ent) => ent.name);
+  } catch {
+    return [];
+  }
+}
+
+export async function findLatestActiveBridgeSession(userId: string): Promise<string | null> {
+  const sessionIds = await listBridgeSessionIdsForUser(userId);
   const candidates: { sessionId: string; updatedAt: number }[] = [];
 
   for (const sessionId of sessionIds) {
@@ -65,6 +87,32 @@ export async function findLatestActiveBridgeSession(userId: string): Promise<str
   }
 
   candidates.sort((a, b) => b.updatedAt - a.updatedAt);
+  return candidates[0]?.sessionId ?? null;
+}
+
+export async function findLatestRecoverableBridgeSession(userId: string): Promise<string | null> {
+  const sessionIds = await listBridgeSessionIdsForUser(userId);
+  const candidates: { sessionId: string; updatedAt: number; priority: number }[] = [];
+
+  for (const sessionId of sessionIds) {
+    try {
+      const meta = await readSessionMeta(sessionId);
+      if (!meta) continue;
+      const resolvedId = meta.sessionId ?? sessionId;
+      const updatedAt = new Date(meta.updatedAt ?? 0).getTime();
+      if (meta.status === 'active') {
+        candidates.push({ sessionId: resolvedId, updatedAt, priority: 2 });
+        continue;
+      }
+      if (meta.status === 'disconnected' && (await hasRegisteredCredentials(sessionId))) {
+        candidates.push({ sessionId: resolvedId, updatedAt, priority: 1 });
+      }
+    } catch {
+      /* skip invalid dirs */
+    }
+  }
+
+  candidates.sort((a, b) => b.priority - a.priority || b.updatedAt - a.updatedAt);
   return candidates[0]?.sessionId ?? null;
 }
 
@@ -116,16 +164,21 @@ export async function resolveBridgeSessionForUser(
   const meta = (connection.metadata ?? {}) as { bridgeSessionId?: string };
   const fromDb = meta.bridgeSessionId?.trim() || null;
 
-  if (fromDb && (await isSessionActive(fromDb))) {
+  if (fromDb && (await ensureSessionUsable(fromDb))) {
+    await repairWhatsAppConnectionMetadata(userId, fromDb);
     await markActiveIfNeeded(userId, connection.id, connection.status);
     return { sessionId: fromDb, connectionId: connection.id };
   }
 
-  const fromDisk = await findLatestActiveBridgeSession(userId);
-  if (fromDisk) {
+  const fromDisk = await findLatestRecoverableBridgeSession(userId);
+  if (fromDisk && (await ensureSessionUsable(fromDisk))) {
     await repairWhatsAppConnectionMetadata(userId, fromDisk);
     await markActiveIfNeeded(userId, connection.id, connection.status);
     return { sessionId: fromDisk, connectionId: connection.id };
+  }
+
+  if (connection.status === 'ACTIVE' && !fromDisk) {
+    await markWhatsAppDisconnectedForUser(userId);
   }
 
   return null;

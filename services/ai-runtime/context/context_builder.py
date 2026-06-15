@@ -408,7 +408,7 @@ async def fetch_integration_manifest(
         return text, caps, connections, connection_states
 
     capability_result = await _fetch_manifest_endpoint(
-        CAPABILITY_RUNTIME_URL, "/v1/integrations/manifest", user_id, {}
+        CAPABILITY_RUNTIME_URL, "/v1/integrations/manifest", user_id, headers
     )
     if capability_result is not None:
         text, caps, connections, connection_states = capability_result
