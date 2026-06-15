@@ -55,7 +55,7 @@ RUN BETTER_AUTH_SECRET=docker-build-smoke-test-only-not-used-at-runtime-00 \
  && test -f /app/services/ai-runtime/orchestration/agent_pipeline.py \
  && uvicorn --version \
  && cd /app/services/ai-runtime \
- && PYTHONPATH=/app/services/ai-runtime python -c "from main import app; assert any(getattr(r,'path',None)=='/v1/agent/turn' for r in app.routes)" \
+ && PYTHONPATH=/app/services/ai-runtime python -c "from main import app; assert '/v1/agent/turn' in app.openapi().get('paths', {})" \
  && cd /app/services/gateway \
  && node -e "require('@ai-assistant/telemetry/register');require('@ai-assistant/auth');require('@ai-assistant/database');require('fs').accessSync('dist/index.js')"
 

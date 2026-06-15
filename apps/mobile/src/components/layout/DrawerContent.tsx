@@ -355,11 +355,10 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
           </Text>
         </View>
         <PressableScale
-          onPress={() =>
-            closeAnd(() => {
-              router.push(Routes.settings);
-            })
-          }
+          onPress={() => {
+            navigation.closeDrawer();
+            router.push(Routes.settings);
+          }}
           accessibilityLabel="Settings"
           accessibilityRole="button">
           <View
@@ -395,7 +394,6 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
     </View>
     ),
     [
-      closeAnd,
       colors.border,
       colors.onPrimary,
       colors.primary,
@@ -405,6 +403,7 @@ export function DrawerContent({ navigation }: DrawerContentProps) {
       handleNewChat,
       insets.top,
       isSettingsActive,
+      navigation,
       user?.email,
       user?.image,
       user?.name,
