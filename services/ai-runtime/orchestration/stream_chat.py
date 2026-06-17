@@ -84,7 +84,7 @@ def _augment_done_frames(
                 except json.JSONDecodeError:
                     payload = {}
             payload["trace"] = trace_summary
-            payload["timings"] = {k: round(v, 1) for k, v in timings.items()}
+            payload["timings"] = {k: round(v, 1) if isinstance(v, (int, float)) and not isinstance(v, bool) else v for k, v in timings.items()}
             if voice_metadata:
                 payload["voice_metadata"] = voice_metadata
             out.append(f"event: done\ndata: {json.dumps(payload, ensure_ascii=False)}")
@@ -151,7 +151,8 @@ async def passthrough_chat_stream(
                 )
                 first_byte = False
             if trace_summary:
-                sse_buffer += chunk.decode("utf-8", errors="replace")
+                chunk_str = chunk.decode("utf-8", errors="replace") if isinstance(chunk, bytes) else chunk
+                sse_buffer += chunk_str
                 while "\n\n" in sse_buffer:
                     block, sse_buffer = sse_buffer.split("\n\n", 1)
                     augmented = _augment_done_frames(

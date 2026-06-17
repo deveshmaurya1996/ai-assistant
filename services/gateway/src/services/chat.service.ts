@@ -570,7 +570,7 @@ export async function processChatMessage(params: {
   });
 
   const agentSource: AgentSource =
-    params.agentSource ?? (source === 'socket' ? 'chat' : 'chat');
+    params.agentSource ?? 'chat';
 
   if (attachments.length > 0) {
     await updateSessionFileContext(sessionId, {
@@ -782,10 +782,44 @@ export async function processChatMessage(params: {
 
   const assistantAttachments = turn.generatedAttachments ?? [];
   if (!accumulated.trim() && assistantAttachments.length === 0) {
-    throw new AppError(
-      502,
-      'The assistant returned an empty response. Please try again.'
-    );
+    const fallbackMsg =
+      agentSource === 'voice'
+        ? "I've taken care of that."
+        : "I wasn't able to generate a response. Please try again.";
+
+    console.warn('[chat] empty AI response — using fallback message', {
+      sessionId,
+      agentSource,
+      modelUsed: turn.modelUsed,
+    });
+
+    await onChunk(fallbackMsg, sessionId);
+    const assistantMessage = await prisma.message.create({
+      data: {
+        chatSessionId: sessionId,
+        role: 'ASSISTANT',
+        content: fallbackMsg,
+        metadata: buildAssistantMessageMetadata(assistantContext),
+      },
+    });
+    await prisma.chatSession.update({
+      where: { id: sessionId },
+      data: { updatedAt: new Date() },
+    });
+    void maybeAutoTitleSession({
+      userId,
+      sessionId,
+      userMessage: text.trim() || turnInput.query,
+      assistantMessage: fallbackMsg,
+      onTitleUpdated,
+    });
+    return {
+      sessionId,
+      userMessage: mapApiMessage(userMessage),
+      assistantMessage: mapApiMessage(assistantMessage),
+      modelUsed: turn.modelUsed,
+      modelLabel: turn.modelLabel,
+    };
   }
 
   const assistantMessage = await prisma.message.create({

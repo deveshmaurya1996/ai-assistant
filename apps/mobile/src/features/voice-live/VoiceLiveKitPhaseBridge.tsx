@@ -118,8 +118,7 @@ export function VoiceLiveKitPhaseBridge({
 
     if (!phase || phase === 'connecting') return;
     if (!hasRemoteAgent && !fromHook && !fromRemote) return;
-
-    if (lastPhaseRef.current === phase) return;
+    if (lastPhaseRef.current === phase && phase !== 'listening') return;
     lastPhaseRef.current = phase;
     onPhase(phase);
   }, [connectionState, isActive, onAgentTranscript, onMessagesTick, onPhase, onUserTranscript, room, roomTick, state]);

@@ -67,7 +67,7 @@ const TIER_MESSAGES: Partial<Record<RateLimitTier, string>> = {
   voice_speak: 'Too many speech requests. Please wait a few minutes.',
 };
 
-const EXEMPT_PATH_PREFIXES = ['/health', '/metrics'] as const;
+const EXEMPT_PATH_PREFIXES = ['/health', '/metrics', '/internal'] as const;
 
 function maybePruneWindows(): void {
   if (Math.random() > 0.01) return;

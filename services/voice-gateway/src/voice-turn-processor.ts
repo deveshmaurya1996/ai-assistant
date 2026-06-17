@@ -129,11 +129,37 @@ export async function processVoiceTranscript(params: {
         break;
       }
 
-      if (ev.event === 'error') break;
+      if (ev.event === 'error') {
+        try {
+          const payload = JSON.parse(ev.data) as { message?: string };
+          console.warn('[voice-turn-processor] gateway error event', {
+            turnId,
+            roomId: params.roomId,
+            message: payload.message,
+          });
+        } catch {
+          /* ignore */
+        }
+        break;
+      }
     }
 
     if (tokenBuffer.trim() && !params.signal?.aborted) {
       await speak(tokenBuffer.trim());
+    }
+  } catch (err) {
+    console.warn('[voice-turn-processor] turn stream failed', {
+      turnId,
+      roomId: params.roomId,
+      aborted: params.signal?.aborted,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    if (!params.signal?.aborted && !speakingActive) {
+      try {
+        await speak("Sorry, I couldn't process that. Please try again.");
+      } catch {
+        /* best-effort only */
+      }
     }
   } finally {
     if (!params.signal?.aborted) {

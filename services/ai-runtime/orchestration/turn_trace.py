@@ -69,7 +69,7 @@ class TurnTrace:
             "groundingGate": self.grounding_gate,
             "needsLiveData": self.needs_live_data,
             "responseTimeMs": round(self.response_time_ms, 1),
-            "timings": {k: round(v, 1) for k, v in self.timings.items()},
+            "timings": {k: round(v, 1) if isinstance(v, (int, float)) and not isinstance(v, bool) else v for k, v in self.timings.items()},
             "toolErrors": self.tool_errors[:5],
         }
 
