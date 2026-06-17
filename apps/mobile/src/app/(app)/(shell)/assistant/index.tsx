@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useSettingsStore } from '@/stores/settings';
 import { useLocalSearchParams } from 'expo-router';
@@ -5,22 +6,20 @@ import { Text } from '@/components/ui/Text';
 import { ScreenHeader } from '@/components/layout/ScreenHeader';
 import { AppNavigationGestureHost } from '@/components/layout/AppNavigationGestureHost';
 import { VoiceConversationView } from '@/components/assistant/VoiceConversationView';
-import { AssistantStartButton } from '@/components/assistant/AssistantStartButton';
-import { AssistantActiveFooter } from '@/components/assistant/AssistantActiveFooter';
-import { VoiceOverlayToggle } from '@/components/assistant/VoiceOverlayToggle';
-import { PressableScale } from '@/components/motion/PressableScale';
-import { FadeIn } from '@/components/motion/FadeIn';
+import { AssistantVoiceVisualizer } from '@/components/assistant/AssistantVoiceVisualizer';
+import { AssistantVoiceToolbar } from '@/components/assistant/AssistantVoiceToolbar';
+import { AssistantVoiceFooter } from '@/components/assistant/AssistantActiveFooter';
 import { useVoiceSession } from '@/features/voice-assistant/VoiceSessionProvider';
-import { useDockInset } from '@/hooks/useDockInset';
 import { isVoiceIdleEndMessage } from '@/lib/format-ai-error';
-import { spacing, radii } from '@/theme/tokens';
+import { spacing } from '@/theme/tokens';
 import { useTheme } from '@/theme/ThemeProvider';
 
 export default function AssistantScreen() {
   const { colors, screenStyle } = useTheme();
   const { resumeSessionId } = useLocalSearchParams<{ resumeSessionId?: string }>();
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
-  const { contentBottom } = useDockInset();
+  const [showChat, setShowChat] = useState(false);
+  const autoResumedRef = useRef(false);
 
   const {
     phase,
@@ -32,44 +31,84 @@ export default function AssistantScreen() {
     isGenerating,
     streamRevision,
     error,
-    meteringDataPoints,
     startSession,
     resumeSession,
     stopSession,
+    liveKitToken,
   } = useVoiceSession();
 
-  const canResume =
-    typeof resumeSessionId === 'string' &&
-    resumeSessionId.length > 0 &&
-    !isActive;
-
   const idleEnd = error ? isVoiceIdleEndMessage(error) : false;
+  const roomReady = Boolean(liveKitToken);
+  const chatVisible = showChat && isActive;
+
+  useEffect(() => {
+    if (isActive) {
+      setShowChat(true);
+    }
+  }, [isActive]);
+
+  useEffect(() => {
+    if (
+      autoResumedRef.current ||
+      isActive ||
+      typeof resumeSessionId !== 'string' ||
+      !resumeSessionId.length
+    ) {
+      return;
+    }
+    autoResumedRef.current = true;
+    void resumeSession(resumeSessionId);
+  }, [isActive, resumeSession, resumeSessionId]);
 
   return (
     <AppNavigationGestureHost>
       <View style={[styles.root, screenStyle]}>
         <ScreenHeader
-        title={assistantDisplayName}
-        variant="page"
-        leading="menu"
-        titleAlign="left"
-      />
-      <View style={styles.body}>
+          title={assistantDisplayName}
+          variant="page"
+          leading="menu"
+          titleAlign="left"
+        />
+
         {isActive ? (
-          <FadeIn style={styles.conversation}>
-            <VoiceConversationView
-              messages={messages}
-              visibleText={visibleText}
-              streamTurnKey={streamTurnKey}
-              isStreaming={isStreaming}
-              isGenerating={isGenerating}
-              streamRevision={streamRevision}
+          <AssistantVoiceToolbar
+            showChat={showChat}
+            onShowChatChange={setShowChat}
+          />
+        ) : null}
+
+        <View style={styles.body}>
+          {chatVisible ? (
+            <View style={styles.chatPane}>
+              <VoiceConversationView
+                messages={messages}
+                visibleText={visibleText}
+                streamTurnKey={streamTurnKey}
+                isStreaming={isStreaming}
+                isGenerating={isGenerating}
+                streamRevision={streamRevision}
+                phase={phase}
+                contentPaddingBottom={spacing.sm}
+              />
+            </View>
+          ) : null}
+
+          <View
+            style={[
+              styles.visualizerPane,
+              chatVisible ? styles.visualizerPaneWithChat : null,
+            ]}
+          >
+            <AssistantVoiceVisualizer
+              roomReady={roomReady}
+              isActive={isActive}
               phase={phase}
-              contentPaddingBottom={contentBottom}
             />
-          </FadeIn>
-        ) : (
-          <View style={styles.idleCenter}>
+            {!isActive ? (
+              <Text variant="body" muted style={styles.hint}>
+                {error ? null : 'Press Start to talk'}
+              </Text>
+            ) : null}
             {error ? (
               <Text
                 variant="caption"
@@ -77,42 +116,20 @@ export default function AssistantScreen() {
                 style={[
                   styles.status,
                   idleEnd ? undefined : { color: colors.danger },
-                ]}>
+                ]}
+              >
                 {error}
               </Text>
             ) : null}
-            <Text variant="body" muted style={styles.hint}>
-              Tap to start a voice conversation
-            </Text>
-            <AssistantStartButton
-              assistantName={assistantDisplayName}
-              onPress={() => void startSession()}
-            />
-            {canResume ? (
-              <PressableScale
-                onPress={() => void resumeSession(resumeSessionId)}
-                style={styles.resumeWrap}>
-                <View style={[styles.resumeBtn, { backgroundColor: colors.primaryMuted }]}>
-                  <Text variant="caption" style={{ color: colors.primary }}>
-                    Continue voice chat
-                  </Text>
-                </View>
-              </PressableScale>
-            ) : null}
           </View>
-        )}
-      </View>
+        </View>
 
-      {isActive ? (
-        <>
-          <VoiceOverlayToggle />
-          <AssistantActiveFooter
-            phase={phase}
-            meteringDataPoints={meteringDataPoints}
-            onStop={() => void stopSession()}
-          />
-        </>
-      ) : null}
+        <AssistantVoiceFooter
+          isActive={isActive}
+          phase={phase}
+          onStart={() => void startSession()}
+          onStop={() => void stopSession('user-stop')}
+        />
       </View>
     </AppNavigationGestureHost>
   );
@@ -125,30 +142,31 @@ const styles = StyleSheet.create({
   body: {
     flex: 1,
   },
-  conversation: {
+  chatPane: {
     flex: 1,
+    minHeight: 140,
+    paddingTop: spacing.xs,
   },
-  idleCenter: {
+  visualizerPane: {
     flex: 1,
+    width: '100%',
+    alignSelf: 'stretch',
+    alignItems: 'stretch',
     justifyContent: 'center',
-    alignItems: 'center',
     paddingHorizontal: spacing.lg,
+    gap: spacing.md,
   },
-  status: {
-    marginBottom: spacing.md,
-    textAlign: 'center',
-    paddingHorizontal: spacing.md,
+  visualizerPaneWithChat: {
+    flex: 0,
+    minHeight: 100,
+    justifyContent: 'flex-end',
+    paddingBottom: spacing.sm,
   },
   hint: {
-    marginBottom: spacing.lg,
     textAlign: 'center',
   },
-  resumeWrap: {
-    marginTop: spacing.lg,
-  },
-  resumeBtn: {
+  status: {
+    textAlign: 'center',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radii.pill,
   },
 });

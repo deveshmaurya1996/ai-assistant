@@ -91,7 +91,7 @@ def _load_overrides_sync(db_url: str) -> list:
     except ImportError:
         return []
 
-    with psycopg.connect(db_url, row_factory=dict_row) as conn:
+    with psycopg.connect(db_url, row_factory=dict_row, connect_timeout=2) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 '''

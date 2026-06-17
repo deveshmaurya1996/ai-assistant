@@ -33,6 +33,7 @@ import { notesRoutes } from './routes/notes.routes';
 import { whatsappRoutes } from './routes/whatsapp.routes';
 import { internalIntegrationRoutes } from './routes/internal-integrations.routes';
 import { internalMemoryRoutes } from './routes/internal-memory.routes';
+import { internalVoiceRoutes } from './routes/internal-voice.routes';
 import { mobileRoutes } from './routes/mobile.routes';
 import { setupSocketIO } from './socket';
 import { startAllWorkers } from './workers/queues';
@@ -104,6 +105,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.register(whatsappRoutes, { prefix: '/internal/whatsapp' });
   app.register(internalIntegrationRoutes, { prefix: '/internal' });
   app.register(internalMemoryRoutes, { prefix: '/internal' });
+  app.register(internalVoiceRoutes, { prefix: '/internal' });
   app.register(internalIngestionRoutes, { prefix: '/internal' });
 
   setupSocketIO(app);

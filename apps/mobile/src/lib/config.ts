@@ -74,6 +74,14 @@ function readApiUrl(): string {
 
 export const API_URL = readApiUrl();
 
+export function resolveLiveKitUrlForDevice(url: string): string {
+  if (!__DEV__ || Platform.OS === 'web') return url;
+  if (!/localhost|127\.0\.0\.1/i.test(url)) return url;
+  const lan = lanDevHost();
+  if (!lan) return url;
+  return url.replace(/localhost|127\.0\.0\.1/gi, lan);
+}
+
 export const AUTH_CALLBACK_URL = 'ai-assistant://auth/callback';
 
 export const GOOGLE_AUTH_ENABLED =

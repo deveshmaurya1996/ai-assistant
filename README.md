@@ -198,11 +198,29 @@ Voice mode is a full **STT → LLM → TTS** pipeline through the API and AI ser
 | Think | Socket `chat:message` (non-blocking handler) | `chat.service.ts` | `POST /v1/chat/stream` (SSE) |
 | Speak | Sentence TTS queue (`voice-playback.ts`) | `POST /voice/speak` + rate limits | `POST /v1/voice/speak` (`asyncio.to_thread`) |
 
-Configure providers via root `.env`: `TRANSCRIPTION_*`, `TEXT_MODEL`, `OPENAI_API_KEY`, `POLLINATIONS_API_KEY`, `SPEECH_VOICE`, `VOICE_MODE`, etc. (see `.env.example`).
+Configure voice services via root `.env`: `FASTER_WHISPER_URL`, `FASTER_WHISPER_MODEL`, `PIPER_URL`, `PIPER_DEFAULT_VOICE`, `SPEECH_VOICE`, `VOICE_MODE` (see `.env.example`).
 
 **Provider routing:** AI service uses capability-based modules (`services/ai-runtime/orchestration/`, `services/ai-runtime/llm/`). Pollinations is Tier-3 fallback only — not used for realtime duplex voice. Mobile never calls providers directly.
 
-**Assistant APIs:** `GET /assistant/personalities`, `POST /assistant/context/evaluate`, `POST /assistant/proactive/score`, `GET /assistant/voice/mode`, `POST /assistant/voice/live/token` (stubs for Phase 4 Live).
+### Voice Provider Defaults
+
+```yaml
+voiceProviders:
+  stt:
+    default: faster-whisper
+  tts:
+    default: piper
+```
+
+Backlog:
+
+```yaml
+- id: voice-provider-abstraction
+  content: Add STTProvider and TTSProvider interfaces before production scale
+  status: backlog
+```
+
+**Assistant APIs:** `GET /assistant/personalities`, `POST /assistant/context/evaluate`, `POST /assistant/proactive/score`, `GET /assistant/voice/mode` (proxies AI runtime), `POST /assistant/voice/live/token` (LiveKit token minting).
 
 **Multi-user / production:** run multiple stateless API replicas and AI workers behind a load balancer. The API applies **tiered rate limits** on all routes (IP + per-user): global traffic, auth endpoints, standard REST, AI-heavy routes, socket chat, and voice STT/TTS. Tune via `RATE_LIMIT_*` env vars (see `.env.example`). For multi-instance deployments, replace the in-memory limiter with Redis (same key scheme: `tier:subject`). Redis is used for automation events today; a dedicated voice job queue can be added later for backpressure.
 
@@ -212,12 +230,15 @@ Full setup: **[apps/mobile/README.md](apps/mobile/README.md)**.
 
 ```bash
 pnpm install          # creates .env files + builds + validates
-pnpm docker up
+pnpm docker up voice  # postgres, redis, livekit, piper, faster-whisper
 pnpm db:migrate
 pnpm dev:gateway
 pnpm dev:ai-runtime
+pnpm dev:voice-gateway
 pnpm --filter @ai-assistant/mobile dev
 ```
+
+Voice requires **Piper** (Wyoming TCP on port 5000) and a **rebuilt voice-gateway** worker. `INTELLIGENCE_UPSTREAM_URL` must point at ai-runtime (**port 8000** in local dev). If welcome audio is silent, confirm `POST http://localhost:8000/v1/voice/speak` returns non-zero bytes and voice-gateway logs show `[voice-agent] welcome spoken` (not `fetch failed`).
 
 Dev API URL: `http://localhost:3000` in `apps/mobile/.env`. On Android, run `adb reverse tcp:3000 tcp:3000` (see [apps/mobile/README.md](apps/mobile/README.md)).
 

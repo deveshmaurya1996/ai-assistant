@@ -20,6 +20,13 @@ def classify_image_intent(
     ):
         return None
 
+    if re.search(
+        r"\b(email|e-mail|gmail|inbox|reply|replies|draft|compose|whatsapp|sms|"
+        r"calendar|meeting|event|drive|spreadsheet|invoice|letter|subject)\b",
+        q,
+    ):
+        return None
+
     edit_signals = [
         r"\b(edit|modify|retouch|inpaint|change|alter|update)\b",
         r"\b(remove|add|replace|erase)\b.+\b(from|in|on)\b",
@@ -30,7 +37,9 @@ def classify_image_intent(
         return "image_edit"
 
     generate_signals = [
-        r"\b(generate|create|draw|design|render|paint|illustrate|sketch)\b",
+        r"\b(generate|create)\b.+\b(image|picture|photo|illustration|logo|poster|artwork|icon|avatar|wallpaper)\b",
+        r"\b(draw|sketch|illustrate|paint|render)\b",
+        r"\b(design)\b.+\b(image|picture|photo|illustration|logo|poster|artwork|icon|avatar|wallpaper)\b",
         r"\b(make|produce)\b.+\b(image|picture|photo|illustration|logo|poster|artwork|icon)\b",
         r"\b(image|picture|photo|illustration|logo|poster)\b.+\b(of|showing|with|featuring)\b",
         r"\bdraw\b.+\b(me|a|an)\b",

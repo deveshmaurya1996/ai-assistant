@@ -236,10 +236,12 @@ export async function syncAssistantOverlay(input: AssistantOverlaySyncInput): Pr
 
   if (pinned) return;
 
-  await setOverlayNavigationTarget({
-    kind: activeItem.kind,
-    sessionKey: activeItem.sessionKey,
-  });
+  const navigationTarget: OverlayNavigationTarget =
+    activeItem.kind === 'voice' || (foregroundScreen === 'voice' && activeItem.sessionKey)
+      ? { kind: 'voice', sessionKey: '__voice__' }
+      : { kind: activeItem.kind, sessionKey: activeItem.sessionKey };
+
+  await setOverlayNavigationTarget(navigationTarget);
 
   const contextWithRotation = rotationHint
     ? `${activeItem.contextLabel} · ${rotationHint}`

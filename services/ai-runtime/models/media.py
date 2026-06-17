@@ -10,9 +10,7 @@ from typing import List, Optional, Tuple
 
 import httpx
 
-from models.config_loader import model_def
 from models.model_resolver import model_is_available
-from models.providers.dispatch import synthesize_speech_for_model
 from models.registry import (
     Capability,
     pollinations_model_id,
@@ -348,36 +346,13 @@ def resolve_chain_image_edit() -> List[str]:
 
 
 def synthesize_speech(text: str, voice: Optional[str] = None) -> bytes:
-    models = resolve_models(Capability.SPEECH)
-    voice = voice or __import__("os").getenv("SPEECH_VOICE", "alloy")
+    from models.voice.providers import synthesize_speech_bytes
 
-    if not models:
+    try:
+        return synthesize_speech_bytes(text, voice=voice)
+    except Exception as e:
+        logger.error("Piper speech synthesis failed: %s", e)
         return b""
-
-    last_error: Optional[Exception] = None
-    for model_name in models:
-        try:
-            entry = model_def(model_name) or {}
-            adapter = str(entry.get("adapter") or "")
-            if adapter == "magpie_tts":
-                if not model_is_available(model_name):
-                    continue
-                audio = synthesize_speech_for_model(model_name, text)
-            elif model_name.startswith("pollinations/"):
-                audio = _pollinations_speech(text, model_name, voice=voice)
-            else:
-                continue
-
-            if audio:
-                logger.info("Speech synthesis completed via %s", model_name)
-                return audio
-        except Exception as e:
-            last_error = e
-            logger.warning("Speech model %s failed: %s", model_name, e)
-            continue
-
-    logger.error("All speech models failed: %s", last_error)
-    return b""
 
 
 def _pollinations_speech(text: str, model_name: str, voice: Optional[str] = None) -> bytes:

@@ -14,3 +14,9 @@ def test_edit_image_intent_requires_attachment():
 
 def test_analyze_not_generation():
     assert classify_image_intent("describe this image") is None
+
+
+def test_email_reply_not_image_generation():
+    assert classify_image_intent("generate an email reply") is None
+    assert classify_image_intent("create a draft reply to John") is None
+    assert classify_image_intent("compose an email for the invoice") is None

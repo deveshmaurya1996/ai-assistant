@@ -1,3 +1,4 @@
+import { searchMessages } from '@ai-assistant/platform';
 import { sessionManager } from '../../whatsapp/session-manager';
 import { resolveBridgeSessionForUser } from '../../whatsapp/session-resolve';
 import { formatWhatsAppUserError } from '../../whatsapp/baileys-connection';
@@ -28,7 +29,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
 async function executeWhatsAppTool(
   params: GatewayExecContext & { sessionId: string; connectionId: string }
 ): Promise<ToolExecutionOutcome> {
-  const { sessionId, connectionId, tool, args } = params;
+  const { sessionId, connectionId, tool, args, userId } = params;
 
   switch (tool) {
     case 'whatsapp.search_chats': {
@@ -60,6 +61,17 @@ async function executeWhatsAppTool(
       }
       const limit = Number(args.limit ?? 25);
       const result = await sessionManager.readChat(sessionId, chatId, limit);
+      return { success: true, tool, result };
+    }
+    case 'whatsapp.search_messages': {
+      const query = String(args.query ?? '').trim();
+      const limit = Number(args.limit ?? 20);
+      const sender = args.sender ? String(args.sender) : undefined;
+      const result = await searchMessages(params.userId, {
+        keywords: query || undefined,
+        sender,
+        limit,
+      });
       return { success: true, tool, result };
     }
     default:

@@ -90,13 +90,16 @@ export function useAssistantOverlaySync() {
   );
 
   const visibleActivities = useMemo(() => {
+    if (foregroundScreen === 'voice' && isActive) {
+      return activities.filter((a) => a.kind === 'voice');
+    }
     if (foregroundScreen !== 'chat' || !currentChatSessionKey) {
       return activities;
     }
     return activities.filter(
       (a) => a.kind === 'voice' || a.sessionKey === currentChatSessionKey
     );
-  }, [activities, foregroundScreen, currentChatSessionKey]);
+  }, [activities, foregroundScreen, currentChatSessionKey, isActive]);
 
   const activitiesKey = visibleActivities.map((a) => a.sessionKey).join(',');
 

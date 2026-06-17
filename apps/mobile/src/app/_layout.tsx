@@ -1,3 +1,4 @@
+import '@/lib/livekit-setup';
 import 'react-native-reanimated';
 import '@/features/reminders/reminderOverlayTask';
 import { useEffect, useState } from 'react';

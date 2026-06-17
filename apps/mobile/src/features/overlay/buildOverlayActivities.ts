@@ -27,16 +27,16 @@ export type OverlayActivity = {
 };
 
 const VOICE_ACTIVE_PHASES = new Set<VoiceAssistantPhase>([
+  'connecting',
   'listening',
-  'transcribing',
   'waiting_for_ai',
   'speaking',
 ]);
 
 function phaseToBubbleState(phase: VoiceAssistantPhase): OverlayBubbleState {
   switch (phase) {
+    case 'connecting':
     case 'listening':
-    case 'transcribing':
       return 'listening';
     case 'waiting_for_ai':
       return 'processing';

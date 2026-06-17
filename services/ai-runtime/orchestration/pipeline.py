@@ -17,6 +17,8 @@ from workflows.automation import (
     plan_scheduling_actions,
     should_run_scheduling_planner,
 )
+from orchestration.capability_engine import resolve_tools
+from orchestration.intent_classifier import infer_turn_intent
 from orchestration.signals import collect_plan_signals, is_likely_tool_query
 from orchestration.types import PlanTrace
 
@@ -49,6 +51,7 @@ async def run_planner_pipeline(inp: PlanInput) -> Dict[str, Any]:
     warnings: List[str] = []
 
     trace.signals = collect_plan_signals(query, route_text)
+    intent_plan = infer_turn_intent(query, history)
 
     connection_states = list(inp.manifest_connection_states or [])
     if not connection_states:
@@ -195,6 +198,7 @@ async def run_planner_pipeline(inp: PlanInput) -> Dict[str, Any]:
 
     if (
         not force_llm
+        and not intent_plan.needs_live_data
         and not is_likely_tool_query(query)
         and not looks_like_scheduling_query(route_text, history)
     ):
@@ -223,11 +227,20 @@ async def run_planner_pipeline(inp: PlanInput) -> Dict[str, Any]:
     t_llm = time.perf_counter()
     cap_items, model_used, llm_warnings = await llm_plan_capabilities(
         query, context, user_id, available_caps, connected, trace,
+        connection_states=connection_states,
     )
     warnings.extend(llm_warnings)
 
     if not cap_items:
         cap_items = run_heuristics(query, available_caps, connected, timezone=inp.timezone)
+
+    if not cap_items and intent_plan.needs_live_data and intent_plan.abstract_capabilities:
+        cap_items = resolve_tools(
+            intent_plan.abstract_capabilities,
+            available_caps,
+            connection_states=connection_states,
+            entities=intent_plan.entities,
+        )
 
     trace.add_stage(
         "capability_llm",

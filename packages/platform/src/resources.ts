@@ -1,4 +1,5 @@
 import { prisma } from '@ai-assistant/database';
+import { searchMessages } from './retrieval/messages';
 
 export type ResourceHit = {
   id: string;
@@ -15,7 +16,6 @@ export type ResourceSearchOpts = {
   providers?: string[];
 };
 
-/** DB + index search (Phase 4). Live provider fan-out merges via `extraHits`. */
 export async function resourceDomainSearch(
   userId: string,
   query: string,
@@ -89,26 +89,7 @@ export async function searchMessagingMessages(
     messageId: string;
   }>;
 }> {
-  const rows = await prisma.integrationMessage.findMany({
-    where: {
-      thread: { userId, provider: 'whatsapp' },
-      body: { contains: query, mode: 'insensitive' },
-    },
-    include: { thread: true },
-    orderBy: { sentAt: 'desc' },
-    take: limit,
-  });
-
-  return {
-    type: 'messaging.search_result',
-    items: rows.map((r) => ({
-      chatId: r.thread.externalJid,
-      sender: r.thread.displayName ?? r.thread.externalJid,
-      body: r.body ?? '',
-      timestamp: r.sentAt.toISOString(),
-      messageId: r.externalId,
-    })),
-  };
+  return searchMessages(userId, { keywords: query, limit });
 }
 
 export function mergeResourceHits(

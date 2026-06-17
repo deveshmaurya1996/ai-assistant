@@ -185,14 +185,6 @@ export const aiClient = {
         ...init,
       }).then((res) => parseJsonResponse<T>(res, 'GET', '/v1/voice/mode'));
     },
-
-    liveToken: <T>(body: unknown, init?: FetchInit) =>
-      intelligenceFetch(getIntelligenceUrl('/v1/voice/live/token'), {
-        method: 'POST',
-        body: JSON.stringify(body),
-        timeoutMs: TIMEOUTS.default,
-        ...init,
-      }).then((res) => parseJsonResponse<T>(res, 'POST', '/v1/voice/live/token')),
   },
 
   kb: {

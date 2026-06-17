@@ -23,7 +23,6 @@ import {
   getPendingConfirm,
   isConfirmReply,
 } from '../services/pending-confirm.service';
-import { registerVoiceTurnHandlers } from './voice-turn';
 import { setSocketServer, attachUserToSocket, startEventFanout } from './event-fanout';
 import { toolRuntimeFetch } from '../lib/runtime-clients';
 
@@ -80,8 +79,6 @@ export function setupSocketIO(fastify: FastifyInstance) {
         socket.emit('unauthorized', { error: 'Invalid authentication token' });
       }
     });
-
-    registerVoiceTurnHandlers(socket, fastify, () => userId);
 
     socket.on('execution:cancel', async (data: { executionId: string }) => {
       await authReady;

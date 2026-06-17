@@ -168,7 +168,7 @@ pnpm dev:gateway
 
 Check: http://localhost:3000/health → `{"status":"ok","service":"api"}`
 
-### Voice transcription (Pollinations)
+### Voice transcription (Faster-Whisper)
 
 Android records **m4a (AAC)** for STT. The **ai-runtime** server requires **ffmpeg** to convert uploads to 16 kHz mono WAV and to measure loudness (silence detection).
 
@@ -183,7 +183,7 @@ Install on the machine running ai-runtime: `winget install ffmpeg` (Windows) or 
 | 1 | `OPENAI_API_KEY` and/or `GEMINI_API_KEY` | STT, chat, TTS; future Live/Realtime |
 | 3 | `POLLINATIONS_API_KEY` | Fallback STT/TTS/chat only — not realtime voice |
 
-Minimum for classic voice: **OpenAI or Pollinations** for STT+TTS, plus a chat key if not using Pollinations for text.
+Minimum for live voice: **Faster-Whisper** (STT) + **Piper** (TTS) services reachable from gateway/ai-runtime.
 
 **Troubleshooting — voice does nothing:**
 
@@ -208,8 +208,8 @@ Minimum for classic voice: **OpenAI or Pollinations** for STT+TTS, plus a chat k
 2. During voice, overlay starts **compact** (`Name · Listening…`), grows with reply text (capped ~65% × 38% screen).
 3. **Drag** header bar or left footer dot to move; **resize** via right footer dot; **double-tap** to open app.
 4. Socket `voice:turn_*` uploads audio; HTTP `/voice/transcribe` if socket is down.
-5. Optional: `VOICE_STT_PROVIDER=deepgram` + `DEEPGRAM_API_KEY` for streaming STT (AI service).
-6. Phase 4: `VOICE_MODE=gemini-live` or `openai-realtime` when Live keys are configured.
+5. Use `VOICE_STT_PROVIDER=faster-whisper` and configure `FASTER_WHISPER_URL`.
+6. Configure `PIPER_URL` (+ optional `PIPER_DEFAULT_VOICE`) for assistant speech.
 
 Rebuild the dev client after native overlay changes:
 

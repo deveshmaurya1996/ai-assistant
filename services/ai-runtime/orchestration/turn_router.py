@@ -17,6 +17,7 @@ from context.context_builder import (
 from orchestration.attachment_intent import attachment_turn_needs_tools
 from orchestration.image_intent import classify_image_intent
 from workflows.automation import looks_like_scheduling_query
+from orchestration.intent_classifier import infer_turn_intent
 from orchestration.signals import is_likely_tool_query
 
 
@@ -193,7 +194,20 @@ def classify_turn(
             history_limit=history_limit,
         )
 
-    if tool_like:
+    intent_plan = infer_turn_intent(route_q, history)
+
+    if tool_like or intent_plan.needs_live_data:
+        return TurnRoute(
+            intent=TurnIntent.TOOL,
+            stream_task="auto",
+            retrieve_memory=False,
+            run_planner=not skip_planning,
+            run_tools=True,
+            include_identity=True,
+            history_limit=history_limit,
+        )
+
+    if "?" in route_q and len(route_q) > 12:
         return TurnRoute(
             intent=TurnIntent.TOOL,
             stream_task="auto",

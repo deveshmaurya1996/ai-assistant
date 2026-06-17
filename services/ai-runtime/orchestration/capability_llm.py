@@ -5,6 +5,7 @@ import os
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from tools.registry import default_provider_for_capability
+from orchestration.capability_engine import resolve_tools
 from orchestration.llm.client import complete_planner
 from context.prompt_builder import (
     load_capability_system_prompt,
@@ -40,6 +41,7 @@ async def llm_plan_capabilities(
     available_caps: Set[str],
     connected: Set[str],
     trace: PlanTrace,
+    connection_states: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[List[Dict[str, Any]], str | None, List[str]]:
     del connected
     warnings: List[str] = []
@@ -89,6 +91,19 @@ async def llm_plan_capabilities(
                 "parsed",
                 detail=f"caps={len(planned.get('capabilities', []))}",
             )
+
+        if isinstance(planned, dict):
+            required = planned.get("requiredCapabilities") or []
+            entities = planned.get("entities") if isinstance(planned.get("entities"), dict) else {}
+            if required and not planned.get("capabilities"):
+                cap_items.extend(
+                    resolve_tools(
+                        [str(r) for r in required],
+                        available_caps,
+                        connection_states=connection_states or [],
+                        entities=entities,
+                    )
+                )
 
         for item in planned.get("capabilities", []) if isinstance(planned, dict) else []:
             cap_id = item.get("capability")

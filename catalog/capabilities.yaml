@@ -13,6 +13,8 @@ capabilities:
         adapterAction: list_unread
         permissions:
           - whatsapp.read
+    abstractCapability: search_messages
+    priority: 100
   - id: messaging.read_chat
     domain: messaging
     description: Read recent messages in a chat conversation
@@ -26,6 +28,8 @@ capabilities:
         adapterAction: read_chat
         permissions:
           - whatsapp.read
+    abstractCapability: search_messages
+    priority: 100
   - id: messaging.send_message
     domain: messaging
     description: Send an instant message
@@ -39,6 +43,8 @@ capabilities:
         adapterAction: send_message
         permissions:
           - whatsapp.send
+    abstractCapability: send_message
+    priority: 100
   - id: email.list_unread
     domain: email
     description: List unread emails with subject and preview
@@ -52,6 +58,8 @@ capabilities:
         adapterAction: list_unread
         permissions:
           - gmail.read
+    abstractCapability: search_messages
+    priority: 100
   - id: email.read_email
     domain: email
     description: Read a single email by id or the latest unread
@@ -65,6 +73,8 @@ capabilities:
         adapterAction: read_email
         permissions:
           - gmail.read
+    abstractCapability: read_file
+    priority: 100
   - id: email.send_email
     domain: email
     description: Send an email
@@ -78,6 +88,8 @@ capabilities:
         adapterAction: send_email
         permissions:
           - gmail.send
+    abstractCapability: send_message
+    priority: 100
   - id: email.search
     domain: email
     description: Search Gmail by query (from, subject, keywords)
@@ -91,6 +103,8 @@ capabilities:
         adapterAction: search_email
         permissions:
           - gmail.read
+    abstractCapability: search_messages
+    priority: 100
   - id: email.reply_email
     domain: email
     description: Reply to an email in the same thread
@@ -104,6 +118,8 @@ capabilities:
         adapterAction: reply_email
         permissions:
           - gmail.send
+    abstractCapability: send_message
+    priority: 100
   - id: email.compose_draft
     domain: email
     description: Compose and save an email draft without sending
@@ -117,6 +133,7 @@ capabilities:
         adapterAction: compose_draft
         permissions:
           - gmail.compose
+    priority: 100
   - id: email.draft_reply
     domain: email
     description: Save a reply draft without sending
@@ -130,6 +147,7 @@ capabilities:
         adapterAction: draft_reply
         permissions:
           - gmail.compose
+    priority: 100
   - id: email.mark_starred
     domain: email
     description: Star or unstar an email
@@ -143,6 +161,7 @@ capabilities:
         adapterAction: mark_starred
         permissions:
           - gmail.modify
+    priority: 100
   - id: calendar.list_upcoming
     domain: calendar
     description: List upcoming calendar events
@@ -156,6 +175,8 @@ capabilities:
         adapterAction: list_upcoming
         permissions:
           - calendar.read
+    abstractCapability: search_events
+    priority: 100
   - id: calendar.create_event
     domain: calendar
     description: Create a Google Calendar event
@@ -169,6 +190,8 @@ capabilities:
         adapterAction: create_event
         permissions:
           - calendar.write
+    abstractCapability: create_event
+    priority: 100
   - id: calendar.cancel_event
     domain: calendar
     description: Cancel a calendar event
@@ -182,6 +205,8 @@ capabilities:
         adapterAction: cancel_event
         permissions:
           - calendar.write
+    abstractCapability: cancel_event
+    priority: 100
   - id: drive.search
     domain: files
     description: Search Google Drive by file name or content
@@ -195,6 +220,8 @@ capabilities:
         adapterAction: search_drive
         permissions:
           - drive.read
+    abstractCapability: search_documents
+    priority: 100
   - id: drive.get_content
     domain: files
     description: Read a Google Drive file and return text for summarization
@@ -208,6 +235,8 @@ capabilities:
         adapterAction: read_drive_file
         permissions:
           - drive.read
+    abstractCapability: read_file
+    priority: 100
   - id: messaging.search_messages
     domain: messaging
     description: Search stored WhatsApp message history
@@ -221,6 +250,8 @@ capabilities:
         adapterAction: search_messages
         permissions:
           - whatsapp.read
+    abstractCapability: search_messages
+    priority: 110
   - id: messaging.search_chats
     domain: messaging
     description: Search WhatsApp chats by contact name or phone number
@@ -234,6 +265,8 @@ capabilities:
         adapterAction: search_chats
         permissions:
           - whatsapp.read
+    abstractCapability: search_messages
+    priority: 100
   - id: resources.search
     domain: files
     description: Search across WhatsApp, email index, and Google Drive
@@ -245,6 +278,8 @@ capabilities:
       - providerId: platform
         tool: resources.search
         adapterAction: search
+    abstractCapability: search_documents
+    priority: 100
   - id: contacts.resolve_person
     domain: contacts
     description: Resolve a person name to preferred messaging or email address
@@ -256,6 +291,7 @@ capabilities:
       - providerId: platform
         tool: contacts.resolve
         adapterAction: resolve
+    priority: 100
   - id: communication.email.search
     domain: email
     description: Search email (legacy)
@@ -269,6 +305,7 @@ capabilities:
         adapterAction: search
         permissions:
           - gmail.read
+    priority: 100
   - id: communication.email.send
     domain: email
     description: Send email (legacy)
@@ -282,6 +319,7 @@ capabilities:
         adapterAction: send
         permissions:
           - gmail.send
+    priority: 100
   - id: communication.message.send
     domain: messaging
     description: Send message (legacy)
@@ -295,6 +333,7 @@ capabilities:
         adapterAction: send_message
         permissions:
           - whatsapp.send
+    priority: 100
   - id: communication.chat.search
     domain: messaging
     description: Search chats (legacy)
@@ -308,6 +347,7 @@ capabilities:
         adapterAction: search_chats
         permissions:
           - whatsapp.read
+    priority: 100
   - id: productivity.calendar.create
     domain: calendar
     description: Create event (legacy)
@@ -321,6 +361,7 @@ capabilities:
         adapterAction: create_event
         permissions:
           - calendar.write
+    priority: 100
   - id: productivity.calendar.list
     domain: calendar
     description: List events (legacy)
@@ -334,6 +375,7 @@ capabilities:
         adapterAction: list
         permissions:
           - calendar.read
+    priority: 100
   - id: image.edit
     domain: image
     description: Generate or edit an image from a text prompt (optional source image)
@@ -345,3 +387,4 @@ capabilities:
       - providerId: platform
         tool: image.edit
         adapterAction: edit_image
+    priority: 100

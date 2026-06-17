@@ -3,13 +3,21 @@ export {
   ASSISTANT_PERSONALITIES,
   ASSISTANT_NAME_MAX_LENGTH,
   DEFAULT_ASSISTANT_PERSONALITY_ID,
+  VOICE_DEFAULT_PROFILE_ID,
+  VOICE_PROFILES,
   buildAssistantIdentityBlock,
   canCustomizeAssistantDisplayName,
   formatPersonalityGender,
   getAssistantPersonality,
+  getVoiceProfile,
+  getVoiceProfileForPersonality,
+  listVoiceProfilesPublic,
   normalizePersonalityId,
+  normalizeVoiceProfileId,
+  personalityToVoiceProfile,
   reconcileDisplayName,
   resolveAssistantContext,
+  resolvePersonalityVoiceId,
 } from './personality';
 export type * from './attachments';
 export {
@@ -41,6 +49,12 @@ export {
 export type * from './agent';
 export type * from './memory';
 export type * from './voice';
+export {
+  VOICE_PROVIDERS,
+  VOICE_STT_PROVIDER,
+  VOICE_TTS_PROVIDER,
+} from './voice-providers';
+export type { VoiceMode, VoiceModeResponse } from './voice-providers';
 export type * from './tool';
 export type * from './integration';
 export { WHATSAPP_PAIRING_CODE_TTL_MS } from './integration';

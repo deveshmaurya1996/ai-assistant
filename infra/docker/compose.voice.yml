@@ -1,0 +1,40 @@
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    restart: unless-stopped
+    command: --dev --bind 0.0.0.0
+    ports:
+      - "7880:7880"
+      - "7881:7881/udp"
+      - "7882:7882/udp"
+
+  voice-gateway:
+    build:
+      context: ../..
+      dockerfile: services/voice-gateway/Dockerfile
+    restart: unless-stopped
+    environment:
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret}
+      GATEWAY_INTERNAL_URL: ${GATEWAY_INTERNAL_URL:-http://host.docker.internal:3000}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-dev-internal-token}
+      REDIS_URL: ${REDIS_URL:-redis://host.docker.internal:6379}
+      INTELLIGENCE_UPSTREAM_URL: ${INTELLIGENCE_UPSTREAM_URL:-http://host.docker.internal:8000}
+    depends_on:
+      - livekit
+      - faster-whisper
+      - piper
+
+  faster-whisper:
+    image: lscr.io/linuxserver/faster-whisper:latest
+    restart: unless-stopped
+    ports:
+      - "10300:10300"
+
+  piper:
+    image: rhasspy/wyoming-piper:latest
+    restart: unless-stopped
+    command: --voice en_US-lessac-medium
+    ports:
+      - "5000:10200"

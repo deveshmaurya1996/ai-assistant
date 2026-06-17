@@ -44,6 +44,9 @@ class ChatStreamRequest(BaseModel):
     system_prompt: Optional[str] = None
     preferred_model_id: Optional[str] = None
     session_model_id: Optional[str] = None
+    needs_live_data: bool = False
+    has_tool_context: bool = False
+    voice_max_sentences: Optional[int] = None
 
 
 class ChatCompleteRequest(BaseModel):
@@ -99,6 +102,11 @@ def build_chat_messages(
     query: str,
     resolved_attachments: Optional[List[Dict[str, Any]]] = None,
     system_prompt: Optional[str] = None,
+    *,
+    needs_live_data: bool = False,
+    has_tool_context: bool = False,
+    speed_profile: Optional[str] = None,
+    voice_max_sentences: Optional[int] = None,
 ) -> List[ChatMessage]:
     resolved_attachments = resolved_attachments or []
     if system_prompt and system_prompt.strip():
@@ -110,6 +118,22 @@ def build_chat_messages(
     else:
         system_instruction = "You are a helpful AI Assistant."
     system_instruction += " Use retrieved context when relevant."
+    system_instruction += (
+        " Never invent email subjects, message bodies, calendar events, meeting times, "
+        "or file contents. If integration data was not retrieved, say you could not "
+        "access that information instead of guessing."
+    )
+    if needs_live_data and has_tool_context:
+        system_instruction += (
+            " Answer ONLY using facts from the user's message and the "
+            "'System: tool actions completed' block. Do not add information beyond "
+            "what those tool results contain."
+        )
+    elif needs_live_data:
+        system_instruction += (
+            " No live integration data was retrieved for this question. "
+            "Do not simulate inbox, calendar, or messaging content."
+        )
     if system_prompt and system_prompt.strip():
         name_match = re.search(
             r"Your name is ([^.]+)\.", system_prompt.strip(), re.IGNORECASE
@@ -120,6 +144,14 @@ def build_chat_messages(
                 f" Identity reminder: you are {identity_name}. "
                 f"If asked your name, answer: My name is {identity_name}."
             )
+    if speed_profile == "voice_realtime":
+        max_sentences = voice_max_sentences if voice_max_sentences and voice_max_sentences > 0 else 3
+        system_instruction += (
+            f" This is a spoken voice response. Respond in at most {max_sentences} short "
+            "sentences unless the user asks for more detail. When listing items "
+            "(meetings, emails, tasks), use one sentence per item. "
+            "Example: 'You have 3 meetings tomorrow. First is with Rahul at 10 AM.'"
+        )
     if context_str:
         system_instruction += f"\n\nRetrieved Context:\n{context_str}"
     if resolved_attachments:
@@ -234,6 +266,10 @@ async def chat_stream(payload: ChatStreamRequest, request: Request):
         payload.query,
         payload.resolved_attachments,
         payload.system_prompt,
+        needs_live_data=payload.needs_live_data,
+        has_tool_context=payload.has_tool_context,
+        speed_profile=payload.speed_profile,
+        voice_max_sentences=payload.voice_max_sentences,
     )
     logger.info(
         "[chat] stream_start task=%s rag=%s context_chars=%d personality=%s",

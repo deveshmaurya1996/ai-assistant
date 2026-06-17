@@ -1,11 +1,16 @@
-
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
 
+from voice_orchestration.voice_mode import resolve_voice_mode
+
+__all__ = ["VoiceRouter", "VoiceMode", "VoiceSessionRequest", "resolve_voice_mode"]
+
 
 class VoiceMode(str, Enum):
+    LIVEKIT = "livekit"
+    UNCONFIGURED = "unconfigured"
     CLASSIC = "classic"
     FULL_DUPLEX = "full_duplex"
 
@@ -19,19 +24,17 @@ class VoiceSessionRequest:
 
 
 class VoiceRouter:
-    """Classic voice: NVIDIA multimodal STT → integrate LLM → Magpie or Pollinations TTS.
-
-    nemotron-voicechat (FULL_DUPLEX) requires early access and a streaming/WebRTC stack —
-    see https://github.com/NVIDIA-AI-Blueprints/nemotron-voice-agent. Not wired to mobile yet.
-    """
 
     def route(self, request: VoiceSessionRequest) -> VoiceMode:
-        if request.prefer_live and self.full_duplex_available():
-            return VoiceMode.FULL_DUPLEX
+        decision = resolve_voice_mode(request.user_id)
+        if decision.mode == "livekit":
+            return VoiceMode.LIVEKIT
+        if decision.mode == "unconfigured":
+            return VoiceMode.UNCONFIGURED
         return VoiceMode.CLASSIC
 
     def full_duplex_available(self) -> bool:
-        return False
+        return resolve_voice_mode().full_duplex_available
 
     def pollinations_allowed(self) -> bool:
-        return True
+        return resolve_voice_mode().pollinations_voice

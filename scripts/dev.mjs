@@ -66,6 +66,28 @@ function findPython(aiDirName = 'ai-runtime') {
   return process.platform === 'win32' ? 'python' : 'python3';
 }
 
+async function freeAiRuntimePort(port) {
+  if (process.platform !== 'win32') return;
+  const { execSync } = await import('node:child_process');
+  try {
+    const out = execSync(`netstat -ano | findstr :${port} | findstr LISTENING`, {
+      encoding: 'utf8',
+    });
+    for (const line of out.split(/\r?\n/).filter(Boolean)) {
+      const pid = Number.parseInt(line.trim().split(/\s+/).pop() ?? '', 10);
+      if (pid > 0) {
+        try {
+          execSync(`taskkill /F /PID ${pid} /T`, { stdio: 'ignore' });
+        } catch {
+          /* already gone */
+        }
+      }
+    }
+  } catch {
+    /* port free */
+  }
+}
+
 async function assertAiRuntimePort(port) {
   try {
     const res = await fetch(`http://localhost:${port}/health`, {
@@ -73,16 +95,22 @@ async function assertAiRuntimePort(port) {
     });
     if (!res.ok) return;
     const body = await res.json();
-    if (body.service === 'cognitive-runtime' || body.cognitive === true) {
+    if (body.service === 'cognitive-runtime') {
       console.error(
         `[ai-runtime] Port ${port} is running a legacy cognitive-runtime process (missing /v1/chat/stream).`,
       );
       console.error('[ai-runtime] Stop that process, then start ai-runtime: pnpm dev:ai-runtime');
       process.exit(1);
     }
-    if (body.service === 'ai-runtime' || (body.service === 'intelligence' && body.ai === true)) {
-      console.log(`[ai-runtime] Already listening on http://localhost:${port}`);
-      process.exit(0);
+    if (
+      body.service === 'ai-runtime' ||
+      (body.service === 'intelligence' && body.ai === true)
+    ) {
+      console.log(
+        `[ai-runtime] Replacing existing listener on http://localhost:${port}`,
+      );
+      await freeAiRuntimePort(port);
+      return;
     }
   } catch {
     /* port free or not HTTP */
@@ -91,6 +119,7 @@ async function assertAiRuntimePort(port) {
 
 async function serveAi() {
   const port = portFor('ai-runtime');
+  await freeAiRuntimePort(port);
   await assertAiRuntimePort(port);
   const aiDir = path.join(root, 'services', 'ai-runtime');
   const python = findPython('ai-runtime');
@@ -102,8 +131,7 @@ async function serveAi() {
     'localhost',
     '--port',
     String(port),
-    '--workers',
-    '2',
+    '--reload',
   ];
 
   const code = await new Promise((resolve, reject) => {
@@ -194,6 +222,11 @@ const HANDLERS = {
   },
   ai: { serve: serveAi },
   'ai-runtime': { serve: serveAi },
+  'voice-gateway': {
+    build: ['pnpm', '--filter', '@ai-assistant/voice-gateway', 'build'],
+    serve: () =>
+      runWithEnv(['pnpm', '--filter', '@ai-assistant/voice-gateway', 'run', 'dev']),
+  },
   studio: { serve: serveStudio },
   mobile: { serve: serveMobile },
 };

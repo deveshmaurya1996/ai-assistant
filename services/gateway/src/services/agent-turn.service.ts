@@ -28,6 +28,9 @@ export type AgentTurnInput = {
   timezone?: string;
   preferredModelId?: string;
   sessionModelId?: string;
+  voiceProfileId?: string;
+  voiceMaxSentences?: number;
+  turnId?: string;
   modelAssignment?: {
     assignedModelId: string;
     assignedReason: string;
@@ -53,7 +56,12 @@ export type AgentTurnResult = {
   modalConfirm?: boolean;
 };
 
-type DonePayload = { model?: string | null; label?: string | null };
+type DonePayload = {
+  model?: string | null;
+  label?: string | null;
+  trace?: Record<string, unknown>;
+  timings?: Record<string, number>;
+};
 
 type ImageSsePayload = {
   imageBase64?: string;
@@ -138,6 +146,8 @@ export async function runAgentTurn(
         timezone: input.timezone,
         preferred_model_id: input.preferredModelId,
         session_model_id: input.sessionModelId,
+        voice_profile_id: input.voiceProfileId,
+        voice_max_sentences: input.voiceMaxSentences,
       },
       { signal }
     );
@@ -244,6 +254,9 @@ export async function runAgentTurn(
         }
       } else if (ev.event === 'done') {
         const payload = safeParseJson<DonePayload>(ev.data, {});
+        if (payload.trace) {
+          console.info('[agent-turn] trace', JSON.stringify(payload.trace));
+        }
         if (payload.model) {
           modelUsed = payload.model;
           modelLabel = payload.label ?? modelLabelFromId(payload.model);

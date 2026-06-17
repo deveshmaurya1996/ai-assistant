@@ -20,10 +20,10 @@ type Props = {
 
 function emptyHintForPhase(phase: VoiceAssistantPhase): string {
   switch (phase) {
+    case 'connecting':
+      return 'Connecting to voice…';
     case 'listening':
       return 'Listening… speak when ready';
-    case 'transcribing':
-      return 'Processing your speech…';
     case 'waiting_for_ai':
       return 'Thinking…';
     case 'speaking':
@@ -46,8 +46,9 @@ export function VoiceConversationView({
   const saveNote = useSaveNote();
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
   const emptyHint = emptyHintForPhase(phase);
+  const hasContent = messages.length > 0 || isStreaming || isGenerating;
 
-  if (messages.length === 0) {
+  if (!hasContent) {
     return (
       <View style={[styles.empty, contentPaddingBottom ? { paddingBottom: contentPaddingBottom } : null]}>
         <Text variant="body" muted style={styles.emptyText}>

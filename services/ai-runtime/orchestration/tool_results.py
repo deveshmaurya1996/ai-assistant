@@ -118,7 +118,15 @@ _LOOKUP_ONLY_TOOLS = frozenset(
 )
 
 
-def format_tool_results_for_context(tool_results: List[Dict[str, Any]]) -> str:
+def format_tool_results_for_context(
+    tool_results: List[Dict[str, Any]],
+    *,
+    needs_live_data: bool = False,
+) -> str:
+    from knowledge.normalizer import format_knowledge_items, normalize_tool_results
+
+    knowledge = normalize_tool_results(tool_results)
+    knowledge_block = format_knowledge_items(knowledge)
     lines: List[str] = []
     has_read_chat = any(
         str(entry.get("tool") or "").endswith("read_chat")
@@ -137,12 +145,37 @@ def format_tool_results_for_context(tool_results: List[Dict[str, Any]]) -> str:
         if line:
             lines.append(line)
 
+    if not lines and knowledge_block:
+        body = knowledge_block.replace("\n", "\n- ")
+        instruction = _TOOL_REPLY_INSTRUCTION
+        if needs_live_data:
+            instruction += (
+                " Answer ONLY from the bullet points above. "
+                "Do not invent any message, event, or email content."
+            )
+        return (
+            f"\n\n[System: tool actions completed]\n- {body}\n\n{instruction}"
+        )
+
     if not lines:
+        if needs_live_data:
+            return (
+                "\n\n[System: tool actions completed]\n"
+                "- No matching data was found in your connected apps.\n\n"
+                "Tell the user clearly that nothing was found — do not invent messages, "
+                "events, or emails."
+            )
         return ""
 
     body = "\n".join(f"- {line}" for line in lines)
+    instruction = _TOOL_REPLY_INSTRUCTION
+    if needs_live_data:
+        instruction += (
+            " Answer ONLY from the bullet points above. "
+            "Do not invent any message, event, or email content."
+        )
     return (
-        f"\n\n[System: tool actions completed]\n{body}\n\n{_TOOL_REPLY_INSTRUCTION}"
+        f"\n\n[System: tool actions completed]\n{body}\n\n{instruction}"
     )
 
 

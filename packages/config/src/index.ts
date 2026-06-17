@@ -101,6 +101,10 @@ export interface AppConfig {
   workflowConcurrency: number;
   schedulerConcurrency: number;
   memoryConcurrency: number;
+  livekitUrl: string | undefined;
+  livekitApiKey: string | undefined;
+  livekitApiSecret: string | undefined;
+  voiceGatewayAgentName: string;
 }
 
 export const config: AppConfig = {
@@ -157,6 +161,10 @@ export const config: AppConfig = {
   workflowConcurrency: envInt('WORKFLOW_CONCURRENCY', 2),
   schedulerConcurrency: envInt('SCHEDULER_CONCURRENCY', 2),
   memoryConcurrency: envInt('MEMORY_CONCURRENCY', 2),
+  livekitUrl: process.env.LIVEKIT_URL?.trim() || undefined,
+  livekitApiKey: process.env.LIVEKIT_API_KEY?.trim() || undefined,
+  livekitApiSecret: process.env.LIVEKIT_API_SECRET?.trim() || undefined,
+  voiceGatewayAgentName: envOptional('VOICE_GATEWAY_AGENT_NAME', 'ai-assistant-voice'),
 };
 
 export function getAiServiceUrl(path: string): string {

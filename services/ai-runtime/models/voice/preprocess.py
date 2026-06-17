@@ -11,6 +11,7 @@ from typing import Iterator
 
 from models.voice.ffmpeg import convert_to_wav, probe_duration_seconds, probe_volume_db
 from models.voice.mime import transcribe_channels, transcribe_sample_rate
+from models.voice.pcm import is_raw_pcm_filename, pcm_s16le_to_wav_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -83,9 +84,19 @@ def prepare_upload(content: bytes, filename: str) -> Iterator[PreparedAudio]:
             raw.write(content)
             raw.flush()
             raw_path = raw.name
-        estimated_duration = _estimate_duration_seconds(content)
-        convert_timeout = max(120.0, estimated_duration * 2.5 + 30.0)
-        wav_path = normalize_to_wav(raw_path, convert_timeout=convert_timeout)
+
+        if is_raw_pcm_filename(filename):
+            wav_bytes = pcm_s16le_to_wav_bytes(content)
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as wav:
+                wav.write(wav_bytes)
+                wav.flush()
+                wav_path = wav.name
+            Path(raw_path).unlink(missing_ok=True)
+            raw_path = None
+        else:
+            estimated_duration = _estimate_duration_seconds(content)
+            convert_timeout = max(120.0, estimated_duration * 2.5 + 30.0)
+            wav_path = normalize_to_wav(raw_path, convert_timeout=convert_timeout)
 
         duration = probe_duration_seconds(wav_path)
         volume_timeout = max(60.0, duration * 1.5 + 15.0)

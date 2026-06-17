@@ -11,6 +11,7 @@
     "dev:down": "tilt down",
     "dev:gateway": "node scripts/with-env.mjs node scripts/dev.mjs serve gateway",
     "dev:ai-runtime": "node scripts/with-env.mjs node scripts/dev.mjs serve ai-runtime",
+    "dev:voice-gateway": "pnpm --filter @ai-assistant/types build && node scripts/with-env.mjs node scripts/dev.mjs serve voice-gateway",
     "dev:web": "pnpm --filter @ai-assistant/web dev",
     "lint": "pnpm exec turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",

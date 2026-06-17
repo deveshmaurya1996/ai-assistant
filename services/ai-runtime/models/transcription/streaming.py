@@ -1,24 +1,33 @@
+import logging
 import os
 from typing import Optional
 
 from models.transcription.batch import BatchTranscriptionProvider
 from models.transcription.provider import TranscriptionProvider
+from models.voice.providers import transcribe_audio_bytes
+
+logger = logging.getLogger(__name__)
 
 
 class StreamingTranscriptionProvider(TranscriptionProvider):
     def __init__(self) -> None:
         self._fallback = BatchTranscriptionProvider()
-        self._provider = os.getenv("VOICE_STT_PROVIDER", "batch").strip().lower()
-        self._deepgram_key = os.getenv("DEEPGRAM_API_KEY", "").strip()
+        self._provider = os.getenv("VOICE_STT_PROVIDER", "faster-whisper").strip().lower()
 
     def transcribe(self, content: bytes, filename: str = "audio.m4a") -> str:
-        if self._provider == "deepgram" and self._deepgram_key:
-            pass
+        if self._provider == "faster-whisper":
+            try:
+                return transcribe_audio_bytes(content, filename)
+            except Exception as exc:
+                logger.warning(
+                    "faster-whisper STT failed (%s); falling back to batch transcription",
+                    exc,
+                )
         return self._fallback.transcribe(content, filename)
 
     def transcribe_partial(
         self, content: bytes, filename: str = "audio.m4a"
     ) -> Optional[str]:
-        if self._provider in ("deepgram", "realtime") and self._deepgram_key:
+        if self._provider == "faster-whisper":
             return None
         return self._fallback.transcribe_partial(content, filename)

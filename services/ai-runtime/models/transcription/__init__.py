@@ -9,12 +9,15 @@ _provider: TranscriptionProvider | None = None
 
 def get_transcription_provider() -> TranscriptionProvider:
     global _provider
+    mode = os.getenv("VOICE_STT_PROVIDER", "faster-whisper").strip().lower()
     if _provider is not None:
-        return _provider
+        cached_mode = getattr(_provider, "_voice_stt_mode", None)
+        if cached_mode == mode:
+            return _provider
 
-    mode = os.getenv("VOICE_STT_PROVIDER", "batch").strip().lower()
-    if mode in ("deepgram", "realtime", "streaming"):
+    if mode in ("faster-whisper", "streaming", "realtime"):
         _provider = StreamingTranscriptionProvider()
     else:
         _provider = BatchTranscriptionProvider()
+    setattr(_provider, "_voice_stt_mode", mode)
     return _provider

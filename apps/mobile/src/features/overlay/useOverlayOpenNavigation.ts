@@ -1,14 +1,16 @@
 import { useEffect, useRef } from 'react';
 import { Linking } from 'react-native';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter, useSegments } from 'expo-router';
 import {
   subscribeOverlayOpened,
   type OverlayNavigationTarget,
 } from '@/lib/overlay';
+import { useVoiceSessionBridge } from '@/features/voice-assistant/voiceSessionBridge';
 import {
   overlayActivityToHref,
   parseOverlayDeepLink,
 } from './resolveOverlayRoute';
+import { shouldSkipOverlayNavigation } from './overlayNavigationGuards';
 
 function navigationKey(target: OverlayNavigationTarget): string {
   return `${target.kind}:${target.sessionKey}`;
@@ -16,12 +18,31 @@ function navigationKey(target: OverlayNavigationTarget): string {
 
 export function useOverlayOpenNavigation() {
   const router = useRouter();
+  const pathname = usePathname();
+  const segments = useSegments();
+  const voiceActive = useVoiceSessionBridge((s) => s.isActive);
   const routerRef = useRef(router);
+  const pathnameRef = useRef(pathname);
+  const segmentsRef = useRef(segments);
+  const voiceActiveRef = useRef(voiceActive);
   const lastNavigationRef = useRef<{ key: string; at: number } | null>(null);
   routerRef.current = router;
+  pathnameRef.current = pathname;
+  segmentsRef.current = segments;
+  voiceActiveRef.current = voiceActive;
 
   useEffect(() => {
+    const shouldSkipNavigation = (target: OverlayNavigationTarget): boolean =>
+      shouldSkipOverlayNavigation(
+        pathnameRef.current,
+        segmentsRef.current,
+        target,
+        voiceActiveRef.current
+      );
+
     const navigate = (target: OverlayNavigationTarget) => {
+      if (shouldSkipNavigation(target)) return;
+
       const key = navigationKey(target);
       const now = Date.now();
       const last = lastNavigationRef.current;

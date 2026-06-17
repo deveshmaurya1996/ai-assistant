@@ -19,6 +19,7 @@ export {
   resolveCapabilityExecution,
 } from './registry';
 export { selectProvider } from './provider-selector';
+export { catalogForAbstract, resolveAbstractCapabilities } from './capability-engine';
 export {
   loadCapabilityManifest,
   manifestCapabilityIds,

@@ -26,6 +26,8 @@ import type {
   UploadFilePayload,
   UserConnection,
   VoiceTranscriptionResponse,
+  VoiceProfileListResponse,
+  LiveKitTokenResponse,
   WhatsAppSessionStatus,
   UserNote,
   CreateNoteBody,
@@ -677,5 +679,16 @@ export class AssistantClient {
       `/notes/by-message/${encodeURIComponent(sourceMessageId)}`,
       { method: 'DELETE' }
     );
+  }
+
+  async getVoiceProfiles() {
+    return this.request<VoiceProfileListResponse>('/assistant/voice/profiles');
+  }
+
+  async getVoiceLiveToken(body?: { chatSessionId?: string; personalityId?: string }) {
+    return this.request<LiveKitTokenResponse>('/assistant/voice/live/token', {
+      method: 'POST',
+      body: JSON.stringify(body ?? {}),
+    });
   }
 }

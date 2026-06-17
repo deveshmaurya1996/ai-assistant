@@ -1,27 +1,64 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { ASSISTANT_PERSONALITIES } from '@ai-assistant/types';
+import { AccessToken } from 'livekit-server-sdk';
+import {
+  ASSISTANT_PERSONALITIES,
+  DEFAULT_ASSISTANT_PERSONALITY_ID,
+  listVoiceProfilesPublic,
+  getVoiceProfileForPersonality,
+} from '@ai-assistant/types';
+import { config } from '@ai-assistant/config';
 import { authenticateRequest } from '../utils/auth.middleware';
 import { requireUserId } from '../lib/auth';
 import { sendError } from '../lib/errors';
-import { fetchAi } from '../lib/http';
+import { createSession, assertSessionAccess } from '../services/chat.service';
+import {
+  saveVoiceSession,
+  getVoiceSessionByChatSession,
+  resolveVoiceRoomId,
+} from '../services/voice-session.service';
+import {
+  loadUserVoiceSettings,
+  resolveVoiceProfileId,
+} from '../lib/voice-user-settings';
+import { dispatchVoiceAgent } from '../lib/livekit-dispatch';
+import { aiClient } from '../lib/ai-client';
 
-const ContextSchema = z.object({
-  foregroundApp: z.string().optional(),
-  notificationSummary: z.string().optional(),
-  visibleTextSnippet: z.string().optional(),
-  clipboardSnippet: z.string().optional(),
-});
+function liveKitConfigured(): boolean {
+  return Boolean(
+    config.livekitUrl && config.livekitApiKey && config.livekitApiSecret
+  );
+}
 
-const ProactiveScoreSchema = z.object({
-  importance: z.number().min(0).max(1).default(0.5),
-  userBusy: z.boolean().default(false),
-  foregroundApp: z.string().optional(),
-  senderPriority: z.number().min(0).max(1).optional(),
-});
+async function mintLiveKitToken(params: {
+  userId: string;
+  roomName: string;
+}): Promise<{ token: string; expiresAt: string }> {
+  const ttlSec = 3600;
+  const at = new AccessToken(config.livekitApiKey!, config.livekitApiSecret!, {
+    identity: params.userId,
+    ttl: ttlSec,
+  });
+  at.addGrant({
+    roomJoin: true,
+    room: params.roomName,
+    canPublish: true,
+    canSubscribe: true,
+  });
+  const token = await at.toJwt();
+  const expiresAt = new Date(Date.now() + ttlSec * 1000).toISOString();
+  return { token, expiresAt };
+}
 
 export async function assistantRoutes(fastify: FastifyInstance) {
   fastify.addHook('preHandler', authenticateRequest);
+
+  fastify.get('/voice/profiles', async (_request, reply) => {
+    return reply.send({
+      profiles: listVoiceProfilesPublic(),
+      defaultProfileId: DEFAULT_ASSISTANT_PERSONALITY_ID,
+    });
+  });
 
   fastify.get('/personalities', async (_request, reply) => {
     return reply.send({ personalities: ASSISTANT_PERSONALITIES });
@@ -30,13 +67,17 @@ export async function assistantRoutes(fastify: FastifyInstance) {
   fastify.post('/context/evaluate', async (request, reply) => {
     try {
       requireUserId(request);
+      const ContextSchema = z.object({
+        foregroundApp: z.string().optional(),
+        notificationSummary: z.string().optional(),
+        visibleTextSnippet: z.string().optional(),
+        clipboardSnippet: z.string().optional(),
+      });
       const body = ContextSchema.parse(request.body);
       const urgency =
         body.notificationSummary?.toLowerCase().includes('urgent') === true ? 0.85 : 0.35;
       return reply.send({
-        current_context: body.foregroundApp
-          ? `Using ${body.foregroundApp}`
-          : 'general',
+        current_context: body.foregroundApp ? `Using ${body.foregroundApp}` : 'general',
         urgency,
         user_state: body.visibleTextSnippet ? 'focused' : 'idle',
         recommended_behavior: urgency > 0.7 ? 'overlay_only' : 'wait',
@@ -49,6 +90,12 @@ export async function assistantRoutes(fastify: FastifyInstance) {
   fastify.post('/proactive/score', async (request, reply) => {
     try {
       requireUserId(request);
+      const ProactiveScoreSchema = z.object({
+        importance: z.number().min(0).max(1).default(0.5),
+        userBusy: z.boolean().default(false),
+        foregroundApp: z.string().optional(),
+        senderPriority: z.number().min(0).max(1).optional(),
+      });
       const body = ProactiveScoreSchema.parse(request.body);
       const score =
         body.importance * 0.5 +
@@ -63,18 +110,25 @@ export async function assistantRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.get('/voice/mode', async (request, reply) => {
+  fastify.get('/voice/mode', async (_request, reply) => {
     try {
-      const userId = requireUserId(request);
-      const data = await fetchAi<{ mode: string; available: string[] }>(
-        `/v1/voice/mode?user_id=${encodeURIComponent(userId)}`
-      );
-      return reply.send(data);
-    } catch (error) {
+      const payload = await aiClient.voice.mode<{
+        mode: string;
+        available: string[];
+        note?: string;
+        future_modes?: string[];
+        full_duplex_available?: boolean;
+        pollinations_voice?: boolean;
+        stt_provider?: string;
+        tts_provider?: string;
+      }>(undefined);
+      return reply.send(payload);
+    } catch (err) {
+      console.warn('[voice] failed to resolve mode from ai-runtime:', err);
       return reply.send({
-        mode: 'classic',
-        available: ['classic'],
-        note: 'AI service unavailable; using classic pipeline',
+        mode: 'unconfigured',
+        available: [],
+        note: 'AI runtime unavailable; voice mode could not be resolved',
       });
     }
   });
@@ -82,25 +136,101 @@ export async function assistantRoutes(fastify: FastifyInstance) {
   fastify.post('/voice/live/token', async (request, reply) => {
     try {
       const userId = requireUserId(request);
+      if (!liveKitConfigured()) {
+        return reply.code(501).send({
+          error: 'LiveKit not configured',
+          details: 'Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET',
+        });
+      }
+
       const body = z
-        .object({ provider: z.enum(['gemini-live', 'openai-realtime']).optional() })
+        .object({
+          chatSessionId: z.string().optional(),
+          personalityId: z.string().optional(),
+          voiceProfileId: z.string().optional(),
+        })
         .parse(request.body ?? {});
 
-      const data = await fetchAi<{ token: string; expiresAt: string; provider: string }>(
-        '/v1/voice/live/token',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: userId, provider: body.provider }),
-        }
+      const userSettings = await loadUserVoiceSettings(userId);
+      const voiceProfileId = resolveVoiceProfileId(
+        body.voiceProfileId,
+        body.personalityId,
+        userSettings
       );
-      return reply.send(data);
-    } catch (error) {
-      return reply.code(501).send({
-        error: 'Live voice disabled',
-        details:
-          'Use classic voice mode: Pollinations STT → NVIDIA chat → Pollinations TTS (VOICE_MODE=classic).',
+      const profile = getVoiceProfileForPersonality(voiceProfileId);
+
+      let chatSessionId = body.chatSessionId;
+      let resumed = false;
+
+      if (chatSessionId) {
+        await assertSessionAccess(userId, chatSessionId);
+        const existing = await getVoiceSessionByChatSession(chatSessionId);
+        if (existing) {
+          resumed = true;
+          const { token, expiresAt } = await mintLiveKitToken({
+            userId,
+            roomName: existing.roomId,
+          });
+          await saveVoiceSession({
+            ...existing,
+            voiceProfileId,
+            lastActivityAt: new Date().toISOString(),
+          });
+          await dispatchVoiceAgent(existing.roomId);
+          return reply.send({
+            token,
+            roomName: existing.roomId,
+            chatSessionId,
+            livekitUrl: config.livekitUrl,
+            voiceProfileId,
+            expiresAt,
+            resumed: true,
+            profile: {
+              id: profile.id,
+              label: profile.label,
+              sttProvider: profile.sttProvider,
+              ttsProvider: profile.ttsProvider,
+            },
+          });
+        }
+      } else {
+        const session = await createSession(userId, { kind: 'voice' });
+        chatSessionId = session.id;
+      }
+
+      const roomName = resolveVoiceRoomId(chatSessionId!);
+      const now = new Date().toISOString();
+      await saveVoiceSession({
+        roomId: roomName,
+        chatSessionId: chatSessionId!,
+        userId,
+        voiceProfileId,
+        activeTurnId: null,
+        startedAt: now,
+        lastActivityAt: now,
       });
+
+      await dispatchVoiceAgent(roomName);
+
+      const { token, expiresAt } = await mintLiveKitToken({ userId, roomName });
+
+      return reply.send({
+        token,
+        roomName,
+        chatSessionId,
+        livekitUrl: config.livekitUrl,
+        voiceProfileId,
+        expiresAt,
+        resumed,
+        profile: {
+          id: profile.id,
+          label: profile.label,
+          sttProvider: profile.sttProvider,
+          ttsProvider: profile.ttsProvider,
+        },
+      });
+    } catch (error) {
+      return sendError(reply, error);
     }
   });
 }

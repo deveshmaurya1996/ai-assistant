@@ -1,18 +1,14 @@
-import { View, StyleSheet } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
-import { AudioLines } from 'lucide-react-native';
+import { useState } from 'react';
+import { Keyboard } from 'react-native';
+import { ChatScreenShell } from '@/components/chat/ChatScreenShell';
+import { VoiceSessionFooter } from '@/components/assistant/VoiceSessionFooter';
 import { useSaveNote } from '@/features/notes/useSaveNote';
 import { useChatRoom } from '@/features/chat/useChatRoom';
-import { ChatScreenShell } from '@/components/chat/ChatScreenShell';
-import { Text } from '@/components/ui/Text';
-import { PressableScale } from '@/components/motion/PressableScale';
-import { spacing } from '@/theme/tokens';
-import { useTheme } from '@/theme/ThemeProvider';
-import { assistantRoute } from '@/lib/routes';
 import {
   getAssistantSubtitle,
   useSettingsStore,
 } from '@/stores/settings';
+import { useLocalSearchParams } from 'expo-router';
 
 export default function ChatScreen() {
   const { id, title: titleParam, kind: kindParam } = useLocalSearchParams<{
@@ -20,7 +16,6 @@ export default function ChatScreen() {
     title?: string;
     kind?: string;
   }>();
-  const { colors } = useTheme();
   const saveNote = useSaveNote();
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
   const selectedPersonalityId = useSettingsStore((s) => s.selectedPersonalityId);
@@ -30,6 +25,7 @@ export default function ChatScreen() {
     selectedPersonalityId,
     personalities
   );
+  const [composerOpen, setComposerOpen] = useState(false);
 
   const {
     title,
@@ -53,39 +49,31 @@ export default function ChatScreen() {
     initialKind: kindParam,
   });
 
-  const voiceBanner =
+  const voiceFooter =
     isVoice && id ? (
-      <View
-        style={[
-          styles.voiceBanner,
-          { backgroundColor: colors.primaryMuted, borderBottomColor: colors.border },
-        ]}>
-        <AudioLines color={colors.primary} size={18} />
-        <Text variant="caption" style={{ color: colors.primary, flex: 1 }}>
-          Voice chat — type below or resume hands-free on Assistant
-        </Text>
-        <PressableScale
-          onPress={() => router.push(assistantRoute({ resumeSessionId: id }))}>
-          <View style={[styles.resumeBtn, { backgroundColor: colors.primary }]}>
-            <Text variant="caption" style={{ color: colors.onPrimary }}>
-              Resume voice
-            </Text>
-          </View>
-        </PressableScale>
-      </View>
+      <VoiceSessionFooter
+        sessionId={id}
+        composerOpen={composerOpen}
+        onToggleComposer={() => {
+          setComposerOpen((open) => {
+            if (open) Keyboard.dismiss();
+            return !open;
+          });
+        }}
+      />
     ) : null;
 
   return (
     <ChatScreenShell
       key={id}
       title={title}
-      subtitle={
-        isVoice ? `${assistantSubtitle} · Voice chat` : assistantSubtitle
-      }
+      subtitle={assistantSubtitle}
       sessionId={id}
       sessionKind={kind}
       onSessionRenamed={setTitle}
-      banner={voiceBanner}
+      footer={voiceFooter}
+      composerVisible={!isVoice || composerOpen}
+      composerProps={isVoice ? { hideAssistantButton: true } : undefined}
       messages={displayMessages}
       visibleText={visibleText}
       streamTurnKey={streamTurnKey}
@@ -102,19 +90,3 @@ export default function ChatScreen() {
     />
   );
 }
-
-const styles = StyleSheet.create({
-  voiceBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  resumeBtn: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: 8,
-  },
-});

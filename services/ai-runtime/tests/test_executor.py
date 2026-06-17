@@ -1,3 +1,5 @@
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from orchestration.executor import _resolve_connection_id, execute_planned_tools
@@ -19,19 +21,31 @@ def test_resolve_connection_id_maps_whatsapp_tools():
 
 @pytest.mark.asyncio
 async def test_read_chat_fails_when_search_finds_no_contact(monkeypatch):
-    async def mock_whatsapp_execute(client, user_id, tool_name, args, source, confirmed, connection_id, chat_session_id):
-        if tool_name == "whatsapp.search_chats":
-            return {
-                "tool": tool_name,
+    async def mock_post(url, **kwargs):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        body = kwargs.get("json", {})
+        tool = str(body.get("tool") or body.get("capability") or "")
+        if "search_chats" in tool:
+            mock_resp.json.return_value = {
                 "status": "completed",
                 "result": {"chats": []},
             }
-        raise AssertionError(f"read_chat should not be called, got {tool_name}")
+            return mock_resp
+        raise AssertionError(f"read_chat should not be called, got {tool}")
 
-    monkeypatch.setattr(
-        "orchestration.executor._execute_whatsapp_via_gateway",
-        mock_whatsapp_execute,
-    )
+    mock_client = MagicMock()
+    mock_client.post = mock_post
+    mock_client.get = AsyncMock()
+
+    class MockClientCtx:
+        async def __aenter__(self):
+            return mock_client
+
+        async def __aexit__(self, *args):
+            return None
+
+    monkeypatch.setattr("orchestration.executor.httpx.AsyncClient", lambda **kwargs: MockClientCtx())
 
     tools = [
         {

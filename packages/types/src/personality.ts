@@ -1,3 +1,6 @@
+import type { VoiceProfile, VoiceResponseStyle } from './voice';
+import { VOICE_STT_PROVIDER, VOICE_TTS_PROVIDER, DEFAULT_PIPER_VOICE } from './voice-providers';
+
 export type PersonalityGender = 'female' | 'male' | 'neutral';
 
 export interface AssistantPersonality {
@@ -6,6 +9,11 @@ export interface AssistantPersonality {
   gender: PersonalityGender;
   tagline: string;
   voice: string;
+  sttProvider: string;
+  ttsProvider: string;
+  responseStyle: VoiceResponseStyle;
+  speakingRate: number;
+  maxSentences: number;
   systemPrompt: string;
 }
 
@@ -28,7 +36,12 @@ export const ASSISTANT_PERSONALITIES: AssistantPersonality[] = [
     name: 'Assistant',
     gender: 'neutral',
     tagline: 'Helpful and balanced',
-    voice: 'alloy',
+    voice: 'female-professional',
+    sttProvider: VOICE_STT_PROVIDER,
+    ttsProvider: VOICE_TTS_PROVIDER,
+    responseStyle: 'concise',
+    speakingRate: 1,
+    maxSentences: 3,
     systemPrompt:
       'You are {name}, a helpful and balanced AI assistant. Give clear, accurate answers in a neutral professional tone.',
   },
@@ -37,7 +50,12 @@ export const ASSISTANT_PERSONALITIES: AssistantPersonality[] = [
     name: 'Friday',
     gender: 'female',
     tagline: 'Friendly, professional',
-    voice: 'nova',
+    voice: 'female-friendly',
+    sttProvider: VOICE_STT_PROVIDER,
+    ttsProvider: VOICE_TTS_PROVIDER,
+    responseStyle: 'concise',
+    speakingRate: 1.05,
+    maxSentences: 3,
     systemPrompt:
       'You are {name}, a friendly and professional AI assistant. Be warm and approachable while staying efficient.',
   },
@@ -46,7 +64,12 @@ export const ASSISTANT_PERSONALITIES: AssistantPersonality[] = [
     name: 'Jarvis',
     gender: 'male',
     tagline: 'Concise, crisp',
-    voice: 'onyx',
+    voice: 'male-executive',
+    sttProvider: VOICE_STT_PROVIDER,
+    ttsProvider: VOICE_TTS_PROVIDER,
+    responseStyle: 'concise',
+    speakingRate: 1,
+    maxSentences: 3,
     systemPrompt:
       'You are {name}, a concise AI assistant. Be direct and crisp. Avoid filler words and prefer short sentences unless detail is required.',
   },
@@ -55,7 +78,12 @@ export const ASSISTANT_PERSONALITIES: AssistantPersonality[] = [
     name: 'Nova',
     gender: 'female',
     tagline: 'Warm, upbeat',
-    voice: 'shimmer',
+    voice: 'teacher-calm',
+    sttProvider: VOICE_STT_PROVIDER,
+    ttsProvider: VOICE_TTS_PROVIDER,
+    responseStyle: 'coaching',
+    speakingRate: 1,
+    maxSentences: 3,
     systemPrompt:
       'You are {name}, a warm and upbeat AI assistant. Be encouraging and positive without being excessive.',
   },
@@ -64,11 +92,44 @@ export const ASSISTANT_PERSONALITIES: AssistantPersonality[] = [
     name: 'Ghost',
     gender: 'neutral',
     tagline: 'Calm, minimal',
-    voice: 'fable',
+    voice: 'friendly-neutral',
+    sttProvider: VOICE_STT_PROVIDER,
+    ttsProvider: VOICE_TTS_PROVIDER,
+    responseStyle: 'coaching',
+    speakingRate: 0.95,
+    maxSentences: 4,
     systemPrompt:
       'You are {name}, a calm and minimal AI assistant. Be brief and serene. Use simple language and avoid unnecessary elaboration.',
   },
 ];
+
+export const DEFAULT_ASSISTANT_PERSONALITY_ID = ASSISTANT_PERSONALITIES[0]!.id;
+
+export const VOICE_DEFAULT_PROFILE_ID = DEFAULT_ASSISTANT_PERSONALITY_ID;
+
+const LEGACY_PROFILE_TO_PERSONALITY: Record<string, string> = {
+  'friendly-default': 'assistant',
+  'executive-female': 'friday',
+  'executive-male': 'jarvis',
+  teacher: 'ghost',
+  coach: 'nova',
+};
+
+export function personalityToVoiceProfile(personality: AssistantPersonality): VoiceProfile {
+  return {
+    id: personality.id,
+    label: personality.name,
+    sttProvider: personality.sttProvider,
+    ttsProvider: personality.ttsProvider,
+    voiceId: personality.voice,
+    personalityId: personality.id,
+    responseStyle: personality.responseStyle,
+    speakingRate: personality.speakingRate,
+    maxSentences: personality.maxSentences,
+  };
+}
+
+export const VOICE_PROFILES: VoiceProfile[] = ASSISTANT_PERSONALITIES.map(personalityToVoiceProfile);
 
 export function getAssistantPersonality(id: string): AssistantPersonality {
   return ASSISTANT_PERSONALITIES.find((p) => p.id === id) ?? ASSISTANT_PERSONALITIES[0]!;
@@ -81,6 +142,49 @@ export function normalizePersonalityId(id: string | undefined | null): string {
   return ASSISTANT_PERSONALITIES[0]!.id;
 }
 
+export function normalizeVoiceProfileId(id: string | undefined | null): string {
+  if (!id?.trim()) return DEFAULT_ASSISTANT_PERSONALITY_ID;
+  const trimmed = id.trim();
+  return LEGACY_PROFILE_TO_PERSONALITY[trimmed] ?? normalizePersonalityId(trimmed);
+}
+
+export function getVoiceProfileForPersonality(
+  personalityId: string | undefined | null
+): VoiceProfile {
+  return personalityToVoiceProfile(getAssistantPersonality(normalizePersonalityId(personalityId)));
+}
+
+export function getVoiceProfile(id: string | undefined | null): VoiceProfile | undefined {
+  const personalityId = normalizeVoiceProfileId(id);
+  if (!ASSISTANT_PERSONALITIES.some((p) => p.id === personalityId)) {
+    return undefined;
+  }
+  return getVoiceProfileForPersonality(personalityId);
+}
+
+export function resolvePersonalityVoiceId(
+  personality: AssistantPersonality,
+  env: Record<string, string | undefined> = {}
+): string {
+  const envKey = `PIPER_VOICE_${personality.voice.toUpperCase().replace(/-/g, '_')}`;
+  return (
+    env[envKey]?.trim() ||
+    env.PIPER_DEFAULT_VOICE?.trim() ||
+    DEFAULT_PIPER_VOICE
+  );
+}
+
+export function listVoiceProfilesPublic(): Array<
+  Pick<VoiceProfile, 'id' | 'label' | 'responseStyle' | 'speakingRate'>
+> {
+  return VOICE_PROFILES.map(({ id, label, responseStyle, speakingRate }) => ({
+    id,
+    label,
+    responseStyle,
+    speakingRate,
+  }));
+}
+
 export function formatPersonalityGender(gender: PersonalityGender): string {
   switch (gender) {
     case 'female':
@@ -91,8 +195,6 @@ export function formatPersonalityGender(gender: PersonalityGender): string {
       return 'Neutral';
   }
 }
-
-export const DEFAULT_ASSISTANT_PERSONALITY_ID = ASSISTANT_PERSONALITIES[0]!.id;
 
 export function canCustomizeAssistantDisplayName(personalityId: string): boolean {
   return normalizePersonalityId(personalityId) === DEFAULT_ASSISTANT_PERSONALITY_ID;
@@ -158,6 +260,6 @@ export function resolveAssistantContext(
     personalityId: personality.id,
     displayName: name,
     systemPrompt,
-    voice: personality.voice,
+    voice: resolvePersonalityVoiceId(personality),
   };
 }

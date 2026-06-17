@@ -39,7 +39,12 @@ async def get_redis():
     try:
         import redis.asyncio as aioredis
 
-        client = aioredis.from_url(redis_url(), decode_responses=True)
+        client = aioredis.from_url(
+            redis_url(),
+            decode_responses=True,
+            socket_connect_timeout=2.0,
+            socket_timeout=2.0,
+        )
         await client.ping()
         _redis_client = client
         logger.info("[redis_store] connected to %s", redis_url())

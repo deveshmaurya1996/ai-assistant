@@ -2,6 +2,7 @@ import {
   buildDefaultAttachmentQuery,
   resolveAssistantContext,
   normalizePersonalityId,
+  getVoiceProfile,
   type ChatAttachmentRef,
 } from '@ai-assistant/types';
 import { chatHistoryLimit, loadRecentChatHistory, toAiRole } from './chat-history.service';
@@ -10,6 +11,16 @@ import { resolveAttachments } from './file-resolver.service';
 import { looksLikeImageEditFollowUp } from './image-intent.service';
 import { capAttachmentUserQuery, routingQueryFromText } from './prompt-budget';
 import type { AgentSource, AgentTurnInput } from './agent-turn.service';
+import {
+  buildRetrievalContextForAttachments,
+  shouldBuildRetrievalContext,
+} from './file-resolver.service';
+import { buildSessionWorkingContext } from './session-context.service';
+import {
+  loadVoiceSessionContext,
+  trimVoiceChatHistory,
+  voiceSummaryPrefix,
+} from './voice-summary.service';
 import {
   getSessionModelAssignment,
   type SessionModelAssignment,
@@ -28,6 +39,8 @@ export type BuildAgentTurnInputParams = {
   timezone?: string;
   preferredModelId?: string;
   modelAssignment?: SessionModelAssignment;
+  voiceProfileId?: string;
+  voiceMaxSentences?: number;
 };
 
 export async function buildAgentTurnInput(
@@ -41,13 +54,31 @@ export async function buildAgentTurnInput(
     }
   }
 
+  const voiceProfile = params.voiceProfileId ? getVoiceProfile(params.voiceProfileId) : undefined;
   const assistantContext = resolveAssistantContext(
-    normalizePersonalityId(params.personalityId),
+    normalizePersonalityId(params.personalityId ?? voiceProfile?.personalityId),
     params.assistantDisplayName
   );
 
   const historyTake = chatHistoryLimit();
   const dbHistory = await loadRecentChatHistory(params.sessionId, historyTake);
+
+  const voiceCtx =
+    params.source === 'voice' ? await loadVoiceSessionContext(params.sessionId) : null;
+  const workingContext = await buildSessionWorkingContext(
+    params.userId,
+    dbHistory.map((m) => ({
+      role: m.role,
+      content: m.content,
+      metadata: m.metadata,
+    }))
+  );
+  const sessionContext = `${voiceSummaryPrefix(voiceCtx)}${workingContext}`.trim();
+
+  const chatHistoryRows =
+    params.source === 'voice'
+      ? trimVoiceChatHistory(dbHistory)
+      : dbHistory;
 
   const resolvedAttachments =
     attachments.length > 0
@@ -63,12 +94,24 @@ export async function buildAgentTurnInput(
   const query =
     attachments.length > 0 ? capAttachmentUserQuery(rawQuery) : rawQuery;
 
+  let fileRetrievalContext = '';
+  if (
+    shouldBuildRetrievalContext(attachments, resolvedAttachments, params.text)
+  ) {
+    fileRetrievalContext = await buildRetrievalContextForAttachments(
+      params.userId,
+      attachments,
+      params.text,
+      params.sessionId
+    );
+  }
+
   return {
     userId: params.userId,
     query,
     routingQuery: routingQueryFromText(params.text),
     chatSessionId: params.sessionId,
-    chatHistory: dbHistory.map((m) => ({
+    chatHistory: chatHistoryRows.map((m) => ({
       role: toAiRole(m.role),
       content: m.content,
     })),
@@ -80,11 +123,13 @@ export async function buildAgentTurnInput(
     personalityId: assistantContext.personalityId,
     assistantDisplayName: assistantContext.displayName,
     systemPrompt: assistantContext.systemPrompt,
-    fileRetrievalContext: '',
-    sessionContext: '',
+    fileRetrievalContext,
+    sessionContext,
     timezone: params.timezone,
     preferredModelId: params.preferredModelId,
     sessionModelId: params.modelAssignment?.assignedModelId,
     modelAssignment: params.modelAssignment,
+    voiceProfileId: params.voiceProfileId,
+    voiceMaxSentences: params.voiceMaxSentences,
   };
 }

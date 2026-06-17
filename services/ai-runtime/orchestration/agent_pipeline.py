@@ -12,6 +12,14 @@ from orchestration.pipeline_debug import log_agent_stage
 from orchestration.speed_router import resolve_speed_profile
 from orchestration.stream_chat import build_stream_body, passthrough_chat_stream, sse_frame
 from orchestration.turn_contract import ResolvedTurn, build_resolved_turn
+from orchestration.intent_classifier import infer_turn_intent
+from orchestration.turn_trace import (
+    GROUNDING_REFUSAL_MESSAGE,
+    INTEGRATION_GUIDANCE_PLANNERS,
+    TurnTrace,
+    finalize_trace,
+    record_turn_trace,
+)
 from orchestration.turn_router import (
     TurnIntent,
     TurnRoute,
@@ -44,6 +52,9 @@ class PipelineState:
     chat_history: List[Dict[str, str]] = field(default_factory=list)
     abort_after_planner: bool = False
     image_path_handled: bool = False
+    turn_trace: Optional[TurnTrace] = None
+    intent_plan: Any = None
+    tool_retry_done: bool = False
 
 
 def _attachment_has_vision(a: Dict[str, Any]) -> bool:
@@ -63,6 +74,20 @@ def _stage_classify(state: PipelineState) -> None:
         attachments=payload.attachments,
         resolved_attachments=payload.resolved_attachments,
         has_file_context=bool(file_ctx),
+    )
+    state.intent_plan = infer_turn_intent(
+        payload.routing_query or payload.query,
+        payload.chat_history,
+    )
+    state.turn_trace = TurnTrace(
+        user_id=payload.user_id,
+        session_id=getattr(payload, "chat_session_id", "") or "",
+        query=payload.query,
+        intent=state.intent_plan.primary_intent,
+        route_intent=state.route.intent.value,
+        abstract_capabilities=list(state.intent_plan.abstract_capabilities),
+        entities=dict(state.intent_plan.entities),
+        needs_live_data=state.intent_plan.needs_live_data,
     )
     state.timings["intent"] = state.route.intent.value
     state.chat_history = payload.chat_history[: state.route.history_limit]
@@ -110,6 +135,7 @@ async def _stream_immediately(state: PipelineState) -> AsyncIterator[str | bytes
         system_prompt=payload.system_prompt,
         preferred_model_id=getattr(payload, "preferred_model_id", None),
         session_model_id=getattr(payload, "session_model_id", None),
+        voice_max_sentences=getattr(payload, "voice_max_sentences", None),
     )
     log_agent_stage("stream_start")
     async with ai_http_client(timeout=ORCHESTRATOR_STREAM_TIMEOUT) as client:
@@ -284,6 +310,40 @@ async def _stage_planner(state: PipelineState) -> AsyncIterator[str | bytes]:
             connections=state.plan.get("connections", []),
         )
         state.timings["execute_tools_ms"] = (time.perf_counter() - t_tools) * 1000
+        from orchestration.turn_trace import count_rows_in_tool_results
+        from orchestration.capability_engine import resolve_tools
+
+        if (
+            state.intent_plan
+            and state.intent_plan.needs_live_data
+            and count_rows_in_tool_results(state.tool_results) == 0
+            and not state.tool_retry_done
+        ):
+            state.tool_retry_done = True
+            yield sse_frame("status", {"message": "Fetching more data…"})
+            broader_caps = list(state.intent_plan.abstract_capabilities or [])
+            if "search_messages" not in broader_caps:
+                broader_caps.append("search_messages")
+            retry_items = resolve_tools(
+                broader_caps,
+                manifest_caps,
+                connection_states=manifest_connection_states,
+                entities=state.intent_plan.entities,
+            )
+            if retry_items:
+                extra = await execute_planned_tools(
+                    retry_items,
+                    user_id=payload.user_id,
+                    source=payload.source,
+                    confirmed=payload.confirmed,
+                    chat_session_id=payload.chat_session_id,
+                    connections=state.plan.get("connections", []),
+                )
+                state.tool_results.extend(extra)
+                state.timings["execute_tools_retry_ms"] = (
+                    (time.perf_counter() - t_tools) * 1000
+                )
+
         pending_confirm = [r for r in state.tool_results if r.get("requiresConfirmation")]
         completed = [r for r in state.tool_results if not r.get("requiresConfirmation")]
 
@@ -354,7 +414,11 @@ async def _stage_full_stream(state: PipelineState) -> AsyncIterator[str | bytes]
         cap_file_context=cap_file,
     )
 
-    if state.manifest_text and state.manifest_text.strip():
+    has_tool_data = bool(state.tool_results)
+    planner_label = state.plan.get("planner") or ""
+    include_manifest = has_tool_data or planner_label in INTEGRATION_GUIDANCE_PLANNERS
+
+    if include_manifest and state.manifest_text and state.manifest_text.strip():
         manifest_block = state.manifest_text.strip()
         context_for_stream = (
             f"{manifest_block}\n\n{context_for_stream}"
@@ -366,7 +430,10 @@ async def _stage_full_stream(state: PipelineState) -> AsyncIterator[str | bytes]
     if state.tool_results:
         from orchestration.tool_results import format_tool_results_for_context
 
-        tool_context = format_tool_results_for_context(state.tool_results)
+        tool_context = format_tool_results_for_context(
+            state.tool_results,
+            needs_live_data=bool(state.intent_plan and state.intent_plan.needs_live_data),
+        )
     elif state.plan.get("planner") == "llm-scheduling-clarification":
         from orchestration.tool_results import format_scheduling_clarification
 
@@ -379,6 +446,33 @@ async def _stage_full_stream(state: PipelineState) -> AsyncIterator[str | bytes]
         from orchestration.tool_results import format_integration_guidance
 
         tool_context = format_integration_guidance(state.plan.get("user_guidance") or "")
+
+    needs_live = bool(state.intent_plan and state.intent_plan.needs_live_data)
+    if (
+        needs_live
+        and not tool_context.strip()
+        and planner_label not in INTEGRATION_GUIDANCE_PLANNERS
+        and planner_label != "conversational-skip"
+    ):
+        if state.turn_trace:
+            finalize_trace(
+                state.turn_trace,
+                tool_results=state.tool_results,
+                planner=planner_label,
+                tool_context=tool_context,
+                route_direct_stream=False,
+                turn_t0=state.turn_t0,
+            )
+            state.turn_trace.grounding_gate = "blocked_no_data"
+            state.turn_trace.grounded = False
+            state.turn_trace.timings = dict(state.timings)
+            record_turn_trace(state.turn_trace)
+            yield sse_frame("token", {"content": GROUNDING_REFUSAL_MESSAGE})
+            yield sse_frame(
+                "done",
+                {"trace": state.turn_trace.to_sse_dict(), "timings": state.timings},
+            )
+        return
 
     stream_query = payload.query + tool_context
     if has_attachments and not stream_query.strip():
@@ -424,8 +518,32 @@ async def _stage_full_stream(state: PipelineState) -> AsyncIterator[str | bytes]
         retrieved_context=context_for_stream,
         preferred_model_id=getattr(payload, "preferred_model_id", None),
         session_model_id=getattr(payload, "session_model_id", None),
+        needs_live_data=needs_live,
+        has_tool_context=bool(tool_context.strip()),
+        voice_max_sentences=getattr(payload, "voice_max_sentences", None),
     )
     log_agent_stage("stream_start")
+
+    trace_summary = None
+    voice_metadata = None
+    if getattr(payload, "source", None) == "voice":
+        voice_metadata = {
+            "stt_provider": "faster-whisper",
+            "tts_provider": "piper",
+            "voice_profile_id": getattr(payload, "voice_profile_id", None),
+            "voice_max_sentences": getattr(payload, "voice_max_sentences", None),
+        }
+    if state.turn_trace:
+        finalize_trace(
+            state.turn_trace,
+            tool_results=state.tool_results,
+            planner=planner_label,
+            tool_context=tool_context,
+            route_direct_stream=False,
+            turn_t0=state.turn_t0,
+        )
+        state.turn_trace.timings = dict(state.timings)
+        trace_summary = state.turn_trace.to_sse_dict()
 
     t_stream = time.perf_counter()
     async with ai_http_client(timeout=ORCHESTRATOR_STREAM_TIMEOUT) as client:
@@ -437,9 +555,16 @@ async def _stage_full_stream(state: PipelineState) -> AsyncIterator[str | bytes]
             route_intent=route.intent.value,
             timings=state.timings,
             memory_budget_ms=memory_prestream_budget_ms(),
+            trace_summary=trace_summary,
+            voice_metadata=voice_metadata,
         ):
             yield chunk
     state.timings["stream_total_ms"] = (time.perf_counter() - t_stream) * 1000
+
+    if state.turn_trace:
+        state.turn_trace.response_time_ms = (time.perf_counter() - state.turn_t0) * 1000
+        state.turn_trace.timings = dict(state.timings)
+        record_turn_trace(state.turn_trace)
 
 
 async def iter_agent_turn_sse(payload: Any, request: Any) -> AsyncIterator[str | bytes]:

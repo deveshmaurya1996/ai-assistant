@@ -62,6 +62,8 @@ class AgentTurnRequest(BaseModel):
     timezone: Optional[str] = None
     preferred_model_id: Optional[str] = None
     session_model_id: Optional[str] = None
+    voice_profile_id: Optional[str] = None
+    voice_max_sentences: Optional[int] = None
 
 
 class ToolCallRequest(BaseModel):
@@ -188,6 +190,17 @@ async def agent_diagnostics_timing(user_id: str, query: str = "hello"):
         "manifest_chars": len(manifest_text),
         "run_planner": route.run_planner,
         "retrieve_memory": route.retrieve_memory,
+    }
+
+
+@router.get("/v1/agent/turns")
+async def agent_recent_turns(user_id: str, limit: int = 20):
+    from orchestration.turn_trace import get_recent_turn_traces
+
+    capped = min(max(limit, 1), 50)
+    return {
+        "userId": user_id,
+        "turns": get_recent_turn_traces(user_id, capped),
     }
 
 

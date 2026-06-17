@@ -33,6 +33,7 @@ type ChatScreenShellProps = {
   sessionKind?: ChatSessionKind;
   onSessionRenamed?: (title: string) => void;
   banner?: ReactNode;
+  footer?: ReactNode;
   messages: ChatMessage[];
   visibleText: string;
   streamTurnKey?: number;
@@ -47,6 +48,8 @@ type ChatScreenShellProps = {
   onSaveNote?: (content: string, messageId?: string) => Promise<void>;
   onSend: (payload: ChatSendPayload) => void | boolean | Promise<boolean>;
   onStop?: () => void;
+  composerVisible?: boolean;
+  composerProps?: { hideAssistantButton?: boolean };
 };
 
 export function ChatScreenShell({
@@ -56,6 +59,7 @@ export function ChatScreenShell({
   sessionKind = 'text',
   onSessionRenamed,
   banner,
+  footer,
   messages,
   visibleText,
   streamTurnKey,
@@ -70,6 +74,8 @@ export function ChatScreenShell({
   onSaveNote,
   onSend,
   onStop,
+  composerVisible = true,
+  composerProps,
 }: ChatScreenShellProps) {
   const { colors, screenStyle } = useTheme();
   const insets = useSafeAreaInsets();
@@ -155,13 +161,17 @@ export function ChatScreenShell({
       />
 
       <Animated.View style={[{ backgroundColor: colors.background }, composerInsetStyle]}>
-        <ChatComposer
-          onSend={onSend}
-          sendDisabled={isGenerating}
-          isGenerating={isGenerating}
-          onStop={onStop}
-          onInputFocus={() => messageListRef.current?.scrollToEnd(true)}
-        />
+        {footer}
+        {composerVisible ? (
+          <ChatComposer
+            onSend={onSend}
+            sendDisabled={isGenerating}
+            isGenerating={isGenerating}
+            onStop={onStop}
+            onInputFocus={() => messageListRef.current?.scrollToEnd(true)}
+            hideAssistantButton={composerProps?.hideAssistantButton}
+          />
+        ) : null}
       </Animated.View>
 
       <ChatSessionActionsModal

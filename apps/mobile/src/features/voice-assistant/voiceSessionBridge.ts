@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { VoiceAssistantPhase } from './useVoiceAssistantSession';
+import { runWithVoiceSessionSlot } from './voiceSessionGuard';
 
 type VoiceHandlers = {
   start: () => Promise<void>;
@@ -38,10 +39,14 @@ export const useVoiceSessionBridge = create<VoiceSessionBridgeState>((set, get) 
   registerHandlers: (handlers) => set({ handlers }),
 
   requestStart: async () => {
-    const { handlers, isActive } = get();
-    if (isActive || !handlers) return false;
-    await handlers.start();
-    return true;
+    const { handlers } = get();
+    if (!handlers) return false;
+    let started = false;
+    await runWithVoiceSessionSlot(null, async () => {
+      await handlers.start();
+      started = true;
+    });
+    return started;
   },
 
   requestStop: async () => {

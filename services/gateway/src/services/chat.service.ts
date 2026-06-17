@@ -66,21 +66,42 @@ function computeHasUnread(
   return latestMessageAt.getTime() > lastReadAt.getTime();
 }
 
+function assistantFieldsFromContext(context: unknown): {
+  personalityId?: string;
+  assistantDisplayName?: string;
+} {
+  if (!context || typeof context !== 'object') return {};
+  const assistant = (context as { assistant?: unknown }).assistant;
+  if (!assistant || typeof assistant !== 'object') return {};
+  const raw = assistant as { personalityId?: unknown; assistantDisplayName?: unknown };
+  return {
+    personalityId:
+      typeof raw.personalityId === 'string' ? raw.personalityId : undefined,
+    assistantDisplayName:
+      typeof raw.assistantDisplayName === 'string'
+        ? raw.assistantDisplayName
+        : undefined,
+  };
+}
+
 function serializeSession(session: {
   id: string;
   title: string | null;
   kind: PrismaChatSessionKind;
   lastReadAt?: Date | null;
+  context?: unknown;
   _count?: { messages: number };
   messages?: Array<{ createdAt: Date }>;
 }) {
   const latestMessageAt = session.messages?.[0]?.createdAt ?? null;
+  const assistant = assistantFieldsFromContext(session.context);
   return {
     id: session.id,
     title: session.title,
     kind: toApiSessionKind(session.kind),
     messageCount: session._count?.messages ?? 0,
     hasUnread: computeHasUnread(session.lastReadAt, latestMessageAt),
+    ...assistant,
   };
 }
 
@@ -237,7 +258,7 @@ function personalityFieldsFromMetadata(metadata: unknown): {
   return { personalityId, assistantDisplayName };
 }
 
-function buildAssistantMessageMetadata(
+export function buildAssistantMessageMetadata(
   assistantContext: { personalityId: string; displayName: string },
   attachments?: ChatAttachmentRef[]
 ): Prisma.InputJsonValue {
@@ -251,7 +272,7 @@ function buildAssistantMessageMetadata(
   return meta as Prisma.InputJsonValue;
 }
 
-function buildUserMessageMetadata(
+export function buildUserMessageMetadata(
   assistantContext: { personalityId: string; displayName: string },
   attachments?: ChatAttachmentRef[]
 ): Prisma.InputJsonValue | undefined {
@@ -263,6 +284,40 @@ function buildUserMessageMetadata(
     meta.attachments = attachments;
   }
   return meta as Prisma.InputJsonValue;
+}
+
+export async function persistSessionAssistantContext(
+  sessionId: string,
+  assistant: { personalityId: string; assistantDisplayName: string }
+): Promise<void> {
+  const session = await prisma.chatSession.findUnique({
+    where: { id: sessionId },
+    select: { context: true },
+  });
+  const base =
+    session?.context && typeof session.context === 'object'
+      ? (session.context as Record<string, unknown>)
+      : {};
+  const existing = base.assistant;
+  if (
+    existing &&
+    typeof existing === 'object' &&
+    typeof (existing as { personalityId?: unknown }).personalityId === 'string'
+  ) {
+    return;
+  }
+  await prisma.chatSession.update({
+    where: { id: sessionId },
+    data: {
+      context: {
+        ...base,
+        assistant: {
+          personalityId: assistant.personalityId,
+          assistantDisplayName: assistant.assistantDisplayName,
+        },
+      } as Prisma.InputJsonValue,
+    },
+  });
 }
 
 export function mapApiMessage(message: {
@@ -393,25 +448,29 @@ export async function maybeAutoTitleSession(params: {
     }
 
     let resolvedTitle: string | null = null;
-    try {
-      const { title } = await fetchAi<{ title: string }>('/v1/chat/title', {
-        method: 'POST',
-        body: JSON.stringify({
-          user_message: userForTitle || 'New conversation',
-          assistant_message: assistantForTitle || 'The assistant replied.',
-        }),
-        signal:
-          typeof AbortSignal.timeout === 'function'
-            ? AbortSignal.timeout(20_000)
-            : undefined,
-      });
-      resolvedTitle = resolveAutoTitle(title, userForTitle);
-    } catch (err) {
-      console.warn(
-        '[chat] auto-title AI call failed, using fallback:',
-        err instanceof Error ? err.message : err
-      );
+    if (!assistantForTitle) {
       resolvedTitle = resolveAutoTitle(undefined, userForTitle);
+    } else {
+      try {
+        const { title } = await fetchAi<{ title: string }>('/v1/chat/title', {
+          method: 'POST',
+          body: JSON.stringify({
+            user_message: userForTitle || 'New conversation',
+            assistant_message: assistantForTitle || 'The assistant replied.',
+          }),
+          signal:
+            typeof AbortSignal.timeout === 'function'
+              ? AbortSignal.timeout(20_000)
+              : undefined,
+        });
+        resolvedTitle = resolveAutoTitle(title, userForTitle);
+      } catch (err) {
+        console.warn(
+          '[chat] auto-title AI call failed, using fallback:',
+          err instanceof Error ? err.message : err
+        );
+        resolvedTitle = resolveAutoTitle(undefined, userForTitle);
+      }
     }
 
     if (!resolvedTitle) {
@@ -503,6 +562,11 @@ export async function processChatMessage(params: {
       content: text,
       metadata: buildUserMessageMetadata(assistantContext, attachments),
     },
+  });
+
+  void persistSessionAssistantContext(sessionId, {
+    personalityId: assistantContext.personalityId,
+    assistantDisplayName: assistantContext.displayName,
   });
 
   const agentSource: AgentSource =

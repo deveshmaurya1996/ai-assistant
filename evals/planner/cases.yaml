@@ -72,3 +72,26 @@
   expect:
     planner: integration-blocked
     tools: []
+
+- id: implicit_sarah_reply
+  connected: [google, whatsapp]
+  query: Did Sarah reply?
+  expect:
+    planner: capability-llm
+    tools: [email.list_unread, whatsapp.list_unread, messaging.search_messages]
+
+- id: implicit_meeting_rahul
+  connected: [google]
+  query: What meeting do I have tomorrow with Rahul?
+  timezone: Asia/Kolkata
+  expect:
+    planner: heuristic
+    tools: [calendar.list_upcoming]
+
+- id: implicit_free_tomorrow
+  connected: [google]
+  query: Am I free tomorrow afternoon?
+  timezone: Asia/Kolkata
+  expect:
+    planner: heuristic
+    tools: [calendar.list_upcoming]

@@ -19,6 +19,8 @@ export interface ChatSession {
   kind: ChatSessionKind;
   messageCount?: number;
   hasUnread?: boolean;
+  personalityId?: string;
+  assistantDisplayName?: string;
 }
 
 export interface CreateChatSessionResponse {

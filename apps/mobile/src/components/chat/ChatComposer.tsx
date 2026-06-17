@@ -42,6 +42,7 @@ type ChatComposerProps = {
   isGenerating?: boolean;
   onStop?: () => void;
   onInputFocus?: () => void;
+  hideAssistantButton?: boolean;
 };
 
 export function ChatComposer({
@@ -50,6 +51,7 @@ export function ChatComposer({
   isGenerating = false,
   onStop,
   onInputFocus,
+  hideAssistantButton = false,
 }: ChatComposerProps) {
   const { colors, colorScheme } = useTheme();
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
@@ -281,14 +283,16 @@ export function ChatComposer({
                   size={36}
                   variant="composer"
                 />
-                <PressableScale
-                  onPress={openAssistant}
-                  disabled={isGenerating}
-                  accessibilityLabel={`Open ${assistantDisplayName}`}
-                  accessibilityRole="button"
-                  style={{ opacity: isGenerating ? 0.45 : 1 }}>
-                  <AssistantIcon size={36} inset={5} />
-                </PressableScale>
+                {!hideAssistantButton ? (
+                  <PressableScale
+                    onPress={openAssistant}
+                    disabled={isGenerating}
+                    accessibilityLabel={`Open ${assistantDisplayName}`}
+                    accessibilityRole="button"
+                    style={{ opacity: isGenerating ? 0.45 : 1 }}>
+                    <AssistantIcon size={36} inset={5} />
+                  </PressableScale>
+                ) : null}
               </View>
             )}
           </View>

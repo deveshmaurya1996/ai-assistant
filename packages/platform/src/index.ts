@@ -6,3 +6,4 @@ export {
   type ResourceHit,
   type ResourceSearchOpts,
 } from './resources';
+export { searchMessages, type MessageSearchFilters, type RetrievedMessage } from './retrieval';

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-06-15T07:50:24.714Z",
+  "generatedAt": "2026-06-16T06:38:42.191Z",
   "capabilities": [
     {
       "id": "messaging.list_unread",
@@ -10,6 +10,8 @@
       "requiresConfirmation": false,
       "plannerVisible": true,
       "resultSchema": "MessagingUnreadList",
+      "abstractCapability": "search_messages",
+      "priority": 100,
       "providers": [
         {
           "providerId": "whatsapp",
@@ -26,6 +28,8 @@
       "requiresConfirmation": false,
       "plannerVisible": true,
       "resultSchema": "MessagingConversation",
+      "abstractCapability": "search_messages",
+      "priority": 100,
       "providers": [
         {
           "providerId": "whatsapp",
@@ -42,6 +46,8 @@
       "requiresConfirmation": true,
       "plannerVisible": true,
       "resultSchema": "MessagingSendResult",
+      "abstractCapability": "send_message",
+      "priority": 100,
       "providers": [
         {
           "providerId": "whatsapp",
@@ -58,6 +64,8 @@
       "requiresConfirmation": false,
       "plannerVisible": true,
       "resultSchema": "EmailUnreadList",
+      "abstractCapability": "search_messages",
+      "priority": 100,
       "providers": [
         {
           "providerId": "google",
@@ -74,6 +82,8 @@
       "requiresConfirmation": false,
       "plannerVisible": true,
       "resultSchema": "EmailMessage",
+      "abstractCapability": "read_file",
+      "priority": 100,
       "providers": [
         {
           "providerId": "google",
@@ -90,6 +100,8 @@
       "requiresConfirmation": true,
       "plannerVisible": true,
       "resultSchema": "EmailSendResult",
+      "abstractCapability": "send_message",
+      "priority": 100,
       "providers": [
         {
           "providerId": "google",
@@ -106,6 +118,8 @@
       "requiresConfirmation": false,
       "plannerVisible": true,
       "resultSchema": "EmailSearchResult",
+      "abstractCapability": "search_messages",
+      "priority": 100,
       "providers": [
         {
           "providerId": "google",
@@ -122,6 +136,8 @@
       "requiresConfirmation": true,
       "plannerVisible": true,
       "resultSchema": "EmailReplyResult",
+      "abstractCapability": "send_message",
+      "priority": 100,
       "providers": [
         {
           "providerId": "google",
@@ -138,6 +154,8 @@
       "requiresConfirmation": false,
       "plannerVisible": true,
       "resultSchema": "EmailDraftResult",
+      "abstractCapability": null,
+      "priority": 100,
       "providers": [
         {
           "providerId": "google",
@@ -154,6 +172,8 @@
       "requiresConfirmation": false,
       "plannerVisible": true,
       "resultSchema": "EmailDraftResult",
+      "abstractCapability": null,
+      "priority": 100,
       "providers": [
         {
           "providerId": "google",
@@ -170,6 +190,8 @@
       "requiresConfirmation": false,
       "plannerVisible": true,
       "resultSchema": "EmailStarResult",
+      "abstractCapability": null,
+      "priority": 100,
       "providers": [
         {
           "providerId": "google",
@@ -186,6 +208,8 @@
       "requiresConfirmation": false,
       "plannerVisible": true,
       "resultSchema": "CalendarEventList",
+      "abstractCapability": "search_events",
+      "priority": 100,
       "providers": [
         {
           "providerId": "google",
@@ -202,6 +226,8 @@
       "requiresConfirmation": true,
       "plannerVisible": true,
       "resultSchema": "CalendarCreateResult",
+      "abstractCapability": "create_event",
+      "priority": 100,
       "providers": [
         {
           "providerId": "google",
@@ -218,6 +244,8 @@
       "requiresConfirmation": true,
       "plannerVisible": true,
       "resultSchema": "CalendarCancelResult",
+      "abstractCapability": "cancel_event",
+      "priority": 100,
       "providers": [
         {
           "providerId": "google",
@@ -234,6 +262,8 @@
       "requiresConfirmation": false,
       "plannerVisible": true,
       "resultSchema": "DriveSearchResult",
+      "abstractCapability": "search_documents",
+      "priority": 100,
       "providers": [
         {
           "providerId": "google",
@@ -250,6 +280,8 @@
       "requiresConfirmation": false,
       "plannerVisible": true,
       "resultSchema": "DriveContentResult",
+      "abstractCapability": "read_file",
+      "priority": 100,
       "providers": [
         {
           "providerId": "google",
@@ -266,6 +298,8 @@
       "requiresConfirmation": false,
       "plannerVisible": true,
       "resultSchema": "MessagingSearchResult",
+      "abstractCapability": "search_messages",
+      "priority": 110,
       "providers": [
         {
           "providerId": "whatsapp",
@@ -282,6 +316,8 @@
       "requiresConfirmation": false,
       "plannerVisible": true,
       "resultSchema": "MessagingChatSearchResult",
+      "abstractCapability": "search_messages",
+      "priority": 100,
       "providers": [
         {
           "providerId": "whatsapp",
@@ -298,6 +334,8 @@
       "requiresConfirmation": false,
       "plannerVisible": true,
       "resultSchema": "ResourceSearchResult",
+      "abstractCapability": "search_documents",
+      "priority": 100,
       "providers": [
         {
           "providerId": "platform",
@@ -314,6 +352,8 @@
       "requiresConfirmation": false,
       "plannerVisible": false,
       "resultSchema": "ContactResolveResult",
+      "abstractCapability": null,
+      "priority": 100,
       "providers": [
         {
           "providerId": "platform",
@@ -330,6 +370,8 @@
       "requiresConfirmation": false,
       "plannerVisible": false,
       "resultSchema": "Legacy",
+      "abstractCapability": null,
+      "priority": 100,
       "providers": [
         {
           "providerId": "google",
@@ -346,6 +388,8 @@
       "requiresConfirmation": true,
       "plannerVisible": false,
       "resultSchema": "Legacy",
+      "abstractCapability": null,
+      "priority": 100,
       "providers": [
         {
           "providerId": "google",
@@ -362,6 +406,8 @@
       "requiresConfirmation": true,
       "plannerVisible": false,
       "resultSchema": "Legacy",
+      "abstractCapability": null,
+      "priority": 100,
       "providers": [
         {
           "providerId": "whatsapp",
@@ -378,6 +424,8 @@
       "requiresConfirmation": false,
       "plannerVisible": true,
       "resultSchema": "Legacy",
+      "abstractCapability": null,
+      "priority": 100,
       "providers": [
         {
           "providerId": "whatsapp",
@@ -394,6 +442,8 @@
       "requiresConfirmation": true,
       "plannerVisible": false,
       "resultSchema": "Legacy",
+      "abstractCapability": null,
+      "priority": 100,
       "providers": [
         {
           "providerId": "google",
@@ -410,6 +460,8 @@
       "requiresConfirmation": false,
       "plannerVisible": false,
       "resultSchema": "Legacy",
+      "abstractCapability": null,
+      "priority": 100,
       "providers": [
         {
           "providerId": "google",
@@ -426,6 +478,8 @@
       "requiresConfirmation": true,
       "plannerVisible": true,
       "resultSchema": "ImageEditResult",
+      "abstractCapability": null,
+      "priority": 100,
       "providers": [
         {
           "providerId": "platform",

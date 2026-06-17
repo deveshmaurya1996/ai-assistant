@@ -1,0 +1,27 @@
+{
+  "name": "@ai-assistant/voice-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "LiveKit voice transport — STT → Gateway agent turn → TTS",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "node ../../node_modules/typescript/bin/tsc",
+    "dev": "node -r @ai-assistant/config/register dist/index.js dev",
+    "predev": "npm run build",
+    "start": "node -r @ai-assistant/config/register dist/index.js start",
+    "test:unit": "npm run build && node --test dist/**/__tests__/*.test.js"
+  },
+  "dependencies": {
+    "@ai-assistant/config": "workspace:*",
+    "@ai-assistant/types": "workspace:*",
+    "@livekit/agents": "^1.4.6",
+    "@livekit/rtc-node": "^0.13.29",
+    "ioredis": "^5.6.1",
+    "livekit-server-sdk": "^2.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "~6.0.3"
+  }
+}

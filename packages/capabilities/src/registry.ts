@@ -26,6 +26,8 @@ function toDefinition(entry: (typeof CAPABILITY_SOURCE)[number]): CapabilityDefi
     supportsStreaming: false,
     plannerVisible: entry.plannerVisible,
     resultSchema: entry.resultSchema,
+    abstractCapability: entry.abstractCapability,
+    priority: entry.priority,
   };
 }
 

@@ -18,7 +18,6 @@ export function loadCatalog() {
   const capabilitiesDoc = loadYaml('capabilities.yaml');
   const toolsDoc = loadYaml('tools.yaml');
   const policyDoc = loadYaml('policy.yaml');
-
   return {
     providers: providersDoc.providers ?? [],
     capabilities: capabilitiesDoc.capabilities ?? [],

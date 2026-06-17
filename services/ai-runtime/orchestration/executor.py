@@ -207,24 +207,6 @@ async def execute_planned_tools(
                 results.append(entry)
                 continue
 
-            if tool_name.startswith("whatsapp."):
-                entry = await _execute_whatsapp_via_gateway(
-                    client,
-                    user_id,
-                    tool_name,
-                    args,
-                    source,
-                    confirmed,
-                    connection_id,
-                    chat_session_id,
-                )
-                results.append(entry)
-                if tool_name == "whatsapp.search_chats" and entry.get("result"):
-                    chats = (entry["result"] or {}).get("chats", [])
-                    if chats and chats[0].get("jid"):
-                        resolved_jid = chats[0]["jid"]
-                continue
-
             exec_body: Dict[str, Any] = {
                 "userId": user_id,
                 "tool": tool_name,
@@ -281,4 +263,14 @@ async def execute_planned_tools(
                 results.append(entry)
             else:
                 results.append({"tool": tool_name, **data})
+
+            if tool_name == "whatsapp.search_chats":
+                last = results[-1] if results else {}
+                chats = ((last.get("result") or {}).get("data") or last.get("result") or {}).get(
+                    "chats", []
+                )
+                if not chats and isinstance(last.get("result"), dict):
+                    chats = last["result"].get("chats", [])
+                if chats and chats[0].get("jid"):
+                    resolved_jid = chats[0]["jid"]
     return results

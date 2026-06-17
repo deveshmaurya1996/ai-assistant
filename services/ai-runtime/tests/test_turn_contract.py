@@ -43,7 +43,7 @@ def test_voice_realtime_profile():
     turn = build_resolved_turn(
         route, retrieve_memory=False, speed_profile=SpeedProfile.VOICE_REALTIME
     )
-    assert turn.skip_planner is True
+    assert turn.skip_planner is False
     assert turn.max_tokens == 200
     assert turn.memory_budget_ms == 100
     assert turn.deadline_ms == 15_000

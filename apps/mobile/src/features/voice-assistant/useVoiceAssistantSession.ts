@@ -1,443 +1,274 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AssistantSocket, ChatChunkPayload, ChatMessage } from '@ai-assistant/sdk';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ChatMessage } from '@ai-assistant/sdk';
 import { apiClient } from '@/lib/api-client';
-import { getSocketSessionToken } from '@/lib/auth-cookies';
-import { useAuthStore } from '@/stores/auth';
+import { useChatSocketStream } from '@/features/chat/useChatSocketStream';
+import { buildStreamingMessages } from '@/features/chat/buildStreamingMessages';
+import { useChatSidebarStore } from '@/features/chat/chatSidebarStore';
+import { useOverlaySessionStore } from '@/features/overlay/overlaySessionStore';
+import { useLiveKitVoiceSession } from '@/features/voice-live/useLiveKitVoiceSession';
+import { useVoiceSessionBridge } from './voiceSessionBridge';
+import { runWithVoiceSessionSlot } from './voiceSessionGuard';
+import { AGENT_CONNECT_TIMEOUT_MS, deriveClientPhase } from './voicePhaseDerivation';
 import { useSettingsStore } from '@/stores/settings';
-import { formatChatStepError, formatUserVoiceError } from '@/lib/format-ai-error';
-import { SentenceTtsQueue, stopSpeechPlayback } from '@/lib/voice-playback';
 import {
   hideOverlayPanel,
   startVoiceAssistantService,
   stopVoiceAssistantService,
 } from '@/lib/overlay';
-import { useVoiceTurnRecorder } from './useVoiceTurnRecorder';
-import { useChatSocketStream } from '@/features/chat/useChatSocketStream';
-import { buildStreamingMessages } from '@/features/chat/buildStreamingMessages';
-import { useOverlaySessionStore } from '@/features/overlay/overlaySessionStore';
-import { useVoiceTurnSocket } from './useVoiceTurnSocket';
-import { useVoiceSessionBridge } from './voiceSessionBridge';
-import { useStudioVoiceAnalysis } from '@/features/voice/studio/useStudioVoiceAnalysis';
 
 export type VoiceAssistantPhase =
   | 'idle'
+  | 'connecting'
   | 'listening'
-  | 'transcribing'
   | 'waiting_for_ai'
   | 'speaking'
   | 'stopping';
 
-const POST_SPEECH_DELAY_MS = 150;
-const MAX_IDLE_TURNS = 2;
-const SESSION_IDLE_MS = 60_000;
-const IDLE_END_MESSAGE = 'Voice chat ended — no speech detected';
+const MESSAGE_POLL_MS = 500;
 
-type StopSessionOptions = {
-  idleMessage?: string;
-};
+function hasUserMessage(messages: ChatMessage[], text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  return messages.some((m) => m.role === 'USER' && m.content.trim() === trimmed);
+}
 
 export function useVoiceAssistantSession() {
-  const session = useAuthStore((s) => s.session);
-  const sessionToken = session ? getSocketSessionToken() : undefined;
-  const assistantContinuousListening = useSettingsStore(
-    (s) => s.assistantContinuousListening
-  );
-  const speakRepliesEnabled = useSettingsStore((s) => s.speakRepliesEnabled);
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
-  const getSelectedTtsVoice = useSettingsStore((s) => s.getSelectedTtsVoice);
+  const selectedPersonalityId = useSettingsStore((s) => s.selectedPersonalityId);
   const registerHandlers = useVoiceSessionBridge((s) => s.registerHandlers);
   const setRuntime = useVoiceSessionBridge((s) => s.setRuntime);
 
   const [phase, setPhase] = useState<VoiceAssistantPhase>('idle');
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const sessionIdRef = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const stoppedRef = useRef(true);
-  const loopRunningRef = useRef(false);
-  const latestAssistantRef = useRef('');
-  const ttsQueueRef = useRef<SentenceTtsQueue | null>(null);
-  const streamedCharsRef = useRef(0);
-  const consecutiveIdleTurnsRef = useRef(0);
-  const lastActivityRef = useRef(Date.now());
-  const stopSessionRef = useRef<(opts?: StopSessionOptions) => Promise<void>>(async () => {});
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const [pendingUserText, setPendingUserText] = useState('');
+  const [voiceStreamTurnKey, setVoiceStreamTurnKey] = useState(0);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const connectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const agentPhaseRef = useRef<VoiceAssistantPhase | null>(null);
+  const sawAgentSignalRef = useRef(false);
+  const sessionIdRef = useRef<string | null>(null);
 
-  const { studio, recordUntilSilence, cancelRecording } = useVoiceTurnRecorder();
+  const setAgentTranscript = useCallback((text: string) => {
+    setLiveTranscript((prev) => {
+      if (text && !prev) {
+        setVoiceStreamTurnKey((k) => k + 1);
+      }
+      return text;
+    });
+  }, []);
 
-  const isListening = phase === 'listening';
-  const {
-    meteringLevel,
-    meteringDecibels,
-    dataPoints: meteringDataPoints,
-    isSpeechDetected: speechDetected,
-  } = useStudioVoiceAnalysis(isListening, studio);
+  const setUserTranscript = useCallback((text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setPendingUserText('');
+      return;
+    }
+    setPendingUserText(trimmed);
+    setVoiceStreamTurnKey((k) => k + 1);
+  }, []);
 
+  const setAgentPhase = useCallback((next: VoiceAssistantPhase) => {
+    if (next === 'connecting') {
+      return;
+    }
+    sawAgentSignalRef.current = true;
+    agentPhaseRef.current = next;
+    setPhase(next);
+  }, []);
+
+  const liveKit = useLiveKitVoiceSession();
   const {
     messages,
     setMessages,
-    socketRef,
     visibleText,
-    streamTurnKey,
+    streamTurnKey: chatStreamTurnKey,
     streamRevision,
-    emitMessage,
     isStreaming,
-    resetStream,
     isGenerating,
-  } = useChatSocketStream({
-    sessionId,
-    onStreamTargetChange: (fullText) => {
-      latestAssistantRef.current = fullText;
-      lastActivityRef.current = Date.now();
-    },
-    onError: (message) => {
-      if (!stoppedRef.current) {
-        setError(message);
-        setPhase('idle');
-        loopRunningRef.current = false;
-        stoppedRef.current = true;
-      }
-    },
-  });
+    resetStream,
+  } = useChatSocketStream({ sessionId });
 
-  const { transcribeViaSocket, attachListeners } = useVoiceTurnSocket(socketRef);
-
-  useEffect(() => {
-    sessionIdRef.current = sessionId;
-  }, [sessionId]);
-
-  const ensureVoiceSession = useCallback(async (): Promise<string> => {
-    if (sessionIdRef.current) return sessionIdRef.current;
-
-    const voiceTitle = `Voice chat with ${assistantDisplayName}`;
-    const session = await apiClient.createSession({
-      title: voiceTitle,
-      kind: 'voice',
-    });
-    sessionIdRef.current = session.id;
-    setSessionId(session.id);
-    useOverlaySessionStore.getState().upsertSession(session.id, {
-      title: voiceTitle,
-      kind: 'voice',
-    });
-    return session.id;
-  }, [assistantDisplayName]);
-
-  useEffect(() => {
-    if (!sessionToken) return;
-    let detach: (() => void) | undefined;
-    const poll = setInterval(() => {
-      const socket = socketRef.current;
-      if (socket?.connected && !detach) {
-        detach = attachListeners(socket);
-        clearInterval(poll);
-      }
-    }, 250);
-    return () => clearInterval(poll);
-  }, [sessionToken, attachListeners, socketRef]);
-
-  const stopSession = useCallback(
-    async (opts?: StopSessionOptions) => {
-      if (phase === 'idle' || phase === 'stopping') return;
-
-      setPhase('stopping');
-      stoppedRef.current = true;
-      loopRunningRef.current = false;
-
-      await cancelRecording();
-      await ttsQueueRef.current?.abort();
-      await stopSpeechPlayback();
-      await hideOverlayPanel();
-      await stopVoiceAssistantService();
-
-      resetStream();
-
-      const sid = sessionIdRef.current;
-      if (sid) {
-        try {
-          const msgs = await apiClient.getMessages(sid);
-          if (msgs.length === 0) {
-            await apiClient.deleteSession(sid);
-          }
-        } catch (deleteErr) {
-          if (__DEV__) {
-            console.warn('[voice] delete empty session failed:', deleteErr);
-          }
-        }
-      }
-      sessionIdRef.current = null;
-      setSessionId(null);
-
-      if (opts?.idleMessage) {
-        setError(opts.idleMessage);
-      }
-      setPhase('idle');
-    },
-    [cancelRecording, phase, resetStream]
-  );
-
-  useEffect(() => {
-    stopSessionRef.current = stopSession;
-  }, [stopSession]);
-
-  useEffect(() => {
-    if (phase === 'idle' || phase === 'stopping') return;
-    if (assistantContinuousListening) return;
-
-    const timer = setInterval(() => {
-      if (stoppedRef.current || loopRunningRef.current === false) return;
-      if (Date.now() - lastActivityRef.current >= SESSION_IDLE_MS) {
-        void stopSessionRef.current({
-          idleMessage: 'Voice chat ended — inactive',
-        });
-      }
-    }, 2000);
-
-    return () => clearInterval(timer);
-  }, [phase, assistantContinuousListening]);
-
-  const markActivity = useCallback(() => {
-    lastActivityRef.current = Date.now();
-    consecutiveIdleTurnsRef.current = 0;
-  }, []);
-
-  const waitForAssistantReply = useCallback(
-    (sid: string) =>
-      new Promise<ChatMessage>((resolve, reject) => {
-        const socket = socketRef.current;
-        if (!socket) {
-          reject(new Error('Socket not connected'));
-          return;
-        }
-
-        const onEnd = (data: { message: ChatMessage; chatSessionId: string }) => {
-          if (data.chatSessionId !== sid) return;
-          socket.off('chat:end', onEnd);
-          socket.off('chat:error', onError);
-          resolve(data.message);
-        };
-
-        const onError = (payload: { error?: string; details?: string }) => {
-          socket.off('chat:end', onEnd);
-          socket.off('chat:error', onError);
-          reject(new Error(formatChatStepError(payload)));
-        };
-
-        socket.on('chat:end', onEnd);
-        socket.on('chat:error', onError);
-      }),
-    [socketRef]
-  );
-
-  const handleIdleTurn = useCallback(async (): Promise<boolean> => {
-    if (assistantContinuousListening) {
-      return false;
-    }
-    consecutiveIdleTurnsRef.current += 1;
-    if (consecutiveIdleTurnsRef.current >= MAX_IDLE_TURNS) {
-      await stopSessionRef.current({ idleMessage: IDLE_END_MESSAGE });
-      return true;
-    }
-    return false;
-  }, [assistantContinuousListening]);
-
-  const runConversationLoop = useCallback(
-    async () => {
-      if (loopRunningRef.current || stoppedRef.current) return;
-      loopRunningRef.current = true;
-
-      while (!stoppedRef.current) {
-        try {
-          if (
-            !assistantContinuousListening &&
-            Date.now() - lastActivityRef.current >= SESSION_IDLE_MS
-          ) {
-            await stopSessionRef.current({
-              idleMessage: 'Voice chat ended — inactive',
-            });
-            break;
-          }
-
-          await ttsQueueRef.current?.abort();
-          ttsQueueRef.current = null;
-          await stopSpeechPlayback();
-
-          setPhase('listening');
-          setError(null);
-
-          const outcome = await recordUntilSilence({
-            backgroundRecording: assistantContinuousListening,
-          });
-          if (stoppedRef.current) break;
-
-          if (outcome.kind === 'cancelled') {
-            break;
-          }
-
-          if (outcome.kind === 'idle') {
-            if (await handleIdleTurn()) break;
-            continue;
-          }
-
-          setPhase('transcribing');
-          const text = await transcribeViaSocket(sessionIdRef.current, outcome.uri);
-
-          if (stoppedRef.current) break;
-          if (!text) {
-            if (await handleIdleTurn()) break;
-            continue;
-          }
-
-          let sid: string;
-          try {
-            sid = await ensureVoiceSession();
-          } catch (e) {
-            if (!stoppedRef.current) {
-              setError(e instanceof Error ? e.message : 'Could not start voice chat');
-            }
-            break;
-          }
-
-          markActivity();
-          resetStream();
-          latestAssistantRef.current = '';
-          streamedCharsRef.current = 0;
-
-          const ttsQueue = speakRepliesEnabled
-            ? new SentenceTtsQueue(getSelectedTtsVoice())
-            : null;
-          ttsQueueRef.current = ttsQueue;
-
-          const socket = socketRef.current;
-          const onChunk = (data: ChatChunkPayload) => {
-            if (data.chatSessionId !== sid) return;
-            streamedCharsRef.current += data.chunk.length;
-            if (ttsQueue) {
-              ttsQueue.pushChunk(data.chunk);
-              setPhase('speaking');
-            } else {
-              setPhase('waiting_for_ai');
-            }
-            lastActivityRef.current = Date.now();
-          };
-
-          if (socket) {
-            socket.on('chat:chunk', onChunk);
-          }
-
-          setPhase('waiting_for_ai');
-
-          emitMessage(text, { source: 'voice' });
-
-          try {
-            const assistantMessage = await waitForAssistantReply(sid);
-            if (stoppedRef.current) break;
-
-            useOverlaySessionStore
-              .getState()
-              .setLastReply(sid, assistantMessage.content);
-
-            markActivity();
-            if (ttsQueue) {
-              const remainder = assistantMessage.content.slice(streamedCharsRef.current);
-              if (remainder.trim()) {
-                ttsQueue.pushChunk(remainder);
-              }
-              setPhase('speaking');
-              await ttsQueue.flush();
-            }
-          } finally {
-            socket?.off('chat:chunk', onChunk);
-            ttsQueueRef.current = null;
-          }
-
-          if (stoppedRef.current) break;
-          markActivity();
-          await new Promise((r) => setTimeout(r, POST_SPEECH_DELAY_MS));
-        } catch (e) {
-          await ttsQueueRef.current?.abort();
-          ttsQueueRef.current = null;
-          if (!stoppedRef.current) {
-            setError(formatUserVoiceError(e));
-          }
-          break;
-        }
-      }
-
-      loopRunningRef.current = false;
-      if (stoppedRef.current) {
-        setPhase('idle');
-      }
-    },
-    [
-      assistantContinuousListening,
-      speakRepliesEnabled,
-      recordUntilSilence,
-      transcribeViaSocket,
-      waitForAssistantReply,
-      resetStream,
-      emitMessage,
-      handleIdleTurn,
-      markActivity,
-      ensureVoiceSession,
-    ]
-  );
-
-  const beginVoiceLoop = useCallback(
-    async (existingId?: string, existingMessages?: ChatMessage[]) => {
-      useOverlaySessionStore.getState().setUserDismissed(false);
-      setError(null);
-      if (existingMessages) {
-        setMessages(existingMessages);
-      } else {
-        setMessages([]);
-      }
-      resetStream();
-      stoppedRef.current = false;
-      consecutiveIdleTurnsRef.current = 0;
-      lastActivityRef.current = Date.now();
-      latestAssistantRef.current = '';
-      sessionIdRef.current = existingId ?? null;
-      setSessionId(existingId ?? null);
-      setPhase('listening');
-
+  const refreshMessages = useCallback(
+    async (sid: string) => {
       try {
-        await startVoiceAssistantService();
-      } catch (serviceError) {
-        console.warn('Voice foreground service unavailable:', serviceError);
+        const [msgs, session] = await Promise.all([
+          apiClient.getMessages(sid),
+          apiClient.getChatSession(sid).catch(() => null),
+        ]);
+        setMessages(msgs);
+        const current = useChatSidebarStore.getState().sessions.find((s) => s.id === sid);
+        const title = session?.title ?? current?.title ?? 'Voice chat';
+        if (current || session) {
+          useChatSidebarStore.getState().upsertSession({
+            ...(current ?? { id: sid }),
+            id: sid,
+            title,
+            kind: 'voice',
+            messageCount: msgs.length,
+            personalityId: session?.personalityId ?? current?.personalityId,
+            assistantDisplayName:
+              session?.assistantDisplayName ?? current?.assistantDisplayName,
+          });
+        }
+        return msgs;
+      } catch {
+        return null;
       }
-      void runConversationLoop();
     },
-    [runConversationLoop, resetStream, setMessages]
+    [setMessages]
   );
+
+  const onMessagesTick = useCallback(() => {
+    const sid = sessionIdRef.current;
+    if (sid) {
+      void refreshMessages(sid);
+    }
+  }, [refreshMessages]);
+
+  const stopSession = useCallback(async (reason = 'unknown') => {
+    if (phase === 'idle' || phase === 'stopping') return;
+    setPhase('stopping');
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+    if (connectTimeoutRef.current) {
+      clearTimeout(connectTimeoutRef.current);
+      connectTimeoutRef.current = null;
+    }
+    await liveKit.disconnect();
+    await hideOverlayPanel();
+    await stopVoiceAssistantService();
+    agentPhaseRef.current = null;
+    sawAgentSignalRef.current = false;
+    setSessionId(null);
+    sessionIdRef.current = null;
+    setLiveTranscript('');
+    setPendingUserText('');
+    setPhase('idle');
+  }, [liveKit, phase]);
 
   const startSession = useCallback(async () => {
     if (phase !== 'idle') return;
-
+    setError(null);
+    agentPhaseRef.current = null;
+    sawAgentSignalRef.current = false;
+    setPhase('connecting');
     try {
-      await beginVoiceLoop();
+      const info = await liveKit.connect({ personalityId: selectedPersonalityId });
+      setSessionId(info.chatSessionId);
+      sessionIdRef.current = info.chatSessionId;
+      useChatSidebarStore.getState().upsertSession({
+        id: info.chatSessionId,
+        title: 'Voice chat',
+        kind: 'voice',
+        messageCount: 0,
+        personalityId: selectedPersonalityId,
+      });
+      useOverlaySessionStore.getState().upsertSession(info.chatSessionId, {
+        title: 'Voice chat',
+        kind: 'voice',
+      });
+      await refreshMessages(info.chatSessionId);
+      await startVoiceAssistantService();
+      pollRef.current = setInterval(() => {
+        void refreshMessages(info.chatSessionId);
+      }, MESSAGE_POLL_MS);
     } catch (e) {
-      stoppedRef.current = true;
       setPhase('idle');
-      setError(e instanceof Error ? e.message : 'Could not start voice chat');
+      setError(e instanceof Error ? e.message : 'Could not start voice session');
     }
-  }, [phase, beginVoiceLoop]);
+  }, [liveKit, phase, refreshMessages, selectedPersonalityId]);
+
+  const startSessionGuarded = useCallback(async () => {
+    await runWithVoiceSessionSlot(null, startSession);
+  }, [startSession]);
 
   const resumeSession = useCallback(
     async (existingId: string) => {
       if (phase !== 'idle') return;
-
+      setError(null);
+      agentPhaseRef.current = null;
+      sawAgentSignalRef.current = false;
+      setPhase('connecting');
       try {
-        const existingMessages = await apiClient.getMessages(existingId);
-        await beginVoiceLoop(existingId, existingMessages);
+        const info = await liveKit.connect({
+          chatSessionId: existingId,
+          personalityId: selectedPersonalityId,
+        });
+        setSessionId(info.chatSessionId);
+        sessionIdRef.current = info.chatSessionId;
+        await refreshMessages(info.chatSessionId);
+        await startVoiceAssistantService();
+        pollRef.current = setInterval(() => {
+          void refreshMessages(info.chatSessionId);
+        }, MESSAGE_POLL_MS);
       } catch (e) {
-        stoppedRef.current = true;
         setPhase('idle');
-        setError(e instanceof Error ? e.message : 'Could not resume voice chat');
+        setError(e instanceof Error ? e.message : 'Could not resume voice session');
       }
     },
-    [phase, beginVoiceLoop]
+    [liveKit, phase, refreshMessages, selectedPersonalityId]
+  );
+
+  const resumeSessionGuarded = useCallback(
+    async (existingId: string) => {
+      await runWithVoiceSessionSlot(existingId, () => resumeSession(existingId));
+    },
+    [resumeSession]
   );
 
   const isActive = phase !== 'idle' && phase !== 'stopping';
+
+  const mergedMessages = useMemo(() => {
+    if (!pendingUserText || hasUserMessage(messages, pendingUserText)) {
+      return messages;
+    }
+    return [
+      ...messages,
+      {
+        id: `voice-pending-user-${pendingUserText.length}`,
+        role: 'USER' as const,
+        content: pendingUserText,
+      },
+    ];
+  }, [messages, pendingUserText]);
+
+  const streamingText = liveTranscript || visibleText;
+  const streamingActive =
+    streamingText.length > 0 || phase === 'speaking' || phase === 'waiting_for_ai';
+  const displayMessages = buildStreamingMessages(
+    mergedMessages,
+    streamingText,
+    streamingActive,
+    phase === 'waiting_for_ai' || isGenerating
+  );
+  const streamTurnKey = voiceStreamTurnKey + chatStreamTurnKey;
+
+  useEffect(() => {
+    if (!pendingUserText) return;
+    if (hasUserMessage(messages, pendingUserText)) {
+      setPendingUserText('');
+    }
+  }, [messages, pendingUserText]);
+
+  useEffect(() => {
+    if (!liveTranscript) return;
+    const lastAssistant = [...messages].reverse().find((m) => m.role === 'ASSISTANT');
+    if (!lastAssistant?.content) return;
+    const live = liveTranscript.trim();
+    const saved = lastAssistant.content.trim();
+    if (saved === live || saved.includes(live) || live.includes(saved)) {
+      setLiveTranscript('');
+    }
+  }, [messages, liveTranscript]);
+
+  useEffect(() => {
+    if (!sessionId || !isActive) return;
+    void refreshMessages(sessionId);
+  }, [isActive, phase, refreshMessages, sessionId]);
 
   useEffect(() => {
     setRuntime({ phase, isActive, chatSessionId: sessionId });
@@ -448,43 +279,74 @@ export function useVoiceAssistantSession() {
       start: startSession,
       stop: () => stopSession(),
     });
-    return () => registerHandlers(null);
+    return () => {
+      registerHandlers(null);
+    };
   }, [registerHandlers, startSession, stopSession]);
 
-  const showStreamBubble =
-    isActive &&
-    (phase === 'waiting_for_ai' ||
-      phase === 'speaking' ||
-      phase === 'transcribing') &&
-    (isStreaming || Boolean(visibleText));
+  useEffect(() => {
+    if (!isActive || !liveKit.tokenInfo) return;
+    if (!sawAgentSignalRef.current) return;
 
-  const displayMessages = showStreamBubble
-    ? buildStreamingMessages(
-        messages,
-        visibleText,
-        isStreaming || Boolean(visibleText),
-        isGenerating
-      )
-    : messages;
+    const next = deriveClientPhase({
+      isActive,
+      sawAgentSignal: sawAgentSignalRef.current,
+      isStreaming,
+      isGenerating,
+      agentPhase: agentPhaseRef.current,
+      currentPhase: phase,
+    });
+    if (next) setPhase(next);
+  }, [isActive, isGenerating, isStreaming, liveKit.tokenInfo, phase]);
+
+  useEffect(() => {
+    if (!isActive || !liveKit.tokenInfo) return;
+    if (sawAgentSignalRef.current) return;
+
+    if (connectTimeoutRef.current) {
+      clearTimeout(connectTimeoutRef.current);
+    }
+    connectTimeoutRef.current = setTimeout(() => {
+      if (sawAgentSignalRef.current) return;
+      setError(
+        'Voice agent did not join in time. Keep voice-gateway running and try Start again.'
+      );
+      setPhase('idle');
+      void liveKit.disconnect();
+      setSessionId(null);
+      sessionIdRef.current = null;
+    }, AGENT_CONNECT_TIMEOUT_MS);
+
+    return () => {
+      if (connectTimeoutRef.current) {
+        clearTimeout(connectTimeoutRef.current);
+        connectTimeoutRef.current = null;
+      }
+    };
+  }, [isActive, liveKit, liveKit.tokenInfo]);
 
   return {
     phase,
-    isActive,
-    messages: displayMessages,
-    visibleText,
-    streamTurnKey,
-    isStreaming,
-    isGenerating,
-    streamRevision,
-    socketRef,
     sessionId,
     error,
-    meteringLevel,
-    meteringDecibels,
-    meteringDataPoints,
-    isSpeechDetected: speechDetected,
-    startSession,
-    resumeSession,
-    stopSession: () => stopSession(),
+    messages: displayMessages,
+    visibleText: streamingText,
+    streamTurnKey,
+    streamRevision,
+    isStreaming: streamingActive,
+    isGenerating: phase === 'waiting_for_ai' || isGenerating,
+    isActive,
+    startSession: startSessionGuarded,
+    resumeSession: resumeSessionGuarded,
+    stopSession,
+    resetStream,
+    setAgentPhase,
+    setAgentTranscript,
+    setUserTranscript,
+    onMessagesTick,
+    assistantDisplayName,
+    liveKitToken: liveKit.tokenInfo,
   };
 }
+
+export type { ChatMessage };

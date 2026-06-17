@@ -35,7 +35,7 @@ _SPEED_PROFILE_DEFAULTS: dict[SpeedProfile, dict] = {
         "task": "fast_chat",
         "deadline_ms": 15_000,
         "allow_thinking": False,
-        "skip_planner": True,
+        "skip_planner": False,
         "memory_budget_ms": 100,
         "max_tokens": 200,
     },
@@ -87,6 +87,10 @@ def build_resolved_turn(
     if speed_profile == SpeedProfile.DEEP_REASONING:
         task_locked = True
 
+    skip_planner = bool(defaults.get("skip_planner"))
+    if speed_profile != SpeedProfile.VOICE_REALTIME:
+        skip_planner = skip_planner or not route.run_planner
+
     return ResolvedTurn(
         task=task,
         allow_thinking=allow_thinking,
@@ -94,7 +98,7 @@ def build_resolved_turn(
         deadline_ms=int(defaults["deadline_ms"]),
         speed_profile=speed_profile.value,
         task_locked=task_locked,
-        skip_planner=bool(defaults.get("skip_planner")) or not route.run_planner,
+        skip_planner=skip_planner,
         memory_budget_ms=defaults.get("memory_budget_ms"),
         max_tokens=defaults.get("max_tokens"),
     )

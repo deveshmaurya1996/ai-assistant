@@ -18,6 +18,8 @@ export interface CapabilityDefinition {
   supportsStreaming: boolean;
   plannerVisible: boolean;
   resultSchema: string;
+  abstractCapability?: string;
+  priority?: number;
 }
 
 export interface ResolvedCapabilityExecution {

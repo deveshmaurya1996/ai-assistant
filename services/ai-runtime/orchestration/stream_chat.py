@@ -31,6 +31,10 @@ def build_stream_body(
     retrieved_context: Optional[str] = None,
     preferred_model_id: Optional[str] = None,
     session_model_id: Optional[str] = None,
+    needs_live_data: bool = False,
+    has_tool_context: bool = False,
+    voice_profile_id: Optional[str] = None,
+    voice_max_sentences: Optional[int] = None,
 ) -> Dict[str, Any]:
     task = resolved_turn.task if resolved_turn.task_locked else stream_task
     return {
@@ -51,7 +55,42 @@ def build_stream_body(
         "system_prompt": system_prompt,
         "preferred_model_id": preferred_model_id,
         "session_model_id": session_model_id,
+        "needs_live_data": needs_live_data,
+        "has_tool_context": has_tool_context,
+        "voice_max_sentences": voice_max_sentences,
     }
+
+
+def _augment_done_frames(
+    text: str,
+    trace_summary: Optional[Dict[str, Any]],
+    timings: Dict[str, float],
+    voice_metadata: Optional[Dict[str, Any]] = None,
+) -> str:
+    if not trace_summary or "event: done" not in text:
+        return text
+    parts = text.split("\n\n")
+    out: List[str] = []
+    for part in parts:
+        if not part.strip():
+            continue
+        if part.startswith("event: done"):
+            lines = part.split("\n")
+            data_line = next((ln for ln in lines if ln.startswith("data: ")), None)
+            payload: Dict[str, Any] = {}
+            if data_line:
+                try:
+                    payload = json.loads(data_line[6:])
+                except json.JSONDecodeError:
+                    payload = {}
+            payload["trace"] = trace_summary
+            payload["timings"] = {k: round(v, 1) for k, v in timings.items()}
+            if voice_metadata:
+                payload["voice_metadata"] = voice_metadata
+            out.append(f"event: done\ndata: {json.dumps(payload, ensure_ascii=False)}")
+        else:
+            out.append(part)
+    return "\n\n".join(out) + ("\n\n" if text.endswith("\n\n") else "")
 
 
 async def passthrough_chat_stream(
@@ -63,6 +102,8 @@ async def passthrough_chat_stream(
     route_intent: str,
     timings: Dict[str, float],
     memory_budget_ms: float,
+    trace_summary: Optional[Dict[str, Any]] = None,
+    voice_metadata: Optional[Dict[str, Any]] = None,
 ) -> AsyncIterator[str | bytes]:
     from orchestration.turn_router import memory_prestream_budget_ms
 
@@ -94,6 +135,7 @@ async def passthrough_chat_stream(
             return
 
         first_byte = True
+        sse_buffer = ""
         async for chunk in response.aiter_bytes():
             if await request.is_disconnected():
                 await response.aclose()
@@ -108,4 +150,20 @@ async def passthrough_chat_stream(
                     timings.get("rag_ms", 0),
                 )
                 first_byte = False
+            if trace_summary:
+                sse_buffer += chunk.decode("utf-8", errors="replace")
+                while "\n\n" in sse_buffer:
+                    block, sse_buffer = sse_buffer.split("\n\n", 1)
+                    augmented = _augment_done_frames(
+                        block, trace_summary, timings, voice_metadata
+                    ).rstrip("\n")
+                    if augmented:
+                        yield augmented + "\n\n"
+                continue
             yield chunk
+        if trace_summary and sse_buffer.strip():
+            augmented = _augment_done_frames(
+                sse_buffer, trace_summary, timings, voice_metadata
+            )
+            if augmented.strip():
+                yield augmented if augmented.endswith("\n\n") else augmented + "\n\n"

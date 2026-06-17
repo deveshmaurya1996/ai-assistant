@@ -40,3 +40,7 @@ export function parseSseBuffer(buffer: string): {
 export type ChatTokenPayload = { content: string };
 export type ChatDonePayload = { model?: string };
 export type ChatErrorPayload = { message: string };
+
+export function formatSseFrame(event: string, data: unknown): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}

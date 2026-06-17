@@ -116,6 +116,8 @@ class AssistantOverlayModule : Module() {
         } else {
           context.startService(intent)
         }
+        // startService/startForegroundService return ComponentName, which Expo cannot marshal.
+        null
       } catch (e: Exception) {
         throw IllegalStateException(
           e.message ?: "Failed to start voice assistant foreground service"

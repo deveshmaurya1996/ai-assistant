@@ -658,17 +658,30 @@ export class SessionManager {
     sessionId: string,
     query: string
   ): Promise<{ chats: ChatEntry[] }> {
+    const q = query.trim().toLowerCase();
+    const fromDb = await loadChatsFromDb(sessionId);
+    if (fromDb.length > 0) {
+      if (!q) {
+        return { chats: fromDb };
+      }
+      const matches = fromDb.filter(
+        (c) => c.name.toLowerCase().includes(q) || c.jid.toLowerCase().includes(q)
+      );
+      if (matches.length > 0) {
+        return { chats: matches.slice(0, 20) };
+      }
+    }
+
     const session = await this.getOrRestoreSession(sessionId);
     if (session.status !== 'active') {
       throw new Error('Session not active. Link WhatsApp first.');
     }
     const sock = await this.ensureSocket(sessionId);
     const { jidNormalizedUser } = await getBaileys();
-    const q = query.trim().toLowerCase();
 
     await this.waitForChatCache(sessionId, sock, 15_000);
-    const fromDb = await loadChatsFromDb(sessionId);
-    const merged = this.mergeChatLists(this.chatCache.get(sessionId) ?? [], fromDb);
+    const cachedFromDb = await loadChatsFromDb(sessionId);
+    const merged = this.mergeChatLists(this.chatCache.get(sessionId) ?? [], cachedFromDb);
     if (merged.length > 0) {
       this.chatCache.set(sessionId, merged);
     }
@@ -738,7 +751,7 @@ export class SessionManager {
     });
   }
 
-  /** Rehydrate in-memory caches from Postgres after gateway restart (Baileys data store pattern). */
+
   private async hydrateFromDatabase(sessionId: string): Promise<void> {
     const chats = await loadChatsFromDb(sessionId);
     if (chats.length === 0) return;
@@ -778,6 +791,20 @@ export class SessionManager {
     items: UnreadChatItem[];
     totalUnread: number;
   }> {
+    const dbItems = await loadUnreadFromDb(sessionId, limit);
+    if (dbItems.length > 0) {
+      return {
+        type: 'messaging.unread_list',
+        items: dbItems.map((item) => ({
+          ...item,
+          sender: this.resolveChatDisplayName(sessionId, item.chatId, {
+            chatName: item.sender,
+          }),
+        })),
+        totalUnread: dbItems.reduce((n, i) => n + i.unreadCount, 0),
+      };
+    }
+
     const session = await this.getOrRestoreSession(sessionId);
     if (session.status !== 'active') {
       throw new Error('Session not active. Link WhatsApp first.');
@@ -866,6 +893,28 @@ export class SessionManager {
       fromMe: boolean;
     }>;
   }> {
+    const jidEarly = chatId.includes('@') ? chatId : null;
+    if (jidEarly) {
+      const fromDb = await loadMessagesFromDb(sessionId, jidEarly, limit);
+      if (fromDb.length > 0) {
+        const chatName = this.resolveChatDisplayName(sessionId, jidEarly, {});
+        return {
+          type: 'messaging.conversation',
+          chatId: jidEarly,
+          displayName: chatName,
+          messages: fromDb.map((m) => ({
+            id: m.id,
+            sender: m.fromMe
+              ? 'You'
+              : this.resolveChatDisplayName(sessionId, jidEarly, { pushName: m.pushName }),
+            body: m.body,
+            timestamp: m.timestamp,
+            fromMe: m.fromMe,
+          })),
+        };
+      }
+    }
+
     const session = await this.getOrRestoreSession(sessionId);
     if (session.status !== 'active') {
       throw new Error('Session not active. Link WhatsApp first.');

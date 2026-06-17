@@ -99,6 +99,7 @@ const config: ExpoConfig = {
       },
     ],
     'expo-video',
+    '@livekit/react-native-expo-plugin',
     '@react-native-community/datetimepicker',
     [
       'expo-splash-screen',

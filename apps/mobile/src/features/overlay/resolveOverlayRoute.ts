@@ -32,6 +32,21 @@ export function overlayActivityToHref(
   return chatSessionRoute(target.sessionKey);
 }
 
+export function overlayTargetMatchesRoute(
+  pathname: string,
+  target: OverlayNavigationTarget
+): boolean {
+  if (target.kind === 'voice') {
+    return pathname.includes('/assistant');
+  }
+
+  if (target.sessionKey === PENDING_CHAT_STREAM_KEY) {
+    return pathname.includes('/chat/compose');
+  }
+
+  return pathname.includes(`/chat/${target.sessionKey}`);
+}
+
 export function parseOverlayDeepLink(url: string): OverlayNavigationTarget | null {
   try {
     const parsed = new URL(url);

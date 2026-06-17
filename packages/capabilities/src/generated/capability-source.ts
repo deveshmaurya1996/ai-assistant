@@ -17,6 +17,8 @@ export interface CapabilitySourceEntry {
   requiresConfirmation: boolean;
   plannerVisible: boolean;
   resultSchema: string;
+  abstractCapability?: string;
+  priority: number;
   providers: CapabilityProviderSource[];
 }
 
@@ -29,6 +31,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: true,
     resultSchema: 'MessagingUnreadList',
+    abstractCapability: 'search_messages',
+    priority: 100,
     providers: [
       {
         providerId: 'whatsapp',
@@ -46,6 +50,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: true,
     resultSchema: 'MessagingConversation',
+    abstractCapability: 'search_messages',
+    priority: 100,
     providers: [
       {
         providerId: 'whatsapp',
@@ -63,6 +69,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: true,
     plannerVisible: true,
     resultSchema: 'MessagingSendResult',
+    abstractCapability: 'send_message',
+    priority: 100,
     providers: [
       {
         providerId: 'whatsapp',
@@ -80,6 +88,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: true,
     resultSchema: 'EmailUnreadList',
+    abstractCapability: 'search_messages',
+    priority: 100,
     providers: [
       {
         providerId: 'google',
@@ -97,6 +107,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: true,
     resultSchema: 'EmailMessage',
+    abstractCapability: 'read_file',
+    priority: 100,
     providers: [
       {
         providerId: 'google',
@@ -114,6 +126,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: true,
     plannerVisible: true,
     resultSchema: 'EmailSendResult',
+    abstractCapability: 'send_message',
+    priority: 100,
     providers: [
       {
         providerId: 'google',
@@ -131,6 +145,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: true,
     resultSchema: 'EmailSearchResult',
+    abstractCapability: 'search_messages',
+    priority: 100,
     providers: [
       {
         providerId: 'google',
@@ -148,6 +164,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: true,
     plannerVisible: true,
     resultSchema: 'EmailReplyResult',
+    abstractCapability: 'send_message',
+    priority: 100,
     providers: [
       {
         providerId: 'google',
@@ -165,6 +183,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: true,
     resultSchema: 'EmailDraftResult',
+    abstractCapability: undefined,
+    priority: 100,
     providers: [
       {
         providerId: 'google',
@@ -182,6 +202,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: true,
     resultSchema: 'EmailDraftResult',
+    abstractCapability: undefined,
+    priority: 100,
     providers: [
       {
         providerId: 'google',
@@ -199,6 +221,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: true,
     resultSchema: 'EmailStarResult',
+    abstractCapability: undefined,
+    priority: 100,
     providers: [
       {
         providerId: 'google',
@@ -216,6 +240,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: true,
     resultSchema: 'CalendarEventList',
+    abstractCapability: 'search_events',
+    priority: 100,
     providers: [
       {
         providerId: 'google',
@@ -233,6 +259,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: true,
     plannerVisible: true,
     resultSchema: 'CalendarCreateResult',
+    abstractCapability: 'create_event',
+    priority: 100,
     providers: [
       {
         providerId: 'google',
@@ -250,6 +278,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: true,
     plannerVisible: true,
     resultSchema: 'CalendarCancelResult',
+    abstractCapability: 'cancel_event',
+    priority: 100,
     providers: [
       {
         providerId: 'google',
@@ -267,6 +297,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: true,
     resultSchema: 'DriveSearchResult',
+    abstractCapability: 'search_documents',
+    priority: 100,
     providers: [
       {
         providerId: 'google',
@@ -284,6 +316,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: true,
     resultSchema: 'DriveContentResult',
+    abstractCapability: 'read_file',
+    priority: 100,
     providers: [
       {
         providerId: 'google',
@@ -301,6 +335,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: true,
     resultSchema: 'MessagingSearchResult',
+    abstractCapability: 'search_messages',
+    priority: 110,
     providers: [
       {
         providerId: 'whatsapp',
@@ -318,6 +354,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: true,
     resultSchema: 'MessagingChatSearchResult',
+    abstractCapability: 'search_messages',
+    priority: 100,
     providers: [
       {
         providerId: 'whatsapp',
@@ -335,6 +373,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: true,
     resultSchema: 'ResourceSearchResult',
+    abstractCapability: 'search_documents',
+    priority: 100,
     providers: [
       {
         providerId: 'platform',
@@ -351,6 +391,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: false,
     resultSchema: 'ContactResolveResult',
+    abstractCapability: undefined,
+    priority: 100,
     providers: [
       {
         providerId: 'platform',
@@ -367,6 +409,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: false,
     resultSchema: 'Legacy',
+    abstractCapability: undefined,
+    priority: 100,
     providers: [
       {
         providerId: 'google',
@@ -384,6 +428,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: true,
     plannerVisible: false,
     resultSchema: 'Legacy',
+    abstractCapability: undefined,
+    priority: 100,
     providers: [
       {
         providerId: 'google',
@@ -401,6 +447,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: true,
     plannerVisible: false,
     resultSchema: 'Legacy',
+    abstractCapability: undefined,
+    priority: 100,
     providers: [
       {
         providerId: 'whatsapp',
@@ -418,6 +466,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: true,
     resultSchema: 'Legacy',
+    abstractCapability: undefined,
+    priority: 100,
     providers: [
       {
         providerId: 'whatsapp',
@@ -435,6 +485,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: true,
     plannerVisible: false,
     resultSchema: 'Legacy',
+    abstractCapability: undefined,
+    priority: 100,
     providers: [
       {
         providerId: 'google',
@@ -452,6 +504,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: false,
     plannerVisible: false,
     resultSchema: 'Legacy',
+    abstractCapability: undefined,
+    priority: 100,
     providers: [
       {
         providerId: 'google',
@@ -469,6 +523,8 @@ export const CAPABILITY_SOURCE: CapabilitySourceEntry[] = [
     requiresConfirmation: true,
     plannerVisible: true,
     resultSchema: 'ImageEditResult',
+    abstractCapability: undefined,
+    priority: 100,
     providers: [
       {
         providerId: 'platform',

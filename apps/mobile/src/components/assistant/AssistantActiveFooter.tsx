@@ -1,40 +1,33 @@
-import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
-import type { DataPoint } from '@siteed/audio-studio';
+import * as Haptics from 'expo-haptics';
 import { PressableScale } from '@/components/motion/PressableScale';
 import { Text } from '@/components/ui/Text';
-import { VoiceEqualizer } from '@/components/voice/VoiceEqualizer';
-import { idleWaveformBars } from '@/features/voice/studio/idleBars';
+import { AssistantVoiceVisualizer } from '@/components/assistant/AssistantVoiceVisualizer';
 import { useDockInset } from '@/hooks/useDockInset';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing, radii } from '@/theme/tokens';
 import type { VoiceAssistantPhase } from '@/features/voice-assistant/useVoiceAssistantSession';
 
-const METER_HEIGHT = 64;
-const METER_BAR_COUNT = 7;
-const METER_BAR_WIDTH = 5;
-const METER_BAR_GAP = 7;
-const LISTENING_GAIN = 1.4;
-
-function boostMeterPoints(points: DataPoint[]): DataPoint[] {
-  return points.map((p) => {
-    const amp = Math.min(1, (p.amplitude ?? p.rms ?? 0) * LISTENING_GAIN);
-    return { ...p, amplitude: amp, rms: amp };
-  });
-}
-
-type Props = {
+type ActiveFooterProps = {
   phase: VoiceAssistantPhase;
-  meteringDataPoints: DataPoint[];
+  roomReady?: boolean;
+  isActive?: boolean;
+  onStop: () => void;
+};
+
+export type AssistantVoiceFooterProps = {
+  isActive: boolean;
+  phase: VoiceAssistantPhase;
+  onStart: () => void;
   onStop: () => void;
 };
 
 function phaseLabel(phase: VoiceAssistantPhase): string {
   switch (phase) {
+    case 'connecting':
+      return 'Connecting…';
     case 'listening':
       return 'Listening…';
-    case 'transcribing':
-      return 'Processing…';
     case 'waiting_for_ai':
       return 'Thinking…';
     case 'speaking':
@@ -46,69 +39,97 @@ function phaseLabel(phase: VoiceAssistantPhase): string {
   }
 }
 
-export function AssistantActiveFooter({
+/** Start/stop control for the assistant voice screen. */
+export function AssistantVoiceFooter({
+  isActive,
   phase,
-  meteringDataPoints,
+  onStart,
   onStop,
-}: Props) {
+}: AssistantVoiceFooterProps) {
   const { colors } = useTheme();
   const { bottom: dockBottom } = useDockInset();
+  const label = isActive ? phaseLabel(phase) : '';
 
-  const isListening = phase === 'listening';
-  const isThinking = phase === 'transcribing' || phase === 'waiting_for_ai';
-  const isSpeaking = phase === 'speaking';
-  const meterPoints: DataPoint[] = useMemo(() => {
-    if (isListening && meteringDataPoints.length > 0) {
-      return boostMeterPoints(meteringDataPoints);
+  const handlePress = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (isActive) {
+      onStop();
+    } else {
+      onStart();
     }
-    if (isSpeaking) {
-      return idleWaveformBars(28, 0.38);
-    }
-    if (isThinking) {
-      return idleWaveformBars(24, 0.18);
-    }
-    return [];
-  }, [isListening, isSpeaking, isThinking, meteringDataPoints]);
-
-  const showMeter =
-    isListening || isThinking || isSpeaking || meterPoints.length > 0;
+  };
 
   return (
     <View
       style={[
         styles.footer,
         {
+          paddingBottom: dockBottom + spacing.md,
           borderTopColor: colors.border,
-          backgroundColor: colors.surface,
-          paddingBottom: dockBottom,
+          backgroundColor: colors.background,
         },
-      ]}>
-      <Text variant="caption" muted style={styles.phase}>
-        {phaseLabel(phase)}
-      </Text>
+      ]}
+    >
+      {label ? (
+        <Text variant="caption" muted style={styles.status}>
+          {label}
+        </Text>
+      ) : null}
+      <PressableScale
+        onPress={handlePress}
+        style={[
+          styles.primaryButton,
+          { backgroundColor: isActive ? colors.danger : colors.primary },
+        ]}
+        accessibilityLabel={isActive ? 'Stop voice session' : 'Start voice session'}
+      >
+        <Text variant="label" style={styles.buttonLabel}>
+          {isActive ? 'Stop' : 'Start'}
+        </Text>
+      </PressableScale>
+    </View>
+  );
+}
 
-      {showMeter ? (
-        <View style={styles.meterSlot}>
-          <VoiceEqualizer
-            dataPoints={meterPoints}
-            barCount={METER_BAR_COUNT}
-            height={METER_HEIGHT}
-            barWidth={METER_BAR_WIDTH}
-            gap={METER_BAR_GAP}
-            color={colors.primary}
-            minLevel={isListening ? 0.1 : 0.16}
-          />
-        </View>
-      ) : (
-        <View style={{ height: METER_HEIGHT }} />
-      )}
+export function AssistantActiveFooter({
+  phase,
+  roomReady = false,
+  isActive = true,
+  onStop,
+}: ActiveFooterProps) {
+  const { colors } = useTheme();
+  const { bottom: dockBottom } = useDockInset();
+  const label = phaseLabel(phase);
 
-      <PressableScale onPress={onStop} style={styles.endWrap}>
-        <View style={[styles.endBtn, { backgroundColor: colors.surfaceElevated }]}>
-          <Text variant="caption" style={{ color: colors.danger }}>
-            End conversation
-          </Text>
-        </View>
+  return (
+    <View
+      style={[
+        styles.footer,
+        {
+          paddingBottom: dockBottom + spacing.md,
+          backgroundColor: colors.background,
+          borderTopColor: colors.border,
+        },
+      ]}
+    >
+      <AssistantVoiceVisualizer
+        roomReady={roomReady}
+        isActive={isActive}
+        phase={phase}
+      />
+      {label ? (
+        <Text variant="body" muted style={styles.status}>
+          {label}
+        </Text>
+      ) : null}
+      <PressableScale
+        onPress={onStop}
+        style={[styles.primaryButton, { backgroundColor: colors.danger }]}
+        accessibilityLabel="Stop voice session"
+      >
+        <Text variant="label" style={styles.buttonLabel}>
+          End
+        </Text>
       </PressableScale>
     </View>
   );
@@ -117,26 +138,22 @@ export function AssistantActiveFooter({
 const styles = StyleSheet.create({
   footer: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: spacing.sm,
-    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
     alignItems: 'center',
   },
-  phase: {
+  status: {
     textAlign: 'center',
-    marginBottom: spacing.xs,
   },
-  meterSlot: {
-    height: METER_HEIGHT,
+  primaryButton: {
+    minWidth: 148,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radii.full,
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  endWrap: {
-    marginTop: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  endBtn: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radii.pill,
+  buttonLabel: {
+    color: '#fff',
   },
 });

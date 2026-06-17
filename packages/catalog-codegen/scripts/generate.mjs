@@ -45,6 +45,8 @@ const capEntries = catalog.capabilities
     requiresConfirmation: ${c.requiresConfirmation},
     plannerVisible: ${c.plannerVisible},
     resultSchema: '${c.resultSchema}',
+    abstractCapability: ${c.abstractCapability ? `'${c.abstractCapability}'` : 'undefined'},
+    priority: ${c.priority ?? 100},
     providers: [
 ${providers}
     ],
@@ -72,6 +74,8 @@ export interface CapabilitySourceEntry {
   requiresConfirmation: boolean;
   plannerVisible: boolean;
   resultSchema: string;
+  abstractCapability?: string;
+  priority: number;
   providers: CapabilityProviderSource[];
 }
 
@@ -98,6 +102,8 @@ const manifest = {
     requiresConfirmation: c.requiresConfirmation,
     plannerVisible: c.plannerVisible,
     resultSchema: c.resultSchema,
+    abstractCapability: c.abstractCapability ?? null,
+    priority: c.priority ?? 100,
     providers: c.bindings.map((b) => ({
       providerId: b.providerId,
       adapterAction: b.adapterAction ?? b.tool.split('.').pop(),

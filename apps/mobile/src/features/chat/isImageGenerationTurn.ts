@@ -24,6 +24,14 @@ export function isImageGenerationTurn(
     return false;
   }
 
+  if (
+    /\b(email|e-mail|gmail|inbox|reply|replies|draft|compose|whatsapp|sms|calendar|meeting|event|drive|spreadsheet|invoice|letter|subject)\b/.test(
+      q
+    )
+  ) {
+    return false;
+  }
+
   const editSignals = [
     /\b(edit|modify|retouch|inpaint|change|alter|update)\b/,
     /\b(remove|add|replace|erase)\b.+\b(from|in|on)\b/,
@@ -36,7 +44,9 @@ export function isImageGenerationTurn(
   }
 
   const generateSignals = [
-    /\b(generate|create|draw|design|render|paint|illustrate|sketch)\b/,
+    /\b(generate|create)\b.+\b(image|picture|photo|illustration|logo|poster|artwork|icon|avatar|wallpaper)\b/,
+    /\b(draw|sketch|illustrate|paint|render)\b/,
+    /\b(design)\b.+\b(image|picture|photo|illustration|logo|poster|artwork|icon|avatar|wallpaper)\b/,
     /\b(make|produce)\b.+\b(image|picture|photo|illustration|logo|poster|artwork|icon)\b/,
     /\b(image|picture|photo|illustration|logo|poster)\b.+\b(of|showing|with|featuring)\b/,
     /\bdraw\b.+\b(me|a|an)\b/,

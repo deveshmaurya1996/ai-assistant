@@ -10,7 +10,8 @@ from internal.observability import langfuse_span
 from models.registry import get_models_catalog
 from models import media
 from models.transcription import get_transcription_provider
-from voice_orchestration.voice_router import VoiceMode, VoiceRouter, VoiceSessionRequest
+from models.voice.providers import synthesize_speech_pcm_chunks
+from voice_orchestration.voice_mode import resolve_voice_mode
 from agents.supervisor import run_agent
 from api.chat import router as chat_router
 from api.image_chat import router as image_chat_router
@@ -60,6 +61,7 @@ class SpeakRequest(BaseModel):
     text: str
     user_id: Optional[str] = None
     voice: Optional[str] = None
+    format: Optional[str] = "wav"
 
 
 class LiveTokenRequest(BaseModel):
@@ -220,50 +222,61 @@ async def voice_transcribe(file: UploadFile = File(...)):
 
 @router.get("/voice/mode")
 def voice_mode(user_id: Optional[str] = None):
-    router_v = VoiceRouter()
-    req = VoiceSessionRequest(user_id=user_id or "anonymous", platform="android")
-    mode = router_v.route(req)
+    decision = resolve_voice_mode(user_id)
     return {
-        "mode": mode.value,
-        "available": ["classic"],
-        "future_modes": [VoiceMode.FULL_DUPLEX.value],
-        "full_duplex_available": router_v.full_duplex_available(),
-        "pollinations_voice": router_v.pollinations_allowed(),
-        "note": (
-            "Classic: NVIDIA multimodal STT (gemma-3n) → integrate LLM → "
-            "Magpie TTS or Pollinations fallback. "
-            "full_duplex (nemotron-voicechat) is not implemented yet."
-        ),
+        "mode": decision.mode,
+        "available": decision.available,
+        "future_modes": decision.future_modes,
+        "full_duplex_available": decision.full_duplex_available,
+        "pollinations_voice": decision.pollinations_voice,
+        "stt_provider": decision.stt_provider,
+        "tts_provider": decision.tts_provider,
+        "note": decision.note,
     }
 
 
 @router.post("/voice/live/token")
 def voice_live_token(_payload: LiveTokenRequest):
-    router_v = VoiceRouter()
-    if router_v.route(
-        VoiceSessionRequest(user_id=_payload.user_id or "anonymous")
-    ) == VoiceMode.FULL_DUPLEX:
-        raise HTTPException(
-            status_code=501,
-            detail=(
-                "nemotron-voicechat full-duplex is not available yet. "
-                "Requires early access and a WebRTC/Pipecat stack."
-            ),
-        )
+    _ = _payload
     raise HTTPException(
-        status_code=501,
-        detail="Live voice (Gemini/OpenAI realtime) is disabled. Use classic voice mode.",
+        status_code=410,
+        detail=(
+            "This endpoint is retired. "
+            "Use gateway /assistant/voice/live/token as the active token minting surface."
+        ),
     )
 
 
 @router.post("/voice/speak")
 async def voice_speak(payload: SpeakRequest):
+    if payload.format == "pcm_s16le":
+        def pcm_stream():
+            try:
+                yielded = False
+                for chunk in synthesize_speech_pcm_chunks(payload.text, voice=payload.voice):
+                    yielded = True
+                    yield chunk
+                if not yielded:
+                    raise RuntimeError("Piper returned no audio")
+            except OSError as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Piper TTS unavailable: {exc}",
+                ) from exc
+            except RuntimeError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+        return StreamingResponse(
+            pcm_stream(),
+            media_type="application/octet-stream",
+        )
+
     audio_bytes = await asyncio.to_thread(
         media.synthesize_speech, payload.text, voice=payload.voice
     )
     return StreamingResponse(
         iter([audio_bytes]),
-        media_type="audio/mpeg",
+        media_type="audio/wav" if audio_bytes else "application/octet-stream",
     )
 
 

@@ -34,3 +34,23 @@ def ai_service():
         resource_deps=['qdrant', 'redis'],
         links=[link(port_url('ai'), 'Intelligence :' + str(PORTS['ai']))],
     )
+
+    if is_enabled('voice-gateway', enabled):
+        local_resource(
+            'voice-gateway',
+            serve_cmd='node ' + DEV_SCRIPT + ' serve voice-gateway',
+            deps=[
+                DEV_SCRIPT,
+                'tilt_config.json',
+                'scripts/with-env.mjs',
+                '.env',
+                'services/voice-gateway',
+                'packages/config',
+                'packages/types',
+            ],
+            env=active_port_env(),
+            ignore=SERVICE_BUILD_IGNORE,
+            allow_parallel=True,
+            labels=SERVICE_LABELS,
+            resource_deps=['api'],
+        )

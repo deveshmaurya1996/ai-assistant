@@ -6,6 +6,7 @@ import {
   canCustomizeAssistantDisplayName,
   formatPersonalityGender,
   getAssistantPersonality,
+  resolvePersonalityVoiceId,
   reconcileDisplayName,
   type AssistantPersonality,
   type PersonalityGender,
@@ -337,7 +338,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   getSelectedTtsVoice: () => {
-    const { personalities, selectedPersonalityId } = get();
-    return getPersonalityPreset(selectedPersonalityId, personalities).voice;
+    const { selectedPersonalityId } = get();
+    return resolvePersonalityVoiceId(getAssistantPersonality(selectedPersonalityId));
   },
 }));

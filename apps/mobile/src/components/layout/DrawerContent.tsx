@@ -41,7 +41,8 @@ import { prepareNewCompose, useComposeDraftStore } from '@/features/chat/chatSes
 import { useChatStreamStore } from '@/features/chat/chatStreamStore';
 import { shouldShowSidebarAttentionDot } from '@/features/chat/sidebarAttention';
 import { useSettingsStore } from '@/stores/settings';
-import { MessageSquare, Mic, MoreVertical } from 'lucide-react-native';
+import { MessageSquare, MoreVertical } from 'lucide-react-native';
+import { PersonalityAvatar } from '@/components/assistant/PersonalityAvatar';
 import { getVersionDisplayLines } from '@/lib/version-display';
 
 type DrawerContentProps = {
@@ -110,14 +111,20 @@ const DrawerSessionRow = memo(function DrawerSessionRow({
         <View
           style={[
             styles.iconWrap,
-            {
-              backgroundColor: colors.surfaceElevated,
-              borderColor: isVoice ? colors.primary : colors.border,
-              borderWidth: isVoice ? 1 : StyleSheet.hairlineWidth,
-            },
+            isVoice
+              ? { backgroundColor: 'transparent', borderWidth: 0 }
+              : {
+                  backgroundColor: colors.surfaceElevated,
+                  borderColor: colors.border,
+                  borderWidth: StyleSheet.hairlineWidth,
+                },
           ]}>
           {isVoice ? (
-            <Mic color={colors.primary} size={16} />
+            <PersonalityAvatar
+              personalityId={item.personalityId}
+              wrapSize={32}
+              size={18}
+            />
           ) : (
             <MessageSquare color={colors.primary} size={16} />
           )}
@@ -133,11 +140,6 @@ const DrawerSessionRow = memo(function DrawerSessionRow({
               {item.title ?? (isVoice ? 'Voice chat' : 'Untitled')}
             </Text>
           </View>
-          {!showAttentionDot && isVoice ? (
-            <Text variant="caption" muted>
-              Voice
-            </Text>
-          ) : null}
         </View>
       </Pressable>
       <PressableScale
