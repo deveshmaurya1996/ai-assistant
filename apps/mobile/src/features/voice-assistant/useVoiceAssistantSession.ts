@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import type { ChatMessage } from '@ai-assistant/sdk';
 import { apiClient } from '@/lib/api-client';
 import { useChatSocketStream } from '@/features/chat/useChatSocketStream';
+import { useChatSocket } from '@/features/chat/ChatSocketProvider';
 import { buildStreamingMessages } from '@/features/chat/buildStreamingMessages';
 import { useChatSidebarStore } from '@/features/chat/chatSidebarStore';
 import { useOverlaySessionStore } from '@/features/overlay/overlaySessionStore';
@@ -24,7 +26,7 @@ export type VoiceAssistantPhase =
   | 'speaking'
   | 'stopping';
 
-const MESSAGE_POLL_MS = 500;
+
 
 function hasUserMessage(messages: ChatMessage[], text: string): boolean {
   const trimmed = text.trim();
@@ -38,17 +40,23 @@ export function useVoiceAssistantSession() {
   const registerHandlers = useVoiceSessionBridge((s) => s.registerHandlers);
   const setRuntime = useVoiceSessionBridge((s) => s.setRuntime);
 
+  const chatSocket = useChatSocket();
+  const socket = chatSocket.socket;
+
   const [phase, setPhase] = useState<VoiceAssistantPhase>('idle');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [liveTranscript, setLiveTranscript] = useState('');
   const [pendingUserText, setPendingUserText] = useState('');
   const [voiceStreamTurnKey, setVoiceStreamTurnKey] = useState(0);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const connectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const agentPhaseRef = useRef<VoiceAssistantPhase | null>(null);
   const sawAgentSignalRef = useRef(false);
   const sessionIdRef = useRef<string | null>(null);
+  const currentVersionRef = useRef<number>(0);
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const phaseRef = useRef<VoiceAssistantPhase>('idle');
+  const pendingMessageIdRef = useRef(0);
 
   const setAgentTranscript = useCallback((text: string) => {
     setLiveTranscript((prev) => {
@@ -65,6 +73,7 @@ export function useVoiceAssistantSession() {
       setPendingUserText('');
       return;
     }
+    pendingMessageIdRef.current += 1;
     setPendingUserText(trimmed);
     setVoiceStreamTurnKey((k) => k + 1);
   }, []);
@@ -120,27 +129,53 @@ export function useVoiceAssistantSession() {
     [setMessages]
   );
 
-  const onMessagesTick = useCallback(() => {
+  const onMessagesTick = useCallback((tickValue?: string) => {
     const sid = sessionIdRef.current;
-    if (sid) {
-      void refreshMessages(sid);
+    if (!sid) return;
+
+    if (tickValue) {
+      const incomingVersion = Number(tickValue);
+      if (!isNaN(incomingVersion)) {
+        if (incomingVersion <= currentVersionRef.current) {
+          // Already have this version or newer, skip
+          return;
+        }
+        currentVersionRef.current = incomingVersion;
+      }
     }
+
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+    }
+
+    syncTimeoutRef.current = setTimeout(() => {
+      syncTimeoutRef.current = null;
+      void refreshMessages(sid);
+    }, 300);
   }, [refreshMessages]);
 
   const stopSession = useCallback(async (reason = 'unknown') => {
-    if (phase === 'idle' || phase === 'stopping') return;
+    const currentPhase = phaseRef.current;
+    if (currentPhase === 'idle' || currentPhase === 'stopping') return;
+
     setPhase('stopping');
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
+
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+      syncTimeoutRef.current = null;
     }
+
+    currentVersionRef.current = 0;
+
     if (connectTimeoutRef.current) {
       clearTimeout(connectTimeoutRef.current);
       connectTimeoutRef.current = null;
     }
+
     await liveKit.disconnect();
     await hideOverlayPanel();
     await stopVoiceAssistantService();
+
     agentPhaseRef.current = null;
     sawAgentSignalRef.current = false;
     setSessionId(null);
@@ -148,70 +183,72 @@ export function useVoiceAssistantSession() {
     setLiveTranscript('');
     setPendingUserText('');
     setPhase('idle');
-  }, [liveKit, phase]);
+  }, [liveKit]);
 
-  const startSession = useCallback(async () => {
-    if (phase !== 'idle') return;
-    setError(null);
-    agentPhaseRef.current = null;
-    sawAgentSignalRef.current = false;
-    setPhase('connecting');
-    try {
-      const info = await liveKit.connect({ personalityId: selectedPersonalityId });
-      setSessionId(info.chatSessionId);
-      sessionIdRef.current = info.chatSessionId;
-      useChatSidebarStore.getState().upsertSession({
-        id: info.chatSessionId,
-        title: 'Voice chat',
-        kind: 'voice',
-        messageCount: 0,
-        personalityId: selectedPersonalityId,
-      });
-      useOverlaySessionStore.getState().upsertSession(info.chatSessionId, {
-        title: 'Voice chat',
-        kind: 'voice',
-      });
-      await refreshMessages(info.chatSessionId);
-      await startVoiceAssistantService();
-      pollRef.current = setInterval(() => {
-        void refreshMessages(info.chatSessionId);
-      }, MESSAGE_POLL_MS);
-    } catch (e) {
-      setPhase('idle');
-      setError(e instanceof Error ? e.message : 'Could not start voice session');
-    }
-  }, [liveKit, phase, refreshMessages, selectedPersonalityId]);
+const startSession = useCallback(async () => {
+  if (phaseRef.current !== 'idle') return;
+
+  setError(null);
+  agentPhaseRef.current = null;
+  sawAgentSignalRef.current = false;
+  setPhase('connecting');
+
+  try {
+    const info = await liveKit.connect({ personalityId: selectedPersonalityId });
+    setSessionId(info.chatSessionId);
+    sessionIdRef.current = info.chatSessionId;
+
+    useChatSidebarStore.getState().upsertSession({
+      id: info.chatSessionId,
+      title: 'Voice chat',
+      kind: 'voice',
+      messageCount: 0,
+      personalityId: selectedPersonalityId,
+    });
+
+    useOverlaySessionStore.getState().upsertSession(info.chatSessionId, {
+      title: 'Voice chat',
+      kind: 'voice',
+    });
+
+    await refreshMessages(info.chatSessionId);
+    await startVoiceAssistantService();
+  } catch (e) {
+    setPhase('idle');
+    setError(e instanceof Error ? e.message : 'Could not start voice session');
+  }
+}, [liveKit, refreshMessages, selectedPersonalityId]);
 
   const startSessionGuarded = useCallback(async () => {
     await runWithVoiceSessionSlot(null, startSession);
   }, [startSession]);
 
-  const resumeSession = useCallback(
-    async (existingId: string) => {
-      if (phase !== 'idle') return;
-      setError(null);
-      agentPhaseRef.current = null;
-      sawAgentSignalRef.current = false;
-      setPhase('connecting');
-      try {
-        const info = await liveKit.connect({
-          chatSessionId: existingId,
-          personalityId: selectedPersonalityId,
-        });
-        setSessionId(info.chatSessionId);
-        sessionIdRef.current = info.chatSessionId;
-        await refreshMessages(info.chatSessionId);
-        await startVoiceAssistantService();
-        pollRef.current = setInterval(() => {
-          void refreshMessages(info.chatSessionId);
-        }, MESSAGE_POLL_MS);
-      } catch (e) {
-        setPhase('idle');
-        setError(e instanceof Error ? e.message : 'Could not resume voice session');
-      }
-    },
-    [liveKit, phase, refreshMessages, selectedPersonalityId]
-  );
+const resumeSession = useCallback(
+  async (existingId: string) => {
+    if (phaseRef.current !== 'idle') return;
+
+    setError(null);
+    agentPhaseRef.current = null;
+    sawAgentSignalRef.current = false;
+    setPhase('connecting');
+
+    try {
+      const info = await liveKit.connect({
+        chatSessionId: existingId,
+        personalityId: selectedPersonalityId,
+      });
+
+      setSessionId(info.chatSessionId);
+      sessionIdRef.current = info.chatSessionId;
+      await refreshMessages(info.chatSessionId);
+      await startVoiceAssistantService();
+    } catch (e) {
+      setPhase('idle');
+      setError(e instanceof Error ? e.message : 'Could not resume voice session');
+    }
+  },
+  [liveKit, refreshMessages, selectedPersonalityId]
+);
 
   const resumeSessionGuarded = useCallback(
     async (existingId: string) => {
@@ -222,19 +259,20 @@ export function useVoiceAssistantSession() {
 
   const isActive = phase !== 'idle' && phase !== 'stopping';
 
-  const mergedMessages = useMemo(() => {
-    if (!pendingUserText || hasUserMessage(messages, pendingUserText)) {
-      return messages;
-    }
-    return [
-      ...messages,
-      {
-        id: `voice-pending-user-${pendingUserText.length}`,
-        role: 'USER' as const,
-        content: pendingUserText,
-      },
-    ];
-  }, [messages, pendingUserText]);
+const mergedMessages = useMemo(() => {
+  if (!pendingUserText || hasUserMessage(messages, pendingUserText)) {
+    return messages;
+  }
+
+  return [
+    ...messages,
+    {
+      id: `voice-pending-user-${pendingMessageIdRef.current}`,
+      role: 'USER' as const,
+      content: pendingUserText,
+    },
+  ];
+}, [messages, pendingUserText]);
 
   const streamingText = liveTranscript || visibleText;
   const streamingActive =
@@ -246,6 +284,10 @@ export function useVoiceAssistantSession() {
     phase === 'waiting_for_ai' || isGenerating
   );
   const streamTurnKey = voiceStreamTurnKey + chatStreamTurnKey;
+
+  useEffect(() => {
+  phaseRef.current = phase;
+}, [phase]);
 
   useEffect(() => {
     if (!pendingUserText) return;
@@ -268,11 +310,55 @@ export function useVoiceAssistantSession() {
   useEffect(() => {
     if (!sessionId || !isActive) return;
     void refreshMessages(sessionId);
-  }, [isActive, phase, refreshMessages, sessionId]);
+  }, [isActive, refreshMessages, sessionId]);
 
   useEffect(() => {
     setRuntime({ phase, isActive, chatSessionId: sessionId });
   }, [phase, isActive, sessionId, setRuntime]);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleConnect = () => {
+      const sid = sessionIdRef.current;
+      if (sid) {
+        void refreshMessages(sid);
+      }
+    };
+
+    if (socket.connected) {
+      const sid = sessionIdRef.current;
+      if (sid) {
+        void refreshMessages(sid);
+      }
+    }
+
+    socket.on('connect', handleConnect);
+    return () => {
+      socket.off('connect', handleConnect);
+    };
+  }, [socket, refreshMessages]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        const sid = sessionIdRef.current;
+        if (sid) {
+          void refreshMessages(sid);
+        }
+      }
+    });
+    return () => sub.remove();
+  }, [refreshMessages]);
+
+  // Clean up sync timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     registerHandlers({
@@ -299,31 +385,39 @@ export function useVoiceAssistantSession() {
     if (next) setPhase(next);
   }, [isActive, isGenerating, isStreaming, liveKit.tokenInfo, phase]);
 
-  useEffect(() => {
-    if (!isActive || !liveKit.tokenInfo) return;
+useEffect(() => {
+  if (!isActive || !liveKit.tokenInfo) return;
+  if (sawAgentSignalRef.current) return;
+
+  if (connectTimeoutRef.current) {
+    clearTimeout(connectTimeoutRef.current);
+  }
+
+  connectTimeoutRef.current = setTimeout(() => {
     if (sawAgentSignalRef.current) return;
 
+    setError(
+      'Voice agent did not join in time. Keep voice-gateway running and try Start again.'
+    );
+
+    agentPhaseRef.current = null;
+    sawAgentSignalRef.current = false;
+    setPhase('idle');
+    setLiveTranscript('');
+    setPendingUserText('');
+    setSessionId(null);
+    sessionIdRef.current = null;
+
+    void liveKit.disconnect();
+  }, AGENT_CONNECT_TIMEOUT_MS);
+
+  return () => {
     if (connectTimeoutRef.current) {
       clearTimeout(connectTimeoutRef.current);
+      connectTimeoutRef.current = null;
     }
-    connectTimeoutRef.current = setTimeout(() => {
-      if (sawAgentSignalRef.current) return;
-      setError(
-        'Voice agent did not join in time. Keep voice-gateway running and try Start again.'
-      );
-      setPhase('idle');
-      void liveKit.disconnect();
-      setSessionId(null);
-      sessionIdRef.current = null;
-    }, AGENT_CONNECT_TIMEOUT_MS);
-
-    return () => {
-      if (connectTimeoutRef.current) {
-        clearTimeout(connectTimeoutRef.current);
-        connectTimeoutRef.current = null;
-      }
-    };
-  }, [isActive, liveKit, liveKit.tokenInfo]);
+  };
+}, [isActive, liveKit, liveKit.tokenInfo]);
 
   return {
     phase,

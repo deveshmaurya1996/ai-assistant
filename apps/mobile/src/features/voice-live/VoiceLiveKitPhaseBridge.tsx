@@ -3,9 +3,12 @@ import {
   useConnectionState,
   useRoomContext,
   useVoiceAssistant,
+  useSpeakingParticipants,
+  useLocalParticipant,
 } from '@livekit/components-react';
 import { ConnectionState, RoomEvent } from 'livekit-client';
 import type { VoiceAssistantPhase } from '@/features/voice-assistant/useVoiceAssistantSession';
+import { useVoiceSessionBridge } from '@/features/voice-assistant/voiceSessionBridge';
 
 const AGENT_STATE_ATTR = 'lk.agent.state';
 const AGENT_TRANSCRIPT_ATTR = 'lk.agent.transcript';
@@ -17,7 +20,7 @@ type Props = {
   onPhase: (phase: VoiceAssistantPhase) => void;
   onAgentTranscript?: (text: string) => void;
   onUserTranscript?: (text: string) => void;
-  onMessagesTick?: () => void;
+  onMessagesTick?: (tickValue?: string) => void;
 };
 
 function mapAgentState(state: string): VoiceAssistantPhase | null {
@@ -30,8 +33,6 @@ function mapAgentState(state: string): VoiceAssistantPhase | null {
       return 'waiting_for_ai';
     case 'speaking':
       return 'speaking';
-    case 'connecting':
-      return null;
     default:
       return null;
   }
@@ -45,18 +46,52 @@ export function VoiceLiveKitPhaseBridge({
   onMessagesTick,
 }: Props) {
   const room = useRoomContext();
-  const { state } = useVoiceAssistant();
+  const { state, audioTrack } = useVoiceAssistant();
   const connectionState = useConnectionState();
+  const speaking = useSpeakingParticipants();
+  const { localParticipant } = useLocalParticipant();
+
   const lastPhaseRef = useRef<VoiceAssistantPhase | null>(null);
   const lastTranscriptRef = useRef('');
   const lastUserTranscriptRef = useRef('');
   const lastMessagesTickRef = useRef('');
+  const lastConnectionStateRef = useRef(connectionState);
   const [roomTick, setRoomTick] = useState(0);
+
+  useEffect(() => {
+    if (isActive) {
+      useVoiceSessionBridge.getState().setLiveKitData({
+        state,
+        audioTrack,
+        speaking,
+        localParticipant,
+      });
+    } else {
+      useVoiceSessionBridge.getState().setLiveKitData({
+        state: null,
+        audioTrack: null,
+        speaking: [],
+        localParticipant: null,
+      });
+    }
+  }, [isActive, state, audioTrack, speaking, localParticipant]);
+
+  useEffect(() => {
+    return () => {
+      useVoiceSessionBridge.getState().setLiveKitData({
+        state: null,
+        audioTrack: null,
+        speaking: [],
+        localParticipant: null,
+      });
+    };
+  }, []);
 
   useEffect(() => {
     if (!isActive) return;
 
     const bump = () => setRoomTick((n) => n + 1);
+
     room.on(RoomEvent.ParticipantConnected, bump);
     room.on(RoomEvent.ParticipantDisconnected, bump);
     room.on(RoomEvent.ParticipantAttributesChanged, bump);
@@ -71,6 +106,17 @@ export function VoiceLiveKitPhaseBridge({
   }, [isActive, room]);
 
   useEffect(() => {
+    if (
+      isActive &&
+      connectionState === ConnectionState.Connected &&
+      lastConnectionStateRef.current === ConnectionState.Reconnecting
+    ) {
+      onMessagesTick?.();
+    }
+    lastConnectionStateRef.current = connectionState;
+  }, [connectionState, isActive, onMessagesTick]);
+
+  useEffect(() => {
     if (!isActive) {
       lastPhaseRef.current = null;
       lastTranscriptRef.current = '';
@@ -81,25 +127,29 @@ export function VoiceLiveKitPhaseBridge({
 
     const remotes = Array.from(room.remoteParticipants.values());
     const remoteAgent = remotes.find(
-      (p) =>
-        p.attributes?.[AGENT_STATE_ATTR] || /^agent-/i.test(p.identity ?? '')
+      (p) => p.attributes?.[AGENT_STATE_ATTR] || /^agent-/i.test(p.identity ?? '')
     );
+
     const remoteAgentState = remoteAgent?.attributes?.[AGENT_STATE_ATTR];
     const remoteTranscript = remoteAgent?.attributes?.[AGENT_TRANSCRIPT_ATTR] ?? '';
     const remoteUserTranscript = remoteAgent?.attributes?.[USER_TRANSCRIPT_ATTR] ?? '';
     const remoteMessagesTick = remoteAgent?.attributes?.[MESSAGES_TICK_ATTR] ?? '';
+
     if (remoteTranscript !== lastTranscriptRef.current) {
       lastTranscriptRef.current = remoteTranscript;
       onAgentTranscript?.(remoteTranscript);
     }
+
     if (remoteUserTranscript !== lastUserTranscriptRef.current) {
       lastUserTranscriptRef.current = remoteUserTranscript;
       onUserTranscript?.(remoteUserTranscript);
     }
+
     if (remoteMessagesTick && remoteMessagesTick !== lastMessagesTickRef.current) {
       lastMessagesTickRef.current = remoteMessagesTick;
-      onMessagesTick?.();
+      onMessagesTick?.(remoteMessagesTick);
     }
+
     if (connectionState !== ConnectionState.Connected) {
       if (lastPhaseRef.current !== 'connecting') {
         lastPhaseRef.current = 'connecting';
@@ -108,20 +158,27 @@ export function VoiceLiveKitPhaseBridge({
       return;
     }
 
-    const hasRemoteAgent = Boolean(remoteAgent);
+    const fromRemote = remoteAgentState ? mapAgentState(remoteAgentState) : null;
     const fromHook = mapAgentState(state);
-    const fromRemote =
-      (remoteAgentState ? mapAgentState(remoteAgentState) : null) ??
-      (remoteAgent ? 'listening' : null);
+    const resolvedPhase = fromRemote ?? fromHook ?? (remoteAgent ? 'listening' : null);
 
-    const phase: VoiceAssistantPhase | null = fromRemote ?? fromHook ?? null;
+    if (!resolvedPhase) return;
 
-    if (!phase || phase === 'connecting') return;
-    if (!hasRemoteAgent && !fromHook && !fromRemote) return;
-    if (lastPhaseRef.current === phase && phase !== 'listening') return;
-    lastPhaseRef.current = phase;
-    onPhase(phase);
-  }, [connectionState, isActive, onAgentTranscript, onMessagesTick, onPhase, onUserTranscript, room, roomTick, state]);
+    if (lastPhaseRef.current !== resolvedPhase) {
+      lastPhaseRef.current = resolvedPhase;
+      onPhase(resolvedPhase);
+    }
+  }, [
+    connectionState,
+    isActive,
+    onAgentTranscript,
+    onMessagesTick,
+    onPhase,
+    onUserTranscript,
+    room,
+    roomTick,
+    state,
+  ]);
 
   return null;
 }

@@ -41,7 +41,20 @@ class VoiceAssistantForegroundService : Service() {
       .setOngoing(true)
       .build()
 
-    startForeground(VOICE_NOTIFICATION_ID, notification)
+    try {
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        startForeground(
+          VOICE_NOTIFICATION_ID,
+          notification,
+          android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        )
+      } else {
+        startForeground(VOICE_NOTIFICATION_ID, notification)
+      }
+    } catch (e: Exception) {
+      android.util.Log.e("VoiceAssistantService", "Failed to call startForeground", e)
+      stopSelf()
+    }
     return START_STICKY
   }
 

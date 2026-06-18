@@ -97,32 +97,44 @@ export class AgentAudioPublisher {
     }
   }
 
-  async endUtterance(): Promise<void> {
-    const tailFrames = this.resampler.flush();
-    for (const outFrame of tailFrames) {
-      await this.enqueueResampledSamples(outFrame.data);
-    }
+async endUtterance(): Promise<void> {
+  const tailFrames = this.resampler.flush();
 
-    if (this.pendingSamples.length > 0) {
-      const frameSamples = Int16Array.from(this.pendingSamples);
-      this.pendingSamples = [];
-      await this.emitFrame(frameSamples);
-    }
-
-    await this.source.waitForPlayout();
-    this.utteranceChunks = 0;
-    this.playoutDeadlineMs = 0;
+  for (const outFrame of tailFrames) {
+    await this.enqueueResampledSamples(outFrame.data);
   }
+
+  if (this.pendingSamples.length > 0) {
+    const frameSamples = Int16Array.from(this.pendingSamples);
+    this.pendingSamples = [];
+    await this.emitFrame(frameSamples);
+  }
+
+  try {
+    await this.source.waitForPlayout();
+  } catch {
+    /* ignore */
+  }
+
+  this.utteranceChunks = 0;
+  this.playoutDeadlineMs = 0;
+}
 
   interrupt(): void {
     try {
       this.resampler.flush();
     } catch {
-      /* discard partial resampler state */
+      /* ignore */
     }
+
     this.pendingSamples = [];
     this.playoutDeadlineMs = 0;
-    this.source.clearQueue();
     this.utteranceChunks = 0;
+
+    try {
+      this.source.clearQueue();
+    } catch {
+      /* ignore */
+    }
   }
 }

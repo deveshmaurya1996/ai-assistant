@@ -13,8 +13,10 @@ import { useVoiceSession } from '@/features/voice-assistant/VoiceSessionProvider
 import { isVoiceIdleEndMessage } from '@/lib/format-ai-error';
 import { spacing } from '@/theme/tokens';
 import { useTheme } from '@/theme/ThemeProvider';
+import { useRequiredPermissions } from '@/hooks/useRequiredPermissions';
 
 export default function AssistantScreen() {
+  useRequiredPermissions();
   const { colors, screenStyle } = useTheme();
   const { resumeSessionId } = useLocalSearchParams<{ resumeSessionId?: string }>();
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);

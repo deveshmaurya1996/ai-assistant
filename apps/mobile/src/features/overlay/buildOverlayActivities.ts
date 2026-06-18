@@ -24,6 +24,7 @@ export type OverlayActivity = {
   isGenerating: boolean;
   persisted?: boolean;
   lastUpdatedAt: number;
+  voicePhase?: VoiceAssistantPhase;
 };
 
 const VOICE_ACTIVE_PHASES = new Set<VoiceAssistantPhase>([
@@ -161,6 +162,7 @@ function buildVoiceActivity({
       bubbleState: phaseToBubbleState(phase),
       isGenerating: phase === 'waiting_for_ai' || phase === 'speaking',
       lastUpdatedAt: Date.now(),
+      voicePhase: phase,
     };
   }
 
@@ -239,26 +241,25 @@ export type ShouldShowOverlayInput = {
 
 export function shouldShowOverlay({
   appState,
-  overlayEnabled,
   voiceOverlayEnabled,
   userDismissed,
   activeItem,
-  foregroundScreen,
 }: ShouldShowOverlayInput): boolean {
   if (!activeItem || userDismissed) return false;
 
   const inBackground = appState !== 'active';
+  if (!inBackground) {
+    return false; // If the app is open (foreground), do not show/open the overlay.
+  }
 
+  // App is in the background:
   if (activeItem.kind === 'chat') {
-    if (!inBackground && foregroundScreen === 'chat') return false;
-    if (inBackground) return activeItem.isGenerating || activeItem.persisted === true;
-    return overlayEnabled && activeItem.isGenerating;
+    return activeItem.isGenerating || activeItem.persisted === true;
   }
 
   if (activeItem.kind === 'voice') {
-    if (inBackground) return activeItem.isGenerating || activeItem.persisted === true;
-    if (foregroundScreen === 'voice') return voiceOverlayEnabled;
-    return overlayEnabled;
+    if (activeItem.voicePhase === 'connecting') return false;
+    return voiceOverlayEnabled && (activeItem.voicePhase !== undefined || activeItem.persisted === true);
   }
 
   return false;

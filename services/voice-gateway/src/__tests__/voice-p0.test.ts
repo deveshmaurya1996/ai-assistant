@@ -17,7 +17,7 @@ describe('resolveProviders', () => {
     const profile = getVoiceProfileForPersonality('assistant');
     assert.ok(profile);
     const { stt, tts } = resolveProviders(profile);
-    assert.equal(stt.id, 'faster-whisper');
+    assert.equal(stt.id, 'local-streaming');
     assert.equal(tts.id, 'piper');
   });
 });

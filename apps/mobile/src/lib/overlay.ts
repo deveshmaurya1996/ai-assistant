@@ -5,6 +5,7 @@ import {
   shouldShowOverlay,
 } from '@/features/overlay/buildOverlayActivities';
 import type { OverlayForegroundScreen } from '@/features/overlay/resolveOverlayRoute';
+import type { VoiceAssistantPhase } from '@/features/voice-assistant/useVoiceAssistantSession';
 
 export type OverlayBubbleState = 'idle' | 'listening' | 'processing' | 'speaking';
 
@@ -90,7 +91,6 @@ export async function showOverlayPanel(text: string): Promise<void> {
   if (Platform.OS !== 'android') return;
   const can = await canDrawOverlays();
   if (!can) {
-    await requestOverlayPermission();
     return;
   }
   if (NativeOverlay?.showOverlay) {
@@ -140,10 +140,6 @@ export async function setOverlayContextLabel(label: string): Promise<void> {
 
 export async function startVoiceAssistantService(): Promise<void> {
   if (Platform.OS !== 'android') return;
-  const can = await canDrawOverlays();
-  if (!can) {
-    await requestOverlayPermission();
-  }
   if (NativeOverlay?.startVoiceService) {
     await NativeOverlay.startVoiceService();
   }
@@ -292,6 +288,7 @@ export async function syncVoiceOverlay(input: VoiceOverlaySyncInput): Promise<vo
                 : 'processing',
           isGenerating: true,
           lastUpdatedAt: Date.now(),
+          voicePhase: input.phase as VoiceAssistantPhase,
         }
       : null,
   });

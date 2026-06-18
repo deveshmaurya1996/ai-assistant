@@ -42,7 +42,7 @@ apps/mobile/ios
 **/build/
 **/.gradle/
 **/.cxx/
-
+.idea/
 # Local CLI debug output (not source)
 eas-build-meta.json
 app.json

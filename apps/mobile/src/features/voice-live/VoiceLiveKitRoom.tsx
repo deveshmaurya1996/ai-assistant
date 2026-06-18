@@ -11,7 +11,7 @@ type Props = {
   onAgentPhase?: (phase: VoiceAssistantPhase) => void;
   onAgentTranscript?: (text: string) => void;
   onUserTranscript?: (text: string) => void;
-  onMessagesTick?: () => void;
+  onMessagesTick?: (tickValue?: string) => void;
   onDisconnected?: () => void;
   children: ReactNode;
 };
@@ -26,30 +26,30 @@ export function VoiceLiveKitRoom({
   onDisconnected,
   children,
 }: Props) {
-  if (!tokenInfo) {
-    return children;
-  }
-
   return (
-    <LiveKitRoom
-      serverUrl={tokenInfo.livekitUrl}
-      token={tokenInfo.token}
-      connect
-      audio
-      video={false}
-      onDisconnected={onDisconnected}
-    >
-      {onAgentPhase ? (
-        <VoiceLiveKitPhaseBridge
-          isActive={isActive}
-          onPhase={onAgentPhase}
-          onAgentTranscript={onAgentTranscript}
-          onUserTranscript={onUserTranscript}
-          onMessagesTick={onMessagesTick}
-        />
+    <>
+      {tokenInfo ? (
+        <LiveKitRoom
+          serverUrl={tokenInfo.livekitUrl}
+          token={tokenInfo.token}
+          connect
+          audio
+          video={false}
+          onDisconnected={onDisconnected}
+        >
+          {onAgentPhase ? (
+            <VoiceLiveKitPhaseBridge
+              isActive={isActive}
+              onPhase={onAgentPhase}
+              onAgentTranscript={onAgentTranscript}
+              onUserTranscript={onUserTranscript}
+              onMessagesTick={onMessagesTick}
+            />
+          ) : null}
+          <VoiceAudioOutputBootstrap enabled={isActive} />
+        </LiveKitRoom>
       ) : null}
-      <VoiceAudioOutputBootstrap enabled={isActive} />
       {children}
-    </LiveKitRoom>
+    </>
   );
 }

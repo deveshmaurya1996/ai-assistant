@@ -1,4 +1,4 @@
-export const VOICE_STT_PROVIDER = 'faster-whisper' as const;
+export const VOICE_STT_PROVIDER = 'local-streaming' as const;
 export const VOICE_TTS_PROVIDER = 'piper' as const;
 export const DEFAULT_PIPER_VOICE = 'en_US-lessac-medium' as const;
 

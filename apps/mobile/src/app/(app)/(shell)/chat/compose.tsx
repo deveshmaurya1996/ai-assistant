@@ -13,8 +13,10 @@ import {
   getAssistantSubtitle,
   useSettingsStore,
 } from '@/stores/settings';
+import { useRequiredPermissions } from '@/hooks/useRequiredPermissions';
 
 export default function ChatComposeScreen() {
+  useRequiredPermissions();
   const saveNote = useSaveNote();
   const assistantDisplayName = useSettingsStore((s) => s.assistantDisplayName);
   const selectedPersonalityId = useSettingsStore((s) => s.selectedPersonalityId);

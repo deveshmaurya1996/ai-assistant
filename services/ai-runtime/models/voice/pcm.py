@@ -8,12 +8,12 @@ from pathlib import Path
 
 
 def voice_gateway_pcm_sample_rate() -> int:
-    raw = os.getenv("VOICE_GATEWAY_PCM_SAMPLE_RATE", "48000").strip()
+    raw = os.getenv("VOICE_GATEWAY_PCM_SAMPLE_RATE", "16000").strip()
     try:
         rate = int(raw)
     except ValueError:
-        rate = 48_000
-    return rate if rate > 0 else 48_000
+        rate = 16_000
+    return rate if rate > 0 else 16_000
 
 
 def is_raw_pcm_filename(filename: str) -> bool:

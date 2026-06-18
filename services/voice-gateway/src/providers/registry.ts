@@ -1,10 +1,10 @@
 import type { VoiceProfile } from '@ai-assistant/types';
 import type { SpeechProvider, TTSProvider } from './types.js';
-import { createFasterWhisperSpeechProvider } from './faster-whisper-stt.js';
+import { createLocalStreamingSpeechProvider } from './local-streaming-stt.js';
 import { createPiperTtsProvider } from './piper-tts.js';
 
 const sttRegistry = new Map<string, () => SpeechProvider>([
-  ['faster-whisper', createFasterWhisperSpeechProvider],
+  ['local-streaming', createLocalStreamingSpeechProvider],
 ]);
 
 const ttsRegistry = new Map<string, () => TTSProvider>([

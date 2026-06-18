@@ -9,8 +9,10 @@ import {
   useSettingsStore,
 } from '@/stores/settings';
 import { useLocalSearchParams } from 'expo-router';
+import { useRequiredPermissions } from '@/hooks/useRequiredPermissions';
 
 export default function ChatScreen() {
+  useRequiredPermissions();
   const { id, title: titleParam, kind: kindParam } = useLocalSearchParams<{
     id: string;
     title?: string;

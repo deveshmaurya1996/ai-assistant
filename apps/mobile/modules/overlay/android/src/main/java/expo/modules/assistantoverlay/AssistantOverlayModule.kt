@@ -109,6 +109,30 @@ class AssistantOverlayModule : Module() {
     AsyncFunction("startVoiceService") {
       val context = appContext.reactContext
         ?: throw IllegalStateException("React context is not available")
+
+      // Check for RECORD_AUDIO permission
+      val hasAudioPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+        context,
+        android.Manifest.permission.RECORD_AUDIO
+      ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+      if (!hasAudioPermission) {
+        android.util.Log.w("AssistantOverlay", "Skipping startVoiceService because RECORD_AUDIO permission is not granted")
+        return@AsyncFunction null
+      }
+
+      // Check for FOREGROUND_SERVICE_MICROPHONE permission on Android 14 (API 34) and above
+      if (android.os.Build.VERSION.SDK_INT >= 34) {
+        val hasFgsMicPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+          context,
+          "android.permission.FOREGROUND_SERVICE_MICROPHONE"
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!hasFgsMicPermission) {
+          android.util.Log.w("AssistantOverlay", "Skipping startVoiceService because FOREGROUND_SERVICE_MICROPHONE is not granted")
+          return@AsyncFunction null
+        }
+      }
+
       try {
         val intent = Intent(context, VoiceAssistantForegroundService::class.java)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -116,12 +140,10 @@ class AssistantOverlayModule : Module() {
         } else {
           context.startService(intent)
         }
-        // startService/startForegroundService return ComponentName, which Expo cannot marshal.
         null
       } catch (e: Exception) {
-        throw IllegalStateException(
-          e.message ?: "Failed to start voice assistant foreground service"
-        )
+        android.util.Log.e("AssistantOverlay", "Failed to start voice assistant foreground service", e)
+        null
       }
     }
 

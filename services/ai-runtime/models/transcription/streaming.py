@@ -15,12 +15,12 @@ class StreamingTranscriptionProvider(TranscriptionProvider):
         self._provider = os.getenv("VOICE_STT_PROVIDER", "faster-whisper").strip().lower()
 
     def transcribe(self, content: bytes, filename: str = "audio.m4a") -> str:
-        if self._provider == "faster-whisper":
+        if self._provider in ("faster-whisper", "local-streaming", "streaming", "realtime"):
             try:
                 return transcribe_audio_bytes(content, filename)
             except Exception as exc:
                 logger.warning(
-                    "faster-whisper STT failed (%s); falling back to batch transcription",
+                    "local Whisper STT failed (%s); falling back to batch transcription",
                     exc,
                 )
         return self._fallback.transcribe(content, filename)
@@ -28,6 +28,6 @@ class StreamingTranscriptionProvider(TranscriptionProvider):
     def transcribe_partial(
         self, content: bytes, filename: str = "audio.m4a"
     ) -> Optional[str]:
-        if self._provider == "faster-whisper":
+        if self._provider in ("faster-whisper", "local-streaming", "streaming", "realtime"):
             return None
         return self._fallback.transcribe_partial(content, filename)

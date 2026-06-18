@@ -119,9 +119,18 @@ export function useAssistantOverlaySync() {
     const sub = AppState.addEventListener('change', (next) => {
       appStateRef.current = next;
       setAppState(next);
+      if (next === 'active') {
+        setUserDismissed(false);
+      }
     });
     return () => sub.remove();
-  }, []);
+  }, [setUserDismissed]);
+
+  useEffect(() => {
+    if (generatingSignature) {
+      setUserDismissed(false);
+    }
+  }, [generatingSignature, setUserDismissed]);
 
   useEffect(() => {
     return subscribeOverlayDismissed(() => {

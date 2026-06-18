@@ -1,7 +1,7 @@
 import asyncio
 import os
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File, WebSocket
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -246,30 +246,31 @@ def voice_live_token(_payload: LiveTokenRequest):
         ),
     )
 
-
 @router.post("/voice/speak")
 async def voice_speak(payload: SpeakRequest):
     if payload.format == "pcm_s16le":
-        def pcm_stream():
-            try:
-                yielded = False
-                for chunk in synthesize_speech_pcm_chunks(payload.text, voice=payload.voice):
-                    yielded = True
-                    yield chunk
-                if not yielded:
-                    raise RuntimeError("Piper returned no audio")
-            except OSError as exc:
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"Piper TTS unavailable: {exc}",
-                ) from exc
-            except RuntimeError as exc:
-                raise HTTPException(status_code=503, detail=str(exc)) from exc
+        try:
+            chunks = synthesize_speech_pcm_chunks(payload.text, voice=payload.voice)
+            first = next(chunks, None)
+            if first is None:
+                raise HTTPException(status_code=503, detail="Piper returned no audio")
 
-        return StreamingResponse(
-            pcm_stream(),
-            media_type="application/octet-stream",
-        )
+            def pcm_stream():
+                yield first
+                for chunk in chunks:
+                    yield chunk
+
+            return StreamingResponse(
+                pcm_stream(),
+                media_type="application/octet-stream",
+            )
+        except OSError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Piper TTS unavailable: {exc}",
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     audio_bytes = await asyncio.to_thread(
         media.synthesize_speech, payload.text, voice=payload.voice
@@ -348,3 +349,9 @@ def image_edit(payload: ImageEditRequest):
         iter([result.data]),
         media_type=result.mime_type,
     )
+
+
+@router.websocket("/voice/stt/ws")
+async def websocket_stt_endpoint(websocket: WebSocket):
+    from models.voice.streaming_stt import handle_stt_websocket
+    await handle_stt_websocket(websocket)

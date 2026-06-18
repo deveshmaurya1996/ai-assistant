@@ -167,11 +167,26 @@ export function resolvePersonalityVoiceId(
   env: Record<string, string | undefined> = {}
 ): string {
   const envKey = `PIPER_VOICE_${personality.voice.toUpperCase().replace(/-/g, '_')}`;
-  return (
-    env[envKey]?.trim() ||
-    env.PIPER_DEFAULT_VOICE?.trim() ||
-    DEFAULT_PIPER_VOICE
-  );
+  if (env[envKey]?.trim()) {
+    return env[envKey]!.trim();
+  }
+  if (env.PIPER_DEFAULT_VOICE?.trim()) {
+    return env.PIPER_DEFAULT_VOICE.trim();
+  }
+  switch (personality.voice) {
+    case 'female-professional':
+      return 'en_US-lessac-medium';
+    case 'female-friendly':
+      return 'en_US-hannah-medium';
+    case 'male-executive':
+      return 'en_US-ryan-medium';
+    case 'teacher-calm':
+      return 'en_US-amy-medium';
+    case 'friendly-neutral':
+      return 'en_US-danny-low';
+    default:
+      return DEFAULT_PIPER_VOICE;
+  }
 }
 
 export function listVoiceProfilesPublic(): Array<

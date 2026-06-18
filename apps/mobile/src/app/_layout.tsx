@@ -22,6 +22,7 @@ import { hydrateAuthStorage } from '@/lib/secure-storage';
 import { useAppBootstrap } from '@/hooks/useAppBootstrap';
 import { useUpdateBootstrap } from '@/hooks/useUpdateBootstrap';
 import { UpdateGate } from '@/features/updates/UpdateGate';
+import { AudioRecorderProvider } from '@siteed/audio-studio';
 
 SplashScreen.preventAutoHideAsync();
 SplashScreen.setOptions({ fade: true, duration: 280 });
@@ -76,11 +77,13 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <KeyboardProvider>
           <ThemeProvider>
-            <BottomSheetModalProvider>
-              <UpdateGate>
-                <RootStack />
-              </UpdateGate>
-            </BottomSheetModalProvider>
+            <AudioRecorderProvider>
+              <BottomSheetModalProvider>
+                <UpdateGate>
+                  <RootStack />
+                </UpdateGate>
+              </BottomSheetModalProvider>
+            </AudioRecorderProvider>
           </ThemeProvider>
         </KeyboardProvider>
       </SafeAreaProvider>

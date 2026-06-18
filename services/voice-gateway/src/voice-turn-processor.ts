@@ -25,8 +25,8 @@ export async function processVoiceTranscript(params: {
   }
 
   const profile = getVoiceProfileForPersonality(session.voiceProfileId);
-
   const { tts } = resolveProviders(profile);
+
   const analytics = new VoiceAnalyticsCollector();
   analytics.markSpeechEnd();
 
@@ -36,37 +36,61 @@ export async function processVoiceTranscript(params: {
   const turnId = `turn-${Date.now()}`;
 
   const pushTranscript = async (text: string) => {
+    if (params.signal?.aborted) return;
     const trimmed = text.trim();
     if (!trimmed) return;
     await params.onTranscriptUpdate?.(trimmed);
   };
 
   const speak = async (text: string) => {
-    if (!text.trim() || params.signal?.aborted) return;
+    const trimmed = text.trim();
+    if (!trimmed || params.signal?.aborted) return;
+
     if (!speakingActive) {
       speakingActive = true;
       await params.onSpeaking?.();
     }
-    spokenBuffer = spokenBuffer ? `${spokenBuffer} ${text.trim()}` : text.trim();
+
+    spokenBuffer = spokenBuffer ? `${spokenBuffer} ${trimmed}` : trimmed;
     await pushTranscript(spokenBuffer);
 
     const personality = getAssistantPersonality(profile.personalityId);
-    for await (const frame of tts.synthesizeStream(text, {
-      voiceId: resolvePersonalityVoiceId(personality, process.env),
-      speakingRate: profile.speakingRate,
-    })) {
+
+    try {
+      for await (const frame of tts.synthesizeStream(trimmed, {
+        voiceId: resolvePersonalityVoiceId(personality, process.env),
+        speakingRate: profile.speakingRate,
+        signal: params.signal,
+      })) {
+        if (params.signal?.aborted) {
+          tts.interrupt();
+          params.onInterrupt?.();
+          return;
+        }
+
+        analytics.markTtsFirstByte();
+
+        if (params.publishPcm) {
+          await params.publishPcm(frame);
+        }
+      }
+
+          if (!params.signal?.aborted) {
+        await params.endPublish?.();
+      }
+
       if (params.signal?.aborted) {
         tts.interrupt();
         params.onInterrupt?.();
-        break;
+        return;
       }
-      analytics.markTtsFirstByte();
-      if (params.publishPcm) {
-        await params.publishPcm(frame);
+    } catch (err) {
+      if (params.signal?.aborted) {
+        tts.interrupt();
+        params.onInterrupt?.();
+        return;
       }
-    }
-    if (!params.signal?.aborted) {
-      await params.endPublish?.();
+      throw err;
     }
   };
 
@@ -81,6 +105,10 @@ export async function processVoiceTranscript(params: {
       sttLatencyMs: params.sttLatencyMs,
       signal: params.signal,
     })) {
+      if (params.signal?.aborted) {
+        break;
+      }
+
       analytics.markGatewayFirstByte();
 
       if (ev.event === 'status') {
@@ -96,17 +124,24 @@ export async function processVoiceTranscript(params: {
         try {
           const payload = JSON.parse(ev.data) as { content?: string };
           if (!payload.content) continue;
+
           analytics.markFirstToken();
           tokenBuffer += payload.content;
+
           await pushTranscript(
-            spokenBuffer
-              ? `${spokenBuffer} ${tokenBuffer}`
-              : tokenBuffer
+            spokenBuffer ? `${spokenBuffer} ${tokenBuffer}` : tokenBuffer
           );
+
           const sentences = sentenceChunks(tokenBuffer);
           if (sentences.length > 1) {
-            await speak(sentences.slice(0, -1).join(' '));
-            tokenBuffer = sentences[sentences.length - 1] ?? '';
+            const readyToSpeak = sentences.slice(0, -1).join(' ').trim();
+            const remainder = sentences[sentences.length - 1] ?? '';
+
+            if (readyToSpeak) {
+              await speak(readyToSpeak);
+            }
+
+            tokenBuffer = remainder;
           }
         } catch {
           /* ignore */
@@ -146,6 +181,7 @@ export async function processVoiceTranscript(params: {
 
     if (tokenBuffer.trim() && !params.signal?.aborted) {
       await speak(tokenBuffer.trim());
+      tokenBuffer = '';
     }
   } catch (err) {
     console.warn('[voice-turn-processor] turn stream failed', {
@@ -154,6 +190,7 @@ export async function processVoiceTranscript(params: {
       aborted: params.signal?.aborted,
       error: err instanceof Error ? err.message : String(err),
     });
+
     if (!params.signal?.aborted && !speakingActive) {
       try {
         await speak("Sorry, I couldn't process that. Please try again.");
@@ -164,6 +201,13 @@ export async function processVoiceTranscript(params: {
   } finally {
     if (!params.signal?.aborted) {
       await params.onListening?.();
+    } else {
+      try {
+        tts.interrupt();
+      } catch {
+        /* ignore */
+      }
+      params.onInterrupt?.();
     }
   }
 

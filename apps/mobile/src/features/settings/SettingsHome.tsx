@@ -282,33 +282,9 @@ export function SettingsHome() {
         </SettingsSection>
 
         <SettingsSection title="Overlay">
-          <SwitchRow
-            label="Floating overlay"
-            description="While on: shows overlay on other screens. In background: auto-shows during chat generation and voice."
-            value={overlayEnabled && overlayStatus === 'Granted'}
-            onValueChange={async (v) => {
-              if (v) {
-                let granted = await isOverlayPermissionGranted();
-                if (!granted) {
-                  await promptOverlayPermissionIfNeeded();
-                  granted = await isOverlayPermissionGranted();
-                }
-                if (!granted) {
-                  setOverlayStatus('Not granted');
-                  return;
-                }
-                await setOverlayEnabled(true);
-                await toggleOverlay(true);
-                setOverlayStatus('Granted');
-                return;
-              }
-
-              await setOverlayEnabled(false);
-              await toggleOverlay(false);
-              const ok = await isOverlayPermissionGranted();
-              setOverlayStatus(ok ? 'Granted' : 'Not granted');
-            }}
-          />
+          <Text variant="caption" muted>
+            Overlay permission allows the app to display a floating window on top of other screens and in the background.
+          </Text>
           <Text variant="caption" muted style={{ marginTop: spacing.xs }}>
             Overlay permission: {overlayStatus}
           </Text>

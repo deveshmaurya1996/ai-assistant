@@ -19,7 +19,7 @@
     "db:migrate": "node ../../node_modules/prisma/build/index.js migrate dev",
     "db:migrate:deploy": "node ../../node_modules/prisma/build/index.js migrate deploy",
     "db:seed": "node ../../node_modules/prisma/build/index.js db execute --file prisma/seed-providers.sql --schema prisma/schema.prisma",
-    "studio": "node ../../node_modules/prisma/build/index.js studio --browser none --hostname 127.0.0.1"
+    "studio": "node ../../node_modules/prisma/build/index.js studio --browser none --hostname 127.0.0.1 --port 5566"
   },
   "dependencies": {
     "@ai-assistant/config": "workspace:*",

@@ -1,11 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { BarVisualizer } from '@livekit/react-native';
-import {
-  useLocalParticipant,
-  useSpeakingParticipants,
-  useVoiceAssistant,
-} from '@livekit/components-react';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -16,6 +11,7 @@ import Animated, {
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/tokens';
 import type { VoiceAssistantPhase } from '@/features/voice-assistant/useVoiceAssistantSession';
+import { useVoiceSessionBridge } from '@/features/voice-assistant/voiceSessionBridge';
 
 const VISUALIZER_HEIGHT = 88;
 const SIDE_PADDING = spacing.lg * 2;
@@ -45,9 +41,11 @@ function LiveKitBarVisualizer({
   phase: VoiceAssistantPhase;
 }) {
   const { colors } = useTheme();
-  const { state, audioTrack } = useVoiceAssistant();
-  const speaking = useSpeakingParticipants();
-  const { localParticipant } = useLocalParticipant();
+  const state = useVoiceSessionBridge((s) => s.liveKitState);
+  const audioTrack = useVoiceSessionBridge((s) => s.liveKitAudioTrack);
+  const speaking = useVoiceSessionBridge((s) => s.liveKitSpeaking) ?? [];
+  const localParticipant = useVoiceSessionBridge((s) => s.liveKitLocalParticipant);
+
   const localSid = localParticipant?.sid;
   const userSpeaking = speaking.some((p) => p.sid === localSid);
   const remoteSpeaking = speaking.some((p) => p.sid !== localSid);

@@ -15,7 +15,7 @@ def get_transcription_provider() -> TranscriptionProvider:
         if cached_mode == mode:
             return _provider
 
-    if mode in ("faster-whisper", "streaming", "realtime"):
+    if mode in ("faster-whisper", "streaming", "realtime", "local-streaming"):
         _provider = StreamingTranscriptionProvider()
     else:
         _provider = BatchTranscriptionProvider()

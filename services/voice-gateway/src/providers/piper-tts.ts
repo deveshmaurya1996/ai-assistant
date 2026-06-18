@@ -11,10 +11,14 @@ export function createPiperTtsProvider(): TTSProvider {
     },
     async *synthesizeStream(text: string, opts: TTSOpts): AsyncIterable<AudioFrame> {
       interrupted = false;
-      if (!text.trim()) return;
 
-      for await (const frame of synthesizePcmViaAiRuntime(text, opts.voiceId)) {
-        if (interrupted) break;
+      const trimmed = text.trim();
+      if (!trimmed) return;
+
+      for await (const frame of synthesizePcmViaAiRuntime(trimmed, opts.voiceId, opts.signal)) {
+        if (interrupted || opts.signal?.aborted) {
+          break;
+        }
         yield frame;
       }
     },

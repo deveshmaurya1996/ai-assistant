@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 from .pcm import is_raw_pcm_filename, voice_gateway_pcm_sample_rate
-from .wyoming_stt import transcribe_wyoming_pcm
 from .wyoming_tts import synthesize_wyoming_pcm_chunks
 
 logger = logging.getLogger(__name__)
@@ -18,16 +17,16 @@ DEFAULT_PIPER_VOICE = "en_US-lessac-medium"
 DEFAULT_PCM_SAMPLE_RATE = 24_000
 
 LEGACY_VOICE_ALIASES: dict[str, str] = {
-    "female-professional": DEFAULT_PIPER_VOICE,
-    "female-friendly": DEFAULT_PIPER_VOICE,
-    "male-executive": DEFAULT_PIPER_VOICE,
-    "teacher-calm": DEFAULT_PIPER_VOICE,
-    "friendly-neutral": DEFAULT_PIPER_VOICE,
-    "alloy": DEFAULT_PIPER_VOICE,
-    "nova": DEFAULT_PIPER_VOICE,
-    "onyx": DEFAULT_PIPER_VOICE,
-    "shimmer": DEFAULT_PIPER_VOICE,
-    "fable": DEFAULT_PIPER_VOICE,
+    "female-professional": "en_US-lessac-medium",
+    "female-friendly": "en_US-hannah-medium",
+    "male-executive": "en_US-ryan-medium",
+    "teacher-calm": "en_US-amy-medium",
+    "friendly-neutral": "en_US-danny-low",
+    "alloy": "en_US-lessac-medium",
+    "nova": "en_US-amy-medium",
+    "onyx": "en_US-ryan-medium",
+    "shimmer": "en_US-hannah-medium",
+    "fable": "en_US-danny-low",
 }
 
 
@@ -37,6 +36,11 @@ def _piper_voice(voice: Optional[str]) -> str:
 
 
 def transcribe_audio_bytes(content: bytes, filename: str = "audio.m4a") -> str:
+    import numpy as np
+    import io
+    import wave
+    from .streaming_stt import transcribe_audio_chunk
+
     rate = voice_gateway_pcm_sample_rate()
     width = 2
     channels = 1
@@ -45,18 +49,30 @@ def transcribe_audio_bytes(content: bytes, filename: str = "audio.m4a") -> str:
     if is_raw_pcm_filename(filename):
         pcm = content
     elif Path(filename).suffix.lower() == ".wav":
-        from .wyoming_stt import _pcm_from_wav
-
-        pcm, rate, width, channels = _pcm_from_wav(content)
+        with wave.open(io.BytesIO(content), "rb") as wf:
+            rate = wf.getframerate()
+            width = wf.getsampwidth()
+            channels = wf.getnchannels()
+            pcm = wf.readframes(wf.getnframes())
     else:
-        raise RuntimeError(f"Unsupported audio upload for Wyoming STT: {filename}")
+        raise RuntimeError(f"Unsupported audio upload for local STT: {filename}")
 
-    return transcribe_wyoming_pcm(
-        pcm,
-        sample_rate=rate,
-        width=width,
-        channels=channels,
-    )
+    # Convert PCM to float32 NumPy array
+    if width == 1:
+        audio_int = np.frombuffer(pcm, dtype=np.uint8).astype(np.float32) - 128.0
+        audio_float32 = audio_int / 128.0
+    elif width == 2:
+        audio_float32 = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+    elif width == 4:
+        audio_float32 = np.frombuffer(pcm, dtype=np.int32).astype(np.float32) / 2147483648.0
+    else:
+        raise RuntimeError(f"Unsupported sample width: {width}")
+
+    if channels > 1:
+        audio_float32 = audio_float32.reshape(-1, channels).mean(axis=1)
+
+    language = os.getenv("FASTER_WHISPER_LANGUAGE", "en").strip() or None
+    return transcribe_audio_chunk(audio_float32, language=language)
 
 
 def synthesize_speech_bytes(text: str, voice: Optional[str] = None) -> bytes:

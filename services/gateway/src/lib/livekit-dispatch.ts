@@ -26,7 +26,6 @@ export async function dispatchVoiceAgent(roomName: string): Promise<void> {
       dispatchId: dispatch.id,
     });
   } catch (err) {
-    console.error('[voice] agent dispatch failed', { roomName, err });
-    throw err;
+    console.warn('[voice] agent dispatch failed (continuing anyway)', { roomName, err });
   }
 }

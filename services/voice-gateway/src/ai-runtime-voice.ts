@@ -36,10 +36,12 @@ export async function transcribeViaAiRuntime(
 
 export async function* synthesizePcmViaAiRuntime(
   text: string,
-  voiceId: string
+  voiceId: string,
+  signal?: AbortSignal
 ): AsyncIterable<Buffer> {
   const url = `${intelligenceBaseUrl()}/v1/voice/speak`;
   let res: Response;
+
   try {
     res = await fetch(url, {
       method: 'POST',
@@ -52,8 +54,10 @@ export async function* synthesizePcmViaAiRuntime(
         voice: voiceId,
         format: 'pcm_s16le',
       }),
+      signal,
     });
   } catch (err) {
+    if (signal?.aborted) return;
     const reason = err instanceof Error ? err.message : String(err);
     throw new Error(`AI runtime TTS unreachable at ${url}: ${reason}`);
   }
@@ -64,10 +68,20 @@ export async function* synthesizePcmViaAiRuntime(
   }
 
   const reader = res.body.getReader();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value?.length) yield Buffer.from(value);
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value?.length) {
+        yield Buffer.from(value);
+      }
+    }
+  } finally {
+    try {
+      await reader.cancel();
+    } catch {
+      /* ignore */
+    }
   }
-  await reader.cancel().catch(() => undefined);
 }

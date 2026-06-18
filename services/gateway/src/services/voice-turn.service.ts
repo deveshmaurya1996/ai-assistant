@@ -56,17 +56,24 @@ export async function* streamVoiceTurn(
   const turnId = params.turnId ?? `voice-${Date.now()}`;
   const turnStartedAt = Date.now();
   const speechEndAt = turnStartedAt - (params.sttLatencyMs ?? 0);
+
   let firstSseByteAt: number | undefined;
   let firstTokenAt: number | undefined;
   let accumulated = '';
   let modelUsed: string | undefined;
   let doneTimings: Record<string, number> = {};
+  let completedNormally = false;
 
   const voiceProfile = params.voiceProfileId ? getVoiceProfile(params.voiceProfileId) : undefined;
   const assistantContext = resolveAssistantContext(
     normalizePersonalityId(voiceProfile?.personalityId),
     undefined
   );
+
+  if (params.signal?.aborted) {
+    yield formatSseFrame('error', { message: 'Turn aborted' });
+    return;
+  }
 
   await prisma.message.create({
     data: {
@@ -76,16 +83,19 @@ export async function* streamVoiceTurn(
       metadata: buildUserMessageMetadata(assistantContext, []),
     },
   });
+
   void persistSessionAssistantContext(params.chatSessionId, {
     personalityId: assistantContext.personalityId,
     assistantDisplayName: assistantContext.displayName,
   });
+
   void maybeAutoTitleSession({
     userId: params.userId,
     sessionId: params.chatSessionId,
     userMessage: params.text,
     assistantMessage: '',
   });
+
   yield formatSseFrame('user_message_saved', { text: params.text });
 
   const turnInput = await buildAgentTurnInput({
@@ -141,7 +151,9 @@ export async function* streamVoiceTurn(
 
   if (!orchRes.ok && orchRes.status !== 428) {
     const errText = await orchRes.text();
-    yield formatSseFrame('error', { message: errText || `Orchestrator error (${orchRes.status})` });
+    yield formatSseFrame('error', {
+      message: errText || `Orchestrator error (${orchRes.status})`,
+    });
     return;
   }
 
@@ -154,84 +166,106 @@ export async function* streamVoiceTurn(
   const decoder = new TextDecoder('utf-8');
   let sseBuffer = '';
 
-  while (true) {
-    if (params.signal?.aborted) {
-      await reader.cancel().catch(() => undefined);
-      break;
-    }
-
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    if (firstSseByteAt === undefined) {
-      firstSseByteAt = Date.now();
-    }
-
-    sseBuffer += decoder.decode(value, { stream: true });
-    const { events, rest } = parseSseBuffer(sseBuffer);
-    sseBuffer = rest;
-
-    for (const ev of events) {
-      if (ev.event === 'token') {
-        try {
-          const payload = JSON.parse(ev.data) as { content?: string };
-          if (payload.content) {
-            if (firstTokenAt === undefined) firstTokenAt = Date.now();
-            accumulated += payload.content;
-          }
-        } catch {
-          /* ignore */
-        }
-      } else if (ev.event === 'done') {
-        try {
-          const payload = JSON.parse(ev.data) as {
-            model?: string;
-            timings?: Record<string, number>;
-            trace?: Record<string, unknown>;
-            voice_metadata?: Record<string, unknown>;
-          };
-          if (payload.model) modelUsed = payload.model;
-          if (payload.timings) doneTimings = payload.timings;
-
-          const gatewayLatencyMs = firstSseByteAt ? firstSseByteAt - turnStartedAt : 0;
-          const llmFirstTokenMs = firstTokenAt ? firstTokenAt - turnStartedAt : 0;
-          const analytics = buildVoiceAnalytics({
-            turnId,
-            sttLatencyMs: params.sttLatencyMs ?? 0,
-            gatewayLatencyMs,
-            plannerLatencyMs: doneTimings.plan_tools_ms ?? 0,
-            toolLatencyMs: sumToolLatency(doneTimings),
-            llmFirstTokenMs,
-            ttsFirstByteMs: 0,
-            totalLatencyMs: Date.now() - speechEndAt,
-          });
-
-          console.info('[voice-analytics]', JSON.stringify(analytics));
-
-          if (params.roomId) {
-            await storeVoiceAnalytics(params.roomId, analytics).catch(() => undefined);
-          }
-
-          const augmented = {
-            ...payload,
-            trace: {
-              ...(payload.trace ?? {}),
-              voice_analytics: analytics,
-            },
-            voice_metadata: payload.voice_metadata ?? undefined,
-          };
-          yield formatSseFrame('done', augmented);
-          continue;
-        } catch {
-          /* fall through */
-        }
+  try {
+    while (true) {
+      if (params.signal?.aborted) {
+        await reader.cancel().catch(() => undefined);
+        yield formatSseFrame('error', { message: 'Turn aborted' });
+        return;
       }
-      yield `event: ${ev.event}\ndata: ${ev.data}\n\n`;
+
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      if (firstSseByteAt === undefined) {
+        firstSseByteAt = Date.now();
+      }
+
+      sseBuffer += decoder.decode(value, { stream: true });
+      const { events, rest } = parseSseBuffer(sseBuffer);
+      sseBuffer = rest;
+
+      for (const ev of events) {
+        if (params.signal?.aborted) {
+          await reader.cancel().catch(() => undefined);
+          yield formatSseFrame('error', { message: 'Turn aborted' });
+          return;
+        }
+
+        if (ev.event === 'token') {
+          try {
+            const payload = JSON.parse(ev.data) as { content?: string };
+            if (payload.content) {
+              if (firstTokenAt === undefined) firstTokenAt = Date.now();
+              accumulated += payload.content;
+            }
+          } catch {
+            /* ignore */
+          }
+        } else if (ev.event === 'done') {
+          try {
+            const payload = JSON.parse(ev.data) as {
+              model?: string;
+              timings?: Record<string, number>;
+              trace?: Record<string, unknown>;
+              voice_metadata?: Record<string, unknown>;
+            };
+
+            if (payload.model) modelUsed = payload.model;
+            if (payload.timings) doneTimings = payload.timings;
+
+            const gatewayLatencyMs = firstSseByteAt ? firstSseByteAt - turnStartedAt : 0;
+            const llmFirstTokenMs = firstTokenAt ? firstTokenAt - turnStartedAt : 0;
+
+            const analytics = buildVoiceAnalytics({
+              turnId,
+              sttLatencyMs: params.sttLatencyMs ?? 0,
+              gatewayLatencyMs,
+              plannerLatencyMs: doneTimings.plan_tools_ms ?? 0,
+              toolLatencyMs: sumToolLatency(doneTimings),
+              llmFirstTokenMs,
+              ttsFirstByteMs: 0,
+              totalLatencyMs: Date.now() - speechEndAt,
+            });
+
+            console.info('[voice-analytics]', JSON.stringify(analytics));
+
+            if (params.roomId) {
+              await storeVoiceAnalytics(params.roomId, analytics).catch(() => undefined);
+            }
+
+            const augmented = {
+              ...payload,
+              trace: {
+                ...(payload.trace ?? {}),
+                voice_analytics: analytics,
+              },
+              voice_metadata: payload.voice_metadata ?? undefined,
+            };
+
+            completedNormally = true;
+            yield formatSseFrame('done', augmented);
+            continue;
+          } catch {
+            /* ignore */
+          }
+        }
+
+        yield `event: ${ev.event}\ndata: ${ev.data}\n\n`;
+      }
     }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+
+  if (params.signal?.aborted) {
+    yield formatSseFrame('error', { message: 'Turn aborted' });
+    return;
   }
 
   const trimmed = accumulated.trim();
-  if (trimmed) {
+
+  if (completedNormally && trimmed) {
     await prisma.message.create({
       data: {
         chatSessionId: params.chatSessionId,
@@ -240,29 +274,36 @@ export async function* streamVoiceTurn(
         metadata: buildAssistantMessageMetadata(assistantContext),
       },
     });
+
     await prisma.chatSession.update({
       where: { id: params.chatSessionId },
       data: { updatedAt: new Date() },
     });
+
     void maybeUpdateVoiceSessionSummary({
       sessionId: params.chatSessionId,
       userId: params.userId,
     });
+
     void maybeAutoTitleSession({
       userId: params.userId,
       sessionId: params.chatSessionId,
       userMessage: params.text,
       assistantMessage: trimmed,
     });
+
     yield formatSseFrame('assistant_message_saved', { text: trimmed });
   }
 
-  if (modelUsed && stickyModelId !== modelUsed) {
+  if (completedNormally && modelUsed && stickyModelId !== modelUsed) {
     await persistSessionModelAssignment(
       params.chatSessionId,
       modelUsed,
       turnInput.modelAssignment?.assignedReason ?? 'fast_chat',
-      { isFailover: stickyModelId != null && stickyModelId !== modelUsed, previousModelId: stickyModelId }
+      {
+        isFailover: stickyModelId != null && stickyModelId !== modelUsed,
+        previousModelId: stickyModelId,
+      }
     ).catch(() => undefined);
   }
 }
