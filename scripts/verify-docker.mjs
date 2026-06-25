@@ -104,13 +104,16 @@ function main() {
   );
 
   if (checkDockerDaemon()) {
-    console.log('[verify:docker] optional: running docker build...');
-    execSync('docker build -t ai-assistant-render-test .', {
-      cwd: root,
-      stdio: 'inherit',
-      shell: process.platform === 'win32',
-    });
-    console.log('[verify:docker] docker build OK');
+    console.log('[verify:docker] optional: building production images...');
+    execSync(
+      'docker compose -p ai-assistant --env-file .env.production.example -f infra/docker/compose.production.yml build gateway ai-runtime',
+      {
+        cwd: root,
+        stdio: 'inherit',
+        shell: process.platform === 'win32',
+      },
+    );
+    console.log('[verify:docker] production image build OK');
   } else {
     console.log(
       '[verify:docker] docker daemon not running — skipped full image build (start Docker Desktop for that step)',

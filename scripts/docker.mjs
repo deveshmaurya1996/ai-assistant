@@ -11,6 +11,7 @@ const PROFILES = {
   monitoring: ['-f', 'infra/docker/compose.core.yml', '-f', 'infra/docker/compose.monitoring.yml'],
   full: ['-f', 'infra/docker/compose.dev.yml'],
   voice: ['-f', 'infra/docker/compose.core.yml', '-f', 'infra/docker/compose.voice.yml'],
+  production: ['-f', 'infra/docker/compose.production.yml'],
 };
 
 function run(cmd) {
@@ -26,16 +27,32 @@ const [cmd, profile = 'core'] = process.argv.slice(2);
 if (cmd === 'up') {
   const files = PROFILES[profile];
   if (!files) {
-    console.error(`Unknown profile: ${profile} (use core | monitoring | full | voice)`);
+    console.error(`Unknown profile: ${profile} (use core | monitoring | full | voice | production)`);
     process.exit(1);
   }
-  const envFile = profile === 'core' ? ' --env-file .env' : '';
+  const envFile =
+    profile === 'core'
+      ? ' --env-file .env'
+      : profile === 'production'
+        ? ' --env-file .env.production'
+        : '';
   run(`docker compose -p ${project}${envFile} ${files.join(' ')} up -d`);
 } else if (cmd === 'down') {
-  run(`docker compose -p ${project} -f infra/docker/compose.dev.yml down`);
+  const downProfile = process.argv[3] || 'dev';
+  if (downProfile === 'production') {
+    run(
+      'docker compose -p ai-assistant --env-file .env.production -f infra/docker/compose.production.yml down',
+    );
+  } else {
+    run(`docker compose -p ${project} -f infra/docker/compose.dev.yml down`);
+  }
 } else if (cmd === 'build') {
-  run('docker build -t ai-assistant-platform .');
+  run(
+    'docker compose -p ai-assistant --env-file .env.production -f infra/docker/compose.production.yml build',
+  );
 } else {
-  console.error('Usage: node scripts/docker.mjs up [core|monitoring|full|voice] | down | build');
+  console.error(
+    'Usage: node scripts/docker.mjs up [core|monitoring|full|voice|production] | down [dev|production] | build',
+  );
   process.exit(1);
 }

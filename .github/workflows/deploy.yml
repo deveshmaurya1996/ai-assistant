@@ -1,0 +1,130 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pnpm install --ignore-scripts
+
+      - name: Generate and validate catalog
+        run: pnpm catalog:generate && pnpm catalog:validate
+
+      - name: Build workspace packages and services
+        run: pnpm exec turbo run build --filter=./packages/* --filter=./services/gateway --filter=./services/tool-runtime --filter=./services/capability-runtime
+
+      - name: Python tests (ai-runtime)
+        working-directory: services/ai-runtime
+        run: |
+          python -m pip install -r requirements.txt pytest pytest-asyncio
+          python -m pytest tests -q
+
+  build-and-deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    environment: production
+    env:
+      OCI_REGISTRY: ${{ secrets.OCI_REGION }}.ocir.io
+      IMAGE_TAG: ${{ github.sha }}
+      GATEWAY_IMAGE: ${{ secrets.OCI_REGION }}.ocir.io/${{ secrets.OCI_TENANCY_NAMESPACE }}/ai-assistant-gateway:${{ github.sha }}
+      AI_RUNTIME_IMAGE: ${{ secrets.OCI_REGION }}.ocir.io/${{ secrets.OCI_TENANCY_NAMESPACE }}/ai-assistant-ai-runtime:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check deploy secrets
+        run: |
+          test -n "${{ secrets.OCI_REGION }}" || (echo "Missing OCI_REGION secret" && exit 1)
+          test -n "${{ secrets.OCI_TENANCY_NAMESPACE }}" || (echo "Missing OCI_TENANCY_NAMESPACE secret" && exit 1)
+          test -n "${{ secrets.OCI_USERNAME }}" || (echo "Missing OCI_USERNAME secret" && exit 1)
+          test -n "${{ secrets.OCI_AUTH_TOKEN }}" || (echo "Missing OCI_AUTH_TOKEN secret" && exit 1)
+          test -n "${{ secrets.OCI_VM_HOST }}" || (echo "Missing OCI_VM_HOST secret" && exit 1)
+          test -n "${{ secrets.OCI_VM_SSH_KEY }}" || (echo "Missing OCI_VM_SSH_KEY secret" && exit 1)
+          test -n "${{ secrets.OCI_VM_USER }}" || (echo "Missing OCI_VM_USER secret (usually ubuntu)" && exit 1)
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to OCIR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.OCI_REGISTRY }}
+          username: ${{ secrets.OCI_USERNAME }}
+          password: ${{ secrets.OCI_AUTH_TOKEN }}
+
+      - name: Build and push gateway
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/gateway/Dockerfile
+          push: true
+          tags: |
+            ${{ env.OCI_REGISTRY }}/${{ secrets.OCI_TENANCY_NAMESPACE }}/ai-assistant-gateway:${{ env.IMAGE_TAG }}
+            ${{ env.OCI_REGISTRY }}/${{ secrets.OCI_TENANCY_NAMESPACE }}/ai-assistant-gateway:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push ai-runtime
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/ai-runtime/Dockerfile
+          push: true
+          tags: |
+            ${{ env.OCI_REGISTRY }}/${{ secrets.OCI_TENANCY_NAMESPACE }}/ai-assistant-ai-runtime:${{ env.IMAGE_TAG }}
+            ${{ env.OCI_REGISTRY }}/${{ secrets.OCI_TENANCY_NAMESPACE }}/ai-assistant-ai-runtime:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy to OCI VM
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          GATEWAY_IMAGE: ${{ env.GATEWAY_IMAGE }}
+          AI_RUNTIME_IMAGE: ${{ env.AI_RUNTIME_IMAGE }}
+          DEPLOY_HEALTH_URL: ${{ secrets.DEPLOY_HEALTH_URL }}
+          DEPLOY_BRANCH: ${{ github.ref_name }}
+          OCI_REGISTRY: ${{ env.OCI_REGISTRY }}
+          OCI_USERNAME: ${{ secrets.OCI_USERNAME }}
+          OCI_AUTH_TOKEN: ${{ secrets.OCI_AUTH_TOKEN }}
+        with:
+          host: ${{ secrets.OCI_VM_HOST }}
+          username: ${{ secrets.OCI_VM_USER }}
+          key: ${{ secrets.OCI_VM_SSH_KEY }}
+          envs: GATEWAY_IMAGE,AI_RUNTIME_IMAGE,DEPLOY_HEALTH_URL,DEPLOY_BRANCH,OCI_REGISTRY,OCI_USERNAME,OCI_AUTH_TOKEN
+          script: |
+            set -euo pipefail
+            cd /opt/ai-assistant
+            git fetch origin "${DEPLOY_BRANCH}"
+            git checkout "${DEPLOY_BRANCH}"
+            git reset --hard "origin/${DEPLOY_BRANCH}"
+            chmod +x infra/deploy/deploy.sh
+            export GATEWAY_IMAGE
+            export AI_RUNTIME_IMAGE
+            export DEPLOY_HEALTH_URL
+            export OCI_REGISTRY
+            export OCI_USERNAME
+            export OCI_AUTH_TOKEN
+            export RUN_MIGRATIONS=true
+            ./infra/deploy/deploy.sh

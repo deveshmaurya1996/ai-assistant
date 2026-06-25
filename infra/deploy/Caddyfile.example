@@ -1,0 +1,4 @@
+# Must match API_PUBLIC_URL in .env.production (https://api.aiassistant.dartix.live)
+api.aiassistant.dartix.live {
+    reverse_proxy localhost:10000
+}

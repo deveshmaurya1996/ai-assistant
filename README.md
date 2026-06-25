@@ -181,11 +181,15 @@ See also [docs/architecture.md](docs/architecture.md).
 | File | Contents |
 |------|----------|
 | `infra/docker/compose.core.yml` | postgres, redis, qdrant |
+| `infra/docker/compose.core.internal.yml` | same, no host ports (production) |
+| `infra/docker/compose.production.yml` | internal infra + gateway + ai-runtime |
 | `infra/docker/compose.monitoring.yml` | prometheus, grafana, loki, promtail, otel-collector |
 | `infra/docker/compose.ai.yml` | Langfuse stack |
 | `infra/docker/compose.dev.yml` | includes all layers |
 
 `infra/docker/docker-compose.yml` is a shim that includes `compose.core.yml` only.
+
+Production (OCI / self-hosted): see [infra/deploy/README.md](infra/deploy/README.md) — split **gateway** + **ai-runtime** containers, `compose.production.yml`, GitHub Actions → OCIR → VM deploy.
 
 ## Voice assistant (AI pipeline)
 

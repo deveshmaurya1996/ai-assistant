@@ -1,4 +1,5 @@
 
+
 FROM node:22-bookworm AS pruner
 WORKDIR /app
 RUN corepack enable
@@ -65,7 +66,6 @@ ENV INTELLIGENCE_UPSTREAM_URL=http://127.0.0.1:8000
 ENV PYTHONPATH=/app/services/ai-runtime
 ENV PORT=10000
 
-# Container defaults: keep startup lightweight; optional probes stay disabled unless overridden.
 ENV HEALTH_MONITOR_ENABLED=false
 ENV CAPABILITY_PROBE_ENABLED=false
 ENV WARM_EMBEDDER_ON_STARTUP=false
