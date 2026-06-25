@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 
 const DEFAULT_API_PORT = 3000;
 const DEV_API_HOST = 'localhost';
+const ANDROID_EMULATOR_HOST = '10.0.2.2';
 
 function parsePortFromUrl(
   url: string | null | undefined,
@@ -67,6 +68,9 @@ function readApiUrl(): string {
     if (lan) {
       return `http://${lan}:${port}`;
     }
+    if (Platform.OS === 'android') {
+      return `http://${ANDROID_EMULATOR_HOST}:${port}`;
+    }
   }
 
   return `http://${DEV_API_HOST}:${port}`;
@@ -78,8 +82,13 @@ export function resolveLiveKitUrlForDevice(url: string): string {
   if (!__DEV__ || Platform.OS === 'web') return url;
   if (!/localhost|127\.0\.0\.1/i.test(url)) return url;
   const lan = lanDevHost();
-  if (!lan) return url;
-  return url.replace(/localhost|127\.0\.0\.1/gi, lan);
+  if (lan) {
+    return url.replace(/localhost|127\.0\.0\.1/gi, lan);
+  }
+  if (Platform.OS === 'android') {
+    return url.replace(/localhost|127\.0\.0\.1/gi, ANDROID_EMULATOR_HOST);
+  }
+  return url;
 }
 
 export const AUTH_CALLBACK_URL = 'ai-assistant://auth/callback';

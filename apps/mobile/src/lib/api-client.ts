@@ -1,9 +1,9 @@
 import { AssistantClient, type MobileVersionInfo } from '@ai-assistant/sdk';
 import type { WhatsAppSessionStatus } from '@ai-assistant/types';
-
-export type { MobileVersionInfo };
 import { getAuthCookie, getAuthSessionToken } from '@/lib/auth-cookies';
 import { API_URL } from './config';
+
+export type { MobileVersionInfo };
 
 export type WhatsAppPairingResponse = WhatsAppSessionStatus & {
   connectionId: string;

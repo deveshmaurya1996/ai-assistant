@@ -10,11 +10,11 @@ import {
   reconcileDisplayName,
   type AssistantPersonality,
   type PersonalityGender,
-} from '@ai-assistant/types';
+ ModelInfo } from '@ai-assistant/types';
 import { deleteItemAsync, getItemAsync, setItemAsync } from '@/lib/secure-storage';
 import { reconcileStoredOverlayEnabled } from '@/lib/overlay-settings';
 import { apiClient } from '@/lib/api-client';
-import type { ModelInfo } from '@ai-assistant/types';
+
 import type { ThemeMode } from '@/theme/tokens';
 import { TERMS_VERSION } from '@/content/terms';
 

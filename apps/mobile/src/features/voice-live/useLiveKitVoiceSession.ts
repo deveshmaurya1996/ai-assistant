@@ -43,9 +43,10 @@ export function useLiveKitVoiceSession() {
           personalityId: options?.personalityId,
         });
 
+        const resolvedUrl = resolveLiveKitUrlForDevice(raw.livekitUrl);
         const info = {
           ...raw,
-          livekitUrl: resolveLiveKitUrlForDevice(raw.livekitUrl),
+          livekitUrl: resolvedUrl,
         };
 
         if (!mountedRef.current || seq !== connectSeqRef.current) {

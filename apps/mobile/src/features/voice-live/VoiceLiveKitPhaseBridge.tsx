@@ -117,6 +117,7 @@ export function VoiceLiveKitPhaseBridge({
   }, [connectionState, isActive, onMessagesTick]);
 
   useEffect(() => {
+    const remotes = Array.from(room.remoteParticipants.values());
     if (!isActive) {
       lastPhaseRef.current = null;
       lastTranscriptRef.current = '';
@@ -125,12 +126,19 @@ export function VoiceLiveKitPhaseBridge({
       return;
     }
 
-    const remotes = Array.from(room.remoteParticipants.values());
     const remoteAgent = remotes.find(
       (p) => p.attributes?.[AGENT_STATE_ATTR] || /^agent-/i.test(p.identity ?? '')
     );
 
     const remoteAgentState = remoteAgent?.attributes?.[AGENT_STATE_ATTR];
+    let handled = false;
+    if (remoteAgent && connectionState !== ConnectionState.Connected) {
+      const phase = remoteAgentState ? mapAgentState(remoteAgentState) : 'listening';
+      onPhase(phase!);
+      lastPhaseRef.current = phase!;
+      handled = true;
+    }
+
     const remoteTranscript = remoteAgent?.attributes?.[AGENT_TRANSCRIPT_ATTR] ?? '';
     const remoteUserTranscript = remoteAgent?.attributes?.[USER_TRANSCRIPT_ATTR] ?? '';
     const remoteMessagesTick = remoteAgent?.attributes?.[MESSAGES_TICK_ATTR] ?? '';
@@ -150,6 +158,10 @@ export function VoiceLiveKitPhaseBridge({
       onMessagesTick?.(remoteMessagesTick);
     }
 
+    if (handled) {
+      return;
+    }
+
     if (connectionState !== ConnectionState.Connected) {
       if (lastPhaseRef.current !== 'connecting') {
         lastPhaseRef.current = 'connecting';
@@ -164,7 +176,7 @@ export function VoiceLiveKitPhaseBridge({
 
     if (!resolvedPhase) return;
 
-    if (lastPhaseRef.current !== resolvedPhase) {
+    if (lastPhaseRef.current !== resolvedPhase || resolvedPhase === 'listening') {
       lastPhaseRef.current = resolvedPhase;
       onPhase(resolvedPhase);
     }

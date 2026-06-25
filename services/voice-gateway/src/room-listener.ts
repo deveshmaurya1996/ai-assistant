@@ -181,9 +181,6 @@ const listenToUserAudio = async (track: Track, identity: string) => {
     onSpeechStart: () => {
       if (welcoming) return;
       console.log('[room-listener] VAD: speech started');
-
-      // Soft barge-in: stop assistant audio quickly,
-      // but do not abort the LLM turn yet.
       if (publisher.isPlaying()) {
         publisher.interrupt();
       }

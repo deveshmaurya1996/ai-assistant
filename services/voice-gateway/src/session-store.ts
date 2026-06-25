@@ -18,8 +18,10 @@ export async function loadVoiceSession(roomId: string): Promise<VoiceSessionStat
   const raw = await client().get(`${KEY_PREFIX}${roomId}`);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as VoiceSessionState;
-  } catch {
+    const parsed = JSON.parse(raw) as VoiceSessionState;
+    return parsed;
+  } catch (err) {
+    console.error('[session-store] failed to parse JSON:', err);
     return null;
   }
 }

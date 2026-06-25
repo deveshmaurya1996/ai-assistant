@@ -8,6 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const mobileEnvPath = path.join(__dirname, '..', '.env');
 const DEFAULT_API_PORT = 3000;
 const METRO_PORT = 8081;
+const LIVEKIT_PORT = 7880;
 
 function readApiPortFromEnv() {
   if (!fs.existsSync(mobileEnvPath)) return DEFAULT_API_PORT;
@@ -39,7 +40,7 @@ if (adbCheck.status !== 0) {
   process.exit(0);
 }
 
-const ports = [...new Set([readApiPortFromEnv(), METRO_PORT])];
+const ports = [...new Set([readApiPortFromEnv(), METRO_PORT, LIVEKIT_PORT])];
 for (const port of ports) {
   const spec = `tcp:${port}`;
   console.log(`[adb-reverse] adb reverse ${spec} ${spec}`);

@@ -211,7 +211,6 @@ export async function assistantRoutes(fastify: FastifyInstance) {
       });
 
       await dispatchVoiceAgent(roomName);
-
       const { token, expiresAt } = await mintLiveKitToken({ userId, roomName });
 
       return reply.send({
