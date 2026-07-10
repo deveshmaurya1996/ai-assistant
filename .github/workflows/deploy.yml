@@ -5,20 +5,15 @@ on:
     branches: [main, master]
   workflow_dispatch:
     inputs:
-      build_on_vm:
-        description: Build images on the VM (recommended — skips OCIR)
-        required: false
-        default: true
-        type: boolean
       use_ocir:
-        description: Push to OCIR instead of VM build (requires valid OCIR secrets)
+        description: Build in CI and deploy from OCIR (requires valid OCIR secrets)
         required: false
         default: false
         type: boolean
 
 concurrency:
   group: deploy-production
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   verify:
@@ -56,28 +51,29 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     if: >-
-      (github.event_name == 'push' && vars.USE_OCIR != 'true') ||
-      (github.event_name == 'workflow_dispatch' && inputs.use_ocir != true && inputs.build_on_vm == true) ||
-      vars.DEPLOY_BUILD_ON_VM == 'true'
+      vars.USE_OCIR != 'true' &&
+      (github.event_name == 'push' ||
+       (github.event_name == 'workflow_dispatch' && inputs.use_ocir != true))
     environment: production
     steps:
       - name: Check SSH deploy secrets
         run: |
           test -n "${{ secrets.OCI_VM_HOST }}" || (echo "Missing OCI_VM_HOST secret" && exit 1)
           test -n "${{ secrets.OCI_VM_SSH_KEY }}" || (echo "Missing OCI_VM_SSH_KEY secret" && exit 1)
-          test -n "${{ secrets.OCI_VM_USER }}" || (echo "Missing OCI_VM_USER secret (usually ubuntu)" && exit 1)
+          test -n "${{ secrets.OCI_VM_USER }}" || (echo "Missing OCI_VM_USER secret" && exit 1)
 
-      - name: Deploy on VM (local Docker build, no OCIR)
+      - name: Deploy on VM
         uses: appleboy/ssh-action@v1.2.0
         env:
           DEPLOY_BRANCH: ${{ github.ref_name }}
           DEPLOY_HEALTH_URL: ${{ secrets.DEPLOY_HEALTH_URL }}
+          DEPLOY_STRATEGY: build
         with:
           host: ${{ secrets.OCI_VM_HOST }}
           username: ${{ secrets.OCI_VM_USER }}
           key: ${{ secrets.OCI_VM_SSH_KEY }}
           command_timeout: 180m
-          envs: DEPLOY_BRANCH,DEPLOY_HEALTH_URL
+          envs: DEPLOY_BRANCH,DEPLOY_HEALTH_URL,DEPLOY_STRATEGY
           script: |
             set -euo pipefail
             cd /opt/ai-assistant
@@ -85,13 +81,8 @@ jobs:
             git checkout "${DEPLOY_BRANCH}"
             git reset --hard "origin/${DEPLOY_BRANCH}"
             chmod +x infra/deploy/*.sh
-            export DEPLOY_HEALTH_URL
-            exec 9>/tmp/ai-assistant-deploy.lock
-            if ! flock -n 9; then
-              echo "Another deploy is already running on this VM. Wait for it to finish or remove /tmp/ai-assistant-deploy.lock"
-              exit 1
-            fi
-            ./infra/deploy/bootstrap-vm.sh
+            export DEPLOY_BRANCH DEPLOY_HEALTH_URL DEPLOY_STRATEGY
+            ./infra/deploy/remote-deploy.sh
 
   build-and-deploy:
     needs: verify
@@ -116,14 +107,7 @@ jobs:
           test -n "${{ secrets.OCI_AUTH_TOKEN }}" || (echo "Missing OCI_AUTH_TOKEN secret" && exit 1)
           test -n "${{ secrets.OCI_VM_HOST }}" || (echo "Missing OCI_VM_HOST secret" && exit 1)
           test -n "${{ secrets.OCI_VM_SSH_KEY }}" || (echo "Missing OCI_VM_SSH_KEY secret" && exit 1)
-          test -n "${{ secrets.OCI_VM_USER }}" || (echo "Missing OCI_VM_USER secret (usually ubuntu)" && exit 1)
-          case "${{ secrets.OCI_REGION }}" in
-            *ocir.io*|*://*) echo "OCI_REGION must be the region id only (e.g. ap-mumbai-1), not a URL" && exit 1 ;;
-          esac
-          case "${{ secrets.OCI_USERNAME }}" in
-            */*) echo "OCI_USERNAME format looks OK (contains /)" ;;
-            *) echo "OCI_USERNAME should be <namespace>/oracleidentitycloudservice/<email> — see infra/deploy/README.md" && exit 1 ;;
-          esac
+          test -n "${{ secrets.OCI_VM_USER }}" || (echo "Missing OCI_VM_USER secret" && exit 1)
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -134,16 +118,6 @@ jobs:
           registry: ${{ env.OCI_REGISTRY }}
           username: ${{ secrets.OCI_USERNAME }}
           password: ${{ secrets.OCI_AUTH_TOKEN }}
-
-      - name: OCIR login troubleshooting
-        if: failure()
-        run: |
-          echo "::error::OCIR login failed (Unauthorized). Secrets exist but values are wrong or expired."
-          echo "VM region from your instance: ap-mumbai-1 — OCI_REGION must be exactly ap-mumbai-1"
-          echo "OCI_USERNAME must be: <namespace>/oracleidentitycloudservice/<your-oci-email>"
-          echo "OCI_AUTH_TOKEN must be an Auth Token from OCI Console (Profile → Auth Tokens), NOT your login password"
-          echo "Regenerate the token, update GitHub secrets, or run Deploy with 'Build images on the VM' checked"
-          echo "Local test: infra/deploy/verify-ocir-login.sh"
 
       - name: Build and push gateway
         uses: docker/build-push-action@v6
@@ -176,6 +150,7 @@ jobs:
           AI_RUNTIME_IMAGE: ${{ env.AI_RUNTIME_IMAGE }}
           DEPLOY_HEALTH_URL: ${{ secrets.DEPLOY_HEALTH_URL }}
           DEPLOY_BRANCH: ${{ github.ref_name }}
+          DEPLOY_STRATEGY: pull
           OCI_REGISTRY: ${{ env.OCI_REGISTRY }}
           OCI_USERNAME: ${{ secrets.OCI_USERNAME }}
           OCI_AUTH_TOKEN: ${{ secrets.OCI_AUTH_TOKEN }}
@@ -184,19 +159,14 @@ jobs:
           username: ${{ secrets.OCI_VM_USER }}
           key: ${{ secrets.OCI_VM_SSH_KEY }}
           command_timeout: 30m
-          envs: GATEWAY_IMAGE,AI_RUNTIME_IMAGE,DEPLOY_HEALTH_URL,DEPLOY_BRANCH,OCI_REGISTRY,OCI_USERNAME,OCI_AUTH_TOKEN
+          envs: GATEWAY_IMAGE,AI_RUNTIME_IMAGE,DEPLOY_HEALTH_URL,DEPLOY_BRANCH,DEPLOY_STRATEGY,OCI_REGISTRY,OCI_USERNAME,OCI_AUTH_TOKEN
           script: |
             set -euo pipefail
             cd /opt/ai-assistant
             git fetch origin "${DEPLOY_BRANCH}"
             git checkout "${DEPLOY_BRANCH}"
             git reset --hard "origin/${DEPLOY_BRANCH}"
-            chmod +x infra/deploy/deploy.sh
-            export GATEWAY_IMAGE
-            export AI_RUNTIME_IMAGE
-            export DEPLOY_HEALTH_URL
-            export OCI_REGISTRY
-            export OCI_USERNAME
-            export OCI_AUTH_TOKEN
-            export RUN_MIGRATIONS=true
-            ./infra/deploy/deploy.sh
+            chmod +x infra/deploy/*.sh
+            export GATEWAY_IMAGE AI_RUNTIME_IMAGE DEPLOY_HEALTH_URL DEPLOY_BRANCH DEPLOY_STRATEGY
+            export OCI_REGISTRY OCI_USERNAME OCI_AUTH_TOKEN
+            ./infra/deploy/remote-deploy.sh
