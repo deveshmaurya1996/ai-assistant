@@ -6,7 +6,12 @@ on:
   workflow_dispatch:
     inputs:
       build_on_vm:
-        description: Build images on the VM (skip OCIR push — use when OCIR login fails)
+        description: Build images on the VM (recommended — skips OCIR)
+        required: false
+        default: true
+        type: boolean
+      use_ocir:
+        description: Push to OCIR instead of VM build (requires valid OCIR secrets)
         required: false
         default: false
         type: boolean
@@ -51,8 +56,9 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     if: >-
-      inputs.build_on_vm == true ||
-      (github.event_name == 'push' && vars.DEPLOY_BUILD_ON_VM == 'true')
+      (github.event_name == 'push' && vars.USE_OCIR != 'true') ||
+      (github.event_name == 'workflow_dispatch' && inputs.use_ocir != true && inputs.build_on_vm == true) ||
+      vars.DEPLOY_BUILD_ON_VM == 'true'
     environment: production
     steps:
       - name: Check SSH deploy secrets
@@ -86,9 +92,8 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     if: >-
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
-      inputs.build_on_vm != true &&
-      vars.DEPLOY_BUILD_ON_VM != 'true'
+      vars.USE_OCIR == 'true' ||
+      (github.event_name == 'workflow_dispatch' && inputs.use_ocir == true)
     environment: production
     env:
       OCI_REGISTRY: ${{ secrets.OCI_REGION }}.ocir.io
