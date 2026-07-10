@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Set
 
 IntegrationAction = Literal[
@@ -14,7 +16,7 @@ IntegrationAction = Literal[
     "info_only",
 ]
 
-SUPPORTED_PROVIDERS: Dict[str, Dict[str, object]] = {
+_DEFAULT_SUPPORTED_PROVIDERS: Dict[str, Dict[str, object]] = {
     "google": {
         "display": "Google Workspace (Gmail, Calendar, Drive)",
         "aliases": (
@@ -30,12 +32,46 @@ SUPPORTED_PROVIDERS: Dict[str, Dict[str, object]] = {
             "google workspace",
             "google drive",
         ),
+        "connectActionLabel": "Connect Google",
+        "offlineActionLabel": "Reconnect Google",
     },
     "whatsapp": {
         "display": "WhatsApp",
         "aliases": ("whatsapp", "wa ", " wa", "whats app"),
+        "connectActionLabel": "Connect WhatsApp",
+        "offlineActionLabel": "Reconnect WhatsApp",
     },
 }
+
+_ALIASES_PATH = (
+    Path(__file__).resolve().parent / "generated" / "integration_intent_aliases.json"
+)
+
+
+def _load_supported_providers() -> Dict[str, Dict[str, object]]:
+    try:
+        raw = json.loads(_ALIASES_PATH.read_text(encoding="utf-8"))
+        providers = raw.get("providers")
+        if isinstance(providers, dict) and providers:
+            out: Dict[str, Dict[str, object]] = {}
+            for provider_id, meta in providers.items():
+                if not isinstance(meta, dict):
+                    continue
+                aliases = meta.get("aliases") or ()
+                out[str(provider_id)] = {
+                    "display": meta.get("display", provider_id),
+                    "aliases": tuple(str(a) for a in aliases),
+                    "connectActionLabel": meta.get("connectActionLabel"),
+                    "offlineActionLabel": meta.get("offlineActionLabel"),
+                }
+            if out:
+                return out
+    except Exception:
+        pass
+    return dict(_DEFAULT_SUPPORTED_PROVIDERS)
+
+
+SUPPORTED_PROVIDERS: Dict[str, Dict[str, object]] = _load_supported_providers()
 
 UNSUPPORTED_APPS: Dict[str, str] = {
     "slack": "Slack",
@@ -96,6 +132,7 @@ class IntegrationIntent:
     providers: List[str] = field(default_factory=list)
     unsupported_apps: List[str] = field(default_factory=list)
     user_guidance: str = ""
+    integration_actions: List[Dict[str, str]] = field(default_factory=list)
 
 
 def is_connected_apps_query(query: str) -> bool:
@@ -155,6 +192,45 @@ def _provider_state(
         if row.get("providerId") == provider_id:
             return str(row.get("state", "not_connected"))
     return "not_connected"
+
+
+def _provider_display_name(provider_id: str) -> str:
+    return str(SUPPORTED_PROVIDERS.get(provider_id, {}).get("display", provider_id))
+
+
+def _provider_short_name(provider_id: str) -> str:
+    display = _provider_display_name(provider_id)
+    return display.split("(")[0].strip() or provider_id
+
+
+def build_integration_actions(
+    provider_ids: List[str],
+    action: Literal["connect", "reconnect"],
+) -> List[Dict[str, str]]:
+    actions: List[Dict[str, str]] = []
+    for provider_id in provider_ids:
+        meta = SUPPORTED_PROVIDERS.get(provider_id, {})
+        display = _provider_display_name(provider_id)
+        short = _provider_short_name(provider_id)
+        catalog_label = (
+            meta.get("offlineActionLabel")
+            if action == "reconnect"
+            else meta.get("connectActionLabel")
+        )
+        label = (
+            str(catalog_label).strip()
+            if catalog_label
+            else f"{'Reconnect' if action == 'reconnect' else 'Connect'} {short}"
+        )
+        actions.append(
+            {
+                "providerId": provider_id,
+                "action": action,
+                "label": label,
+                "displayName": display,
+            }
+        )
+    return actions
 
 
 def _unsupported_guidance(apps: List[str]) -> str:
@@ -225,6 +301,7 @@ def resolve_integration_intent(
             action="connect_prompt",
             providers=not_connected,
             user_guidance=guidance,
+            integration_actions=build_integration_actions(not_connected, "connect"),
         )
 
     if offline and not ready:
@@ -233,6 +310,7 @@ def resolve_integration_intent(
             action="offline_prompt",
             providers=offline,
             user_guidance=guidance,
+            integration_actions=build_integration_actions(offline, "reconnect"),
         )
 
     if offline and ready:

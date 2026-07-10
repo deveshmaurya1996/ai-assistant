@@ -335,7 +335,8 @@ export function ChatSocketProvider({
         clearTurnTimeout(sid);
         const hasContent = Boolean(data.message.content?.trim());
         const hasAttachments = Boolean(data.message.attachments?.length);
-        if (!hasContent && !hasAttachments) {
+        const hasIntegrationActions = Boolean(data.message.integrationActions?.length);
+        if (!hasContent && !hasAttachments && !hasIntegrationActions) {
           abortTurn(sid);
           notifySessionEvent(sid, (l) =>
             l.onError?.('The assistant returned an empty response. Please try again.')

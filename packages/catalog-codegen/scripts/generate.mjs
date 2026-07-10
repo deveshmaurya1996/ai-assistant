@@ -133,6 +133,49 @@ ${enabledProviders
 `
 );
 
+const intentProviders = enabledProviders.filter((p) => p.id !== 'platform' && p.intentAliases?.length);
+const intentAliasesPayload = {
+  providers: Object.fromEntries(
+    intentProviders.map((p) => [
+      p.id,
+      {
+        display: p.displayName ?? p.name,
+        aliases: p.intentAliases ?? [],
+        connectActionLabel: p.connectActionLabel ?? `Connect ${p.name}`,
+        offlineActionLabel: p.offlineActionLabel ?? `Reconnect ${p.name}`,
+      },
+    ])
+  ),
+};
+writeGenerated(
+  'services/ai-runtime/orchestration/generated/integration_intent_aliases.json',
+  `${JSON.stringify(intentAliasesPayload, null, 2)}\n`
+);
+
+const mobileProviders = enabledProviders.filter((p) => p.id !== 'platform' && p.authType !== 'internal');
+writeGenerated(
+  'apps/mobile/src/generated/integration-providers.ts',
+  `${header}
+export type CatalogIntegrationProvider = {
+  id: string;
+  name: string;
+  description: string;
+  authType: string;
+};
+
+export const CATALOG_INTEGRATION_PROVIDERS: CatalogIntegrationProvider[] = ${JSON.stringify(
+    mobileProviders.map((p) => ({
+      id: p.id,
+      name: p.name,
+      description: p.mobileDescription ?? p.displayName ?? p.name,
+      authType: p.authType,
+    })),
+    null,
+    2
+  )};
+`
+);
+
 // --- tool-meta.ts ---
 writeGenerated(
   'packages/tool-schema/src/generated/tool-meta.ts',

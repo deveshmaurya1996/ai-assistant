@@ -1,4 +1,4 @@
-import { resolveBridgeSessionForUser } from '../../whatsapp/session-resolve';
+import { resolveBridgeSessionReadOnly } from '../../whatsapp/session-resolve';
 import { sessionManager } from '../../whatsapp/session-manager';
 import type { ConnectionHealthAdapter, ConnectionHealthResult, HealthContext } from '../types';
 import { registerHealthAdapter } from '../health-registry';
@@ -6,7 +6,7 @@ import { registerHealthAdapter } from '../health-registry';
 const whatsappHealthAdapter: ConnectionHealthAdapter = {
   providerId: 'whatsapp',
   async assess(ctx: HealthContext): Promise<ConnectionHealthResult> {
-    const resolved = await resolveBridgeSessionForUser(ctx.userId, ctx.connection.id);
+    const resolved = await resolveBridgeSessionReadOnly(ctx.userId, ctx.connection.id);
     if (!resolved) {
       return {
         healthy: false,

@@ -66,8 +66,11 @@ def _augment_done_frames(
     trace_summary: Optional[Dict[str, Any]],
     timings: Dict[str, float],
     voice_metadata: Optional[Dict[str, Any]] = None,
+    integration_actions: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
-    if not trace_summary or "event: done" not in text:
+    if not trace_summary and not integration_actions:
+        return text
+    if "event: done" not in text:
         return text
     parts = text.split("\n\n")
     out: List[str] = []
@@ -83,10 +86,16 @@ def _augment_done_frames(
                     payload = json.loads(data_line[6:])
                 except json.JSONDecodeError:
                     payload = {}
-            payload["trace"] = trace_summary
-            payload["timings"] = {k: round(v, 1) if isinstance(v, (int, float)) and not isinstance(v, bool) else v for k, v in timings.items()}
+            if trace_summary:
+                payload["trace"] = trace_summary
+            payload["timings"] = {
+                k: round(v, 1) if isinstance(v, (int, float)) and not isinstance(v, bool) else v
+                for k, v in timings.items()
+            }
             if voice_metadata:
                 payload["voice_metadata"] = voice_metadata
+            if integration_actions:
+                payload["integrationActions"] = integration_actions
             out.append(f"event: done\ndata: {json.dumps(payload, ensure_ascii=False)}")
         else:
             out.append(part)
@@ -104,6 +113,7 @@ async def passthrough_chat_stream(
     memory_budget_ms: float,
     trace_summary: Optional[Dict[str, Any]] = None,
     voice_metadata: Optional[Dict[str, Any]] = None,
+    integration_actions: Optional[List[Dict[str, Any]]] = None,
 ) -> AsyncIterator[str | bytes]:
     from orchestration.turn_router import memory_prestream_budget_ms
 
@@ -150,21 +160,25 @@ async def passthrough_chat_stream(
                     timings.get("rag_ms", 0),
                 )
                 first_byte = False
-            if trace_summary:
+            if trace_summary or integration_actions:
                 chunk_str = chunk.decode("utf-8", errors="replace") if isinstance(chunk, bytes) else chunk
                 sse_buffer += chunk_str
                 while "\n\n" in sse_buffer:
                     block, sse_buffer = sse_buffer.split("\n\n", 1)
                     augmented = _augment_done_frames(
-                        block, trace_summary, timings, voice_metadata
+                        block,
+                        trace_summary,
+                        timings,
+                        voice_metadata,
+                        integration_actions,
                     ).rstrip("\n")
                     if augmented:
                         yield augmented + "\n\n"
                 continue
             yield chunk
-        if trace_summary and sse_buffer.strip():
+        if (trace_summary or integration_actions) and sse_buffer.strip():
             augmented = _augment_done_frames(
-                sse_buffer, trace_summary, timings, voice_metadata
+                sse_buffer, trace_summary, timings, voice_metadata, integration_actions
             )
             if augmented.strip():
                 yield augmented if augmented.endswith("\n\n") else augmented + "\n\n"

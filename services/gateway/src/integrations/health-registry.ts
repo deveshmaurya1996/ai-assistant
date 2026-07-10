@@ -9,7 +9,7 @@ export function registerHealthAdapter(adapter: ConnectionHealthAdapter): void {
 export async function assessProviderHealth(ctx: HealthContext): Promise<ConnectionHealthResult> {
   const adapter = adapters.get(ctx.connection.providerId);
   if (!adapter) {
-    return { healthy: true };
+    return { healthy: false, error: 'No health adapter registered' };
   }
   return adapter.assess(ctx);
 }

@@ -242,16 +242,19 @@ export async function integrationRoutes(fastify: FastifyInstance) {
               });
             }
             if (resumed.status === 'active') {
-              await markConnectionActive({
-                userId,
-                connectionId: existing.id,
-                providerId: 'whatsapp',
-              });
-              return reply.send({
-                connectionId: existing.id,
-                type: 'qr',
-                state: 'ready',
-              });
+              const live = await sessionManager.verifyLiveSession(oldBridge);
+              if (live) {
+                await markConnectionActive({
+                  userId,
+                  connectionId: existing.id,
+                  providerId: 'whatsapp',
+                });
+                return reply.send({
+                  connectionId: existing.id,
+                  type: 'qr',
+                  state: 'ready',
+                });
+              }
             }
           } catch {
             if (oldBridge) {
@@ -261,37 +264,40 @@ export async function integrationRoutes(fastify: FastifyInstance) {
         } else {
           const restoredBridge = await findLatestActiveBridgeSession(userId);
           if (restoredBridge) {
-            const state = randomBytes(16).toString('hex');
-            const metadata: Record<string, unknown> = {
-              state,
-              challengeType: 'qr',
-              bridgeSessionId: restoredBridge,
-            };
-            const connection = await prisma.userConnection.upsert({
-              where: { id: connectionId },
-              create: {
-                id: connectionId,
+            const live = await sessionManager.verifyLiveSession(restoredBridge);
+            if (live) {
+              const state = randomBytes(16).toString('hex');
+              const metadata: Record<string, unknown> = {
+                state,
+                challengeType: 'qr',
+                bridgeSessionId: restoredBridge,
+              };
+              const connection = await prisma.userConnection.upsert({
+                where: { id: connectionId },
+                create: {
+                  id: connectionId,
+                  userId,
+                  providerId: provider,
+                  status: 'ACTIVE',
+                  scopes: [],
+                  metadata: metadata as Prisma.InputJsonValue,
+                },
+                update: {
+                  status: 'ACTIVE',
+                  metadata: metadata as Prisma.InputJsonValue,
+                },
+              });
+              await markConnectionActive({
                 userId,
-                providerId: provider,
-                status: 'ACTIVE',
-                scopes: [],
-                metadata: metadata as Prisma.InputJsonValue,
-              },
-              update: {
-                status: 'ACTIVE',
-                metadata: metadata as Prisma.InputJsonValue,
-              },
-            });
-            await markConnectionActive({
-              userId,
-              connectionId: connection.id,
-              providerId: 'whatsapp',
-            });
-            return reply.send({
-              connectionId: connection.id,
-              type: 'qr',
-              state: 'ready',
-            });
+                connectionId: connection.id,
+                providerId: 'whatsapp',
+              });
+              return reply.send({
+                connectionId: connection.id,
+                type: 'qr',
+                state: 'ready',
+              });
+            }
           }
 
           if (oldBridge) {

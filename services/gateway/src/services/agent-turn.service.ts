@@ -1,4 +1,4 @@
-import type { ChatAttachmentRef, ResolvedAttachment } from '@ai-assistant/types';
+import type { ChatAttachmentRef, IntegrationAction, ResolvedAttachment } from '@ai-assistant/types';
 import { aiClient } from '../lib/ai-client';
 import {
   parseSseBuffer,
@@ -51,6 +51,7 @@ export type AgentTurnResult = {
   modelUsed?: string;
   modelLabel?: string;
   generatedAttachments?: ChatAttachmentRef[];
+  integrationActions?: IntegrationAction[];
   confirmPayload?: ActionConfirmPayload;
   inlineConfirm?: boolean;
   modalConfirm?: boolean;
@@ -61,6 +62,7 @@ type DonePayload = {
   label?: string | null;
   trace?: Record<string, unknown>;
   timings?: Record<string, number>;
+  integrationActions?: IntegrationAction[];
 };
 
 type ImageSsePayload = {
@@ -120,6 +122,7 @@ export async function runAgentTurn(
   let accumulated = '';
   let modelUsed: string | undefined;
   let modelLabel: string | undefined;
+  let integrationActions: IntegrationAction[] | undefined;
   const generatedAttachments: ChatAttachmentRef[] = [];
   const turnStartedAt = Date.now();
   let firstTokenMs: number | undefined;
@@ -257,6 +260,9 @@ export async function runAgentTurn(
         if (payload.trace) {
           console.info('[agent-turn] trace', JSON.stringify(payload.trace));
         }
+        if (payload.integrationActions?.length) {
+          integrationActions = payload.integrationActions;
+        }
         if (payload.model) {
           modelUsed = payload.model;
           modelLabel = payload.label ?? modelLabelFromId(payload.model);
@@ -306,6 +312,7 @@ export async function runAgentTurn(
     modelLabel: modelLabel ?? (modelUsed ? modelLabelFromId(modelUsed) : undefined),
     generatedAttachments:
       generatedAttachments.length > 0 ? generatedAttachments : undefined,
+    integrationActions,
   };
 
   logAttachmentTurnSummary(input, {

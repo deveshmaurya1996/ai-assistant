@@ -365,6 +365,11 @@ export class SessionManager {
     }
   }
 
+  async verifyLiveSession(sessionId: string): Promise<boolean> {
+    const bootstrapped = await this.bootstrapActiveSession(sessionId);
+    return bootstrapped && this.getConnectionPhase(sessionId) === 'open';
+  }
+
   private async hasRegisteredCredentials(sessionId: string): Promise<boolean> {
     const authDir = authDirFor(sessionId);
     try {
@@ -864,7 +869,7 @@ export class SessionManager {
         const syncedThreads = await countSyncedThreads(sessionId);
         if (syncedThreads === 0) {
           throw new Error(
-            'WhatsApp is linked but chats have not synced yet. Keep your phone online, open WhatsApp, wait a few seconds, and try again.'
+            '[SYNCING] WhatsApp is linked but chats have not synced yet. Keep your phone online, open WhatsApp, wait a few seconds, and try again.'
           );
         }
       }

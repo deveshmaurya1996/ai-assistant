@@ -35,20 +35,34 @@ export async function registerToolRuntimeRoutes(app: FastifyInstance): Promise<v
   app.get('/health', async () => ({ status: 'ok', service: 'tool-runtime' }));
 
   app.get('/v1/tools/available', async (request) => {
-    const userId = (request.query as { userId?: string }).userId;
+    const query = request.query as { userId?: string; healthyProviderIds?: string };
+    const userId = query.userId;
     if (!userId) {
       return { tools: listAllToolsOpenAi(), connections: [] };
     }
+
+    const healthyFilter = query.healthyProviderIds
+      ? new Set(
+          query.healthyProviderIds
+            .split(',')
+            .map((id) => id.trim())
+            .filter(Boolean)
+        )
+      : null;
 
     const connections = await prisma.userConnection.findMany({
       where: { userId, status: 'ACTIVE' },
     });
 
-    const providerIds = connections.map((c) => c.providerId);
+    const filteredConnections = healthyFilter
+      ? connections.filter((c) => healthyFilter.has(c.providerId))
+      : connections;
+
+    const providerIds = filteredConnections.map((c) => c.providerId);
 
     return {
       tools: listToolsForUserOpenAi(providerIds),
-      connections: connections.map((c) => ({
+      connections: filteredConnections.map((c) => ({
         id: c.id,
         providerId: c.providerId,
         metadata: c.metadata,

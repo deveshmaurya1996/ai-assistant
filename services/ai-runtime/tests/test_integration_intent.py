@@ -28,6 +28,9 @@ def test_resolve_connect_prompt_when_not_connected():
     )
     assert intent.action == "connect_prompt"
     assert "Connect Apps" in intent.user_guidance
+    assert len(intent.integration_actions) == 1
+    assert intent.integration_actions[0]["providerId"] == "google"
+    assert intent.integration_actions[0]["action"] == "connect"
 
 
 def test_resolve_offline_prompt():
@@ -37,6 +40,8 @@ def test_resolve_offline_prompt():
     )
     assert intent.action == "offline_prompt"
     assert "offline" in intent.user_guidance.lower()
+    assert intent.integration_actions[0]["action"] == "reconnect"
+    assert intent.integration_actions[0]["providerId"] == "whatsapp"
 
 
 def test_resolve_execute_when_ready():

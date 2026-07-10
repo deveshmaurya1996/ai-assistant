@@ -81,6 +81,48 @@ def _classify_integration_error(error: str) -> str:
     return f"Could not complete the request: {error}"
 
 
+def extract_integration_actions_from_tool_results(
+    tool_results: List[Dict[str, Any]],
+) -> List[Dict[str, str]]:
+    from orchestration.integration_intent import build_integration_actions
+
+    seen: set[str] = set()
+    actions: List[Dict[str, str]] = []
+
+    for entry in tool_results:
+        if entry.get("requiresConfirmation"):
+            continue
+        tool = str(entry.get("tool") or "")
+        provider_id = tool.split(".")[0] if "." in tool else ""
+        if not provider_id or provider_id in seen:
+            continue
+        error = str(entry.get("error") or "")
+        if not error:
+            continue
+        lower = error.lower()
+        if "[not_connected]" in lower or any(
+            phrase in lower
+            for phrase in (
+                "not connected",
+                "session not active",
+                "link whatsapp",
+                "connect apps",
+                "no active",
+                "sign-in expired",
+                "could not be restored",
+            )
+        ):
+            seen.add(provider_id)
+            actions.extend(build_integration_actions([provider_id], "connect"))
+        elif "[offline]" in lower or any(
+            phrase in lower for phrase in ("offline", "reconnect", "still connecting")
+        ):
+            seen.add(provider_id)
+            actions.extend(build_integration_actions([provider_id], "reconnect"))
+
+    return actions
+
+
 def format_scheduling_clarification(warnings: List[str]) -> str:
     question = next(
         (

@@ -57,5 +57,8 @@ export {
 export type { VoiceMode, VoiceModeResponse } from './voice-providers';
 export type * from './tool';
 export type * from './integration';
-export { WHATSAPP_PAIRING_CODE_TTL_MS } from './integration';
+export {
+  WHATSAPP_PAIRING_CODE_TTL_MS,
+} from './integration';
+export type { IntegrationAction, IntegrationActionKind } from './integration';
 export type * from './note';

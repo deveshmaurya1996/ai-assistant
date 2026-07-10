@@ -163,6 +163,8 @@ async def test_plan_tools_disconnected_gmail_blocks_tools():
     assert result["planner"] == "integration-blocked"
     assert result["tools"] == []
     assert "Connect Apps" in result.get("user_guidance", "")
+    actions = result.get("integration_actions") or []
+    assert actions and actions[0]["providerId"] == "google"
 
 
 @pytest.mark.asyncio

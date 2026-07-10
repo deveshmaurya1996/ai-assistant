@@ -1,4 +1,4 @@
-import { resolveAssistantContext, normalizePersonalityId, type ChatAttachmentRef } from '@ai-assistant/types';
+import { resolveAssistantContext, normalizePersonalityId, type ChatAttachmentRef, type IntegrationAction } from '@ai-assistant/types';
 import { prisma, Prisma, Role, type ChatSessionKind as PrismaChatSessionKind } from '@ai-assistant/database';
 import { toChatAttachmentRef, uploadUserFile } from './file.service';
 import { updateSessionFileContext } from './file-registry.service';
@@ -258,9 +258,33 @@ function personalityFieldsFromMetadata(metadata: unknown): {
   return { personalityId, assistantDisplayName };
 }
 
+function integrationActionsFromMetadata(metadata: unknown): IntegrationAction[] | undefined {
+  if (!metadata || typeof metadata !== 'object') return undefined;
+  const raw = (metadata as { integrationActions?: unknown }).integrationActions;
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  const actions: IntegrationAction[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const providerId = typeof row.providerId === 'string' ? row.providerId : '';
+    const action = row.action === 'reconnect' ? 'reconnect' : row.action === 'connect' ? 'connect' : null;
+    const label = typeof row.label === 'string' ? row.label : '';
+    const displayName = typeof row.displayName === 'string' ? row.displayName : '';
+    if (!providerId || !action || !label) continue;
+    actions.push({
+      providerId,
+      action,
+      label,
+      displayName: displayName || label,
+    });
+  }
+  return actions.length > 0 ? actions : undefined;
+}
+
 export function buildAssistantMessageMetadata(
   assistantContext: { personalityId: string; displayName: string },
-  attachments?: ChatAttachmentRef[]
+  attachments?: ChatAttachmentRef[],
+  integrationActions?: IntegrationAction[]
 ): Prisma.InputJsonValue {
   const meta: Record<string, unknown> = {
     personalityId: assistantContext.personalityId,
@@ -268,6 +292,9 @@ export function buildAssistantMessageMetadata(
   };
   if (attachments?.length) {
     meta.attachments = attachments;
+  }
+  if (integrationActions?.length) {
+    meta.integrationActions = integrationActions;
   }
   return meta as Prisma.InputJsonValue;
 }
@@ -332,6 +359,7 @@ export function mapApiMessage(message: {
     role: message.role,
     content: message.content,
     attachments: attachmentsFromMetadata(message.metadata ?? null),
+    integrationActions: integrationActionsFromMetadata(message.metadata ?? null),
     ...personality,
   };
 }
@@ -827,7 +855,11 @@ export async function processChatMessage(params: {
       chatSessionId: sessionId,
       role: 'ASSISTANT',
       content: accumulated,
-      metadata: buildAssistantMessageMetadata(assistantContext, assistantAttachments),
+      metadata: buildAssistantMessageMetadata(
+        assistantContext,
+        assistantAttachments,
+        turn.integrationActions
+      ),
     },
   });
 

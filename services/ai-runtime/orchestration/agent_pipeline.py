@@ -37,6 +37,17 @@ MEMORY_STATUS_MESSAGE = os.getenv(
 )
 
 
+def _resolve_integration_actions(state: PipelineState) -> List[Dict[str, Any]]:
+    actions: List[Dict[str, Any]] = list(state.plan.get("integration_actions") or [])
+    if state.tool_results:
+        from orchestration.tool_results import extract_integration_actions_from_tool_results
+
+        for action in extract_integration_actions_from_tool_results(state.tool_results):
+            if not any(a.get("providerId") == action.get("providerId") for a in actions):
+                actions.append(action)
+    return actions
+
+
 @dataclass
 class PipelineState:
     payload: Any
@@ -468,10 +479,14 @@ async def _stage_full_stream(state: PipelineState) -> AsyncIterator[str | bytes]
             state.turn_trace.timings = dict(state.timings)
             record_turn_trace(state.turn_trace)
             yield sse_frame("token", {"content": GROUNDING_REFUSAL_MESSAGE})
-            yield sse_frame(
-                "done",
-                {"trace": state.turn_trace.to_sse_dict(), "timings": state.timings},
-            )
+            done_payload: Dict[str, Any] = {
+                "trace": state.turn_trace.to_sse_dict(),
+                "timings": state.timings,
+            }
+            refusal_actions = _resolve_integration_actions(state)
+            if refusal_actions:
+                done_payload["integrationActions"] = refusal_actions
+            yield sse_frame("done", done_payload)
         return
 
     stream_query = payload.query + tool_context
@@ -526,6 +541,7 @@ async def _stage_full_stream(state: PipelineState) -> AsyncIterator[str | bytes]
 
     trace_summary = None
     voice_metadata = None
+    integration_actions = _resolve_integration_actions(state)
     if getattr(payload, "source", None) == "voice":
         voice_metadata = {
             "stt_provider": "faster-whisper",
@@ -557,6 +573,7 @@ async def _stage_full_stream(state: PipelineState) -> AsyncIterator[str | bytes]
             memory_budget_ms=memory_prestream_budget_ms(),
             trace_summary=trace_summary,
             voice_metadata=voice_metadata,
+            integration_actions=integration_actions or None,
         ):
             yield chunk
     state.timings["stream_total_ms"] = (time.perf_counter() - t_stream) * 1000

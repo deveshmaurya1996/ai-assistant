@@ -23,6 +23,15 @@ export interface IntegrationProvider {
   isEnabled: boolean;
 }
 
+export type IntegrationActionKind = 'connect' | 'reconnect';
+
+export interface IntegrationAction {
+  providerId: string;
+  action: IntegrationActionKind;
+  label: string;
+  displayName: string;
+}
+
 export interface UserConnection {
   id: string;
   providerId: string;

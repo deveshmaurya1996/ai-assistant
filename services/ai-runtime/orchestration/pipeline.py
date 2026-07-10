@@ -60,12 +60,6 @@ async def run_planner_pipeline(inp: PlanInput) -> Dict[str, Any]:
         )
         if fetched_states:
             connection_states = fetched_states
-        elif fetched_connections:
-            connection_states = [
-                {"providerId": c.get("providerId"), "state": "ready"}
-                for c in fetched_connections
-                if c.get("providerId")
-            ]
 
     t0 = time.perf_counter()
     tools, connections, _, available_caps, avail_warnings = await available_tools(
@@ -116,7 +110,9 @@ async def run_planner_pipeline(inp: PlanInput) -> Dict[str, Any]:
         return build_plan_result(
             query, context, user_id, connections, tools, [],
             "integration-blocked", warnings,
-            user_guidance=integration_intent.user_guidance, trace=trace,
+            user_guidance=integration_intent.user_guidance,
+            integration_actions=integration_intent.integration_actions or None,
+            trace=trace,
         )
     trace.add_stage("integration_gate", "pass", duration_ms=(time.perf_counter() - t_gate) * 1000)
 

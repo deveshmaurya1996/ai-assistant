@@ -15,6 +15,7 @@ import { fitChatImageDimensions } from './fitChatImageDimensions';
 import { ChatImageSkeleton } from './ChatImageSkeleton';
 import { GENERATED_IMAGE_SIZE } from '@/features/chat/isImageGenerationTurn';
 import { ShareActionsRow } from '@/components/share/ShareActionsRow';
+import { ChatIntegrationActions } from './ChatIntegrationActions';
 import {
   downloadImageToDevice,
   firstImageAttachment,
@@ -96,6 +97,7 @@ function ChatMessageBubbleInner({
   const showActions =
     showUserCopy ||
     (showAssistantActions && (canCopy || canSave || showShare || showImageDownload));
+  const integrationActions = !isUser ? message.integrationActions : undefined;
 
   return (
     <View
@@ -234,6 +236,9 @@ function ChatMessageBubbleInner({
           }
         />
       ) : null}
+      {integrationActions?.length ? (
+        <ChatIntegrationActions actions={integrationActions} />
+      ) : null}
     </View>
   );
 }
@@ -256,6 +261,7 @@ function bubblePropsEqual(prev: Props, next: Props): boolean {
     prev.message.id === next.message.id &&
     prev.message.content === next.message.content &&
     prev.message.attachments?.length === next.message.attachments?.length &&
+    prev.message.integrationActions?.length === next.message.integrationActions?.length &&
     (prev.message.assistantDisplayName ?? LEGACY_ASSISTANT_LABEL) ===
       (next.message.assistantDisplayName ?? LEGACY_ASSISTANT_LABEL) &&
     prev.isSaved === next.isSaved &&

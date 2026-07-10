@@ -146,10 +146,10 @@ async function markActiveIfNeeded(
   await markConnectionActive({ userId, connectionId, providerId: 'whatsapp' });
 }
 
-export async function resolveBridgeSessionForUser(
+async function findWhatsAppConnection(
   userId: string,
   connectionId?: string
-): Promise<{ sessionId: string; connectionId: string } | null> {
+): Promise<{ id: string; status: string; bridgeSessionId: string | null } | null> {
   const connection = connectionId
     ? await prisma.userConnection.findFirst({
         where: { id: connectionId, userId, providerId: 'whatsapp' },
@@ -162,8 +162,41 @@ export async function resolveBridgeSessionForUser(
   if (!connection) return null;
 
   const meta = (connection.metadata ?? {}) as { bridgeSessionId?: string };
-  const fromDb = meta.bridgeSessionId?.trim() || null;
+  return {
+    id: connection.id,
+    status: connection.status,
+    bridgeSessionId: meta.bridgeSessionId?.trim() || null,
+  };
+}
 
+export async function resolveBridgeSessionReadOnly(
+  userId: string,
+  connectionId?: string
+): Promise<{ sessionId: string; connectionId: string } | null> {
+  const connection = await findWhatsAppConnection(userId, connectionId);
+  if (!connection) return null;
+
+  const fromDb = connection.bridgeSessionId;
+  if (fromDb && (await ensureSessionUsable(fromDb))) {
+    return { sessionId: fromDb, connectionId: connection.id };
+  }
+
+  const fromDisk = await findLatestRecoverableBridgeSession(userId);
+  if (fromDisk && (await ensureSessionUsable(fromDisk))) {
+    return { sessionId: fromDisk, connectionId: connection.id };
+  }
+
+  return null;
+}
+
+export async function repairAndActivateBridgeSession(
+  userId: string,
+  connectionId?: string
+): Promise<{ sessionId: string; connectionId: string } | null> {
+  const connection = await findWhatsAppConnection(userId, connectionId);
+  if (!connection) return null;
+
+  const fromDb = connection.bridgeSessionId;
   if (fromDb && (await ensureSessionUsable(fromDb))) {
     await repairWhatsAppConnectionMetadata(userId, fromDb);
     await markActiveIfNeeded(userId, connection.id, connection.status);
@@ -182,4 +215,11 @@ export async function resolveBridgeSessionForUser(
   }
 
   return null;
+}
+
+export async function resolveBridgeSessionForUser(
+  userId: string,
+  connectionId?: string
+): Promise<{ sessionId: string; connectionId: string } | null> {
+  return repairAndActivateBridgeSession(userId, connectionId);
 }

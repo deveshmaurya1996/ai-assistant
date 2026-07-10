@@ -6,6 +6,58 @@ import type { GatewayExecAdapter, GatewayExecContext, ToolExecutionOutcome } fro
 import { registerGatewayExecAdapter } from '../exec-registry';
 
 const WHATSAPP_OP_TIMEOUT_MS = Number(process.env.WHATSAPP_OP_TIMEOUT_MS ?? 90_000);
+const WHATSAPP_SOCKET_WAIT_MS = Number(process.env.WHATSAPP_SOCKET_WAIT_MS ?? 15_000);
+
+type WhatsAppErrorCode = 'NOT_CONNECTED' | 'OFFLINE' | 'SYNCING';
+
+function whatsAppError(
+  tool: string,
+  code: WhatsAppErrorCode,
+  message: string
+): ToolExecutionOutcome {
+  return { success: false, tool, error: `[${code}] ${message}` };
+}
+
+function parseWhatsAppErrorCode(error: string): WhatsAppErrorCode | null {
+  const match = error.match(/^\[(NOT_CONNECTED|OFFLINE|SYNCING)\]/);
+  return match ? (match[1] as WhatsAppErrorCode) : null;
+}
+
+async function waitForOpenSocket(sessionId: string, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (sessionManager.getConnectionPhase(sessionId) === 'open') {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  return sessionManager.getConnectionPhase(sessionId) === 'open';
+}
+
+async function ensureWhatsAppSocketReady(
+  sessionId: string,
+  tool: string
+): Promise<ToolExecutionOutcome | null> {
+  const bootstrapped = await sessionManager.bootstrapActiveSession(sessionId);
+  if (!bootstrapped) {
+    return whatsAppError(
+      tool,
+      'OFFLINE',
+      'WhatsApp session is offline. Open Connect Apps and reconnect — ensure your phone is online.'
+    );
+  }
+
+  const open = await waitForOpenSocket(sessionId, WHATSAPP_SOCKET_WAIT_MS);
+  if (!open) {
+    return whatsAppError(
+      tool,
+      'OFFLINE',
+      'WhatsApp is still connecting. Wait a few seconds and try again.'
+    );
+  }
+
+  return null;
+}
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -84,12 +136,16 @@ export async function executeWhatsAppDirect(
 ): Promise<ToolExecutionOutcome> {
   const resolved = await resolveBridgeSessionForUser(params.userId, params.connectionId);
   if (!resolved) {
-    return {
-      success: false,
-      tool: params.tool,
-      error:
-        'WhatsApp is not connected or the session could not be restored. Open Connect Apps, link WhatsApp, and wait until it shows Active.',
-    };
+    return whatsAppError(
+      params.tool,
+      'NOT_CONNECTED',
+      'WhatsApp is not connected. Open Connect Apps and link WhatsApp before I can access it.'
+    );
+  }
+
+  const socketCheck = await ensureWhatsAppSocketReady(resolved.sessionId, params.tool);
+  if (socketCheck) {
+    return socketCheck;
   }
 
   try {
@@ -104,14 +160,33 @@ export async function executeWhatsAppDirect(
     );
   } catch (err) {
     const raw = err instanceof Error ? err.message : 'WhatsApp action failed';
+    if (
+      raw.toLowerCase().includes('not synced') ||
+      raw.toLowerCase().includes('have not synced') ||
+      raw.toLowerCase().includes('syncing')
+    ) {
+      return whatsAppError(
+        params.tool,
+        'SYNCING',
+        'WhatsApp is linked but chats are still syncing. Keep your phone online, open WhatsApp, wait a few seconds, and try again.'
+      );
+    }
     const msg = formatWhatsAppUserError(raw);
+    const code: WhatsAppErrorCode =
+      msg.toLowerCase().includes('not active') || msg.toLowerCase().includes('link whatsapp')
+        ? 'NOT_CONNECTED'
+        : 'OFFLINE';
     const hint =
-      msg.toLowerCase().includes('timed out') || msg.toLowerCase().includes('try again')
-        ? ''
-        : ' Ensure your phone has internet and WhatsApp is open, then try again.';
-    return { success: false, tool: params.tool, error: msg + hint };
+      code === 'OFFLINE' &&
+      !msg.toLowerCase().includes('timed out') &&
+      !msg.toLowerCase().includes('try again')
+        ? ' Ensure your phone has internet and WhatsApp is open, then try again.'
+        : '';
+    return whatsAppError(params.tool, code, msg + hint);
   }
 }
+
+export { parseWhatsAppErrorCode };
 
 const whatsappExecAdapter: GatewayExecAdapter = {
   providerId: 'whatsapp',

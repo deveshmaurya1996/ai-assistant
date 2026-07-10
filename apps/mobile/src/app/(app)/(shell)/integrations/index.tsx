@@ -20,6 +20,8 @@ import { DrawerColorIcon } from '@/components/layout/DrawerColorIcon';
 import { FadeIn } from '@/components/motion/FadeIn';
 import { ProviderIcon } from '@/components/integrations/ProviderIcon';
 import { IntegrationActionButton } from '@/components/integrations/IntegrationActionButton';
+import { useIntegrationConnect } from '@/components/integrations/useIntegrationConnect';
+import { CATALOG_INTEGRATION_PROVIDERS } from '@/generated/integration-providers';
 import { useTheme } from '@/theme/ThemeProvider';
 import { spacing } from '@/theme/tokens';
 import { apiClient } from '@/lib/api-client';
@@ -34,37 +36,46 @@ type UserConnection = BaseUserConnection & {
   healthError?: string | null;
 };
 
-const PROVIDERS = [
-  {
-    id: 'google',
-    name: 'Google',
-    description: 'Grant Gmail, Calendar & Drive access',
-  },
-  { id: 'whatsapp', name: 'WhatsApp', description: 'Linked device messages' },
-] as const;
+type ProviderRow = (typeof CATALOG_INTEGRATION_PROVIDERS)[number];
 
 export default function IntegrationsScreen() {
   const router = useRouter();
   const { colors } = useTheme();
   const [connections, setConnections] = useState<UserConnection[]>([]);
+  const [providers, setProviders] = useState<ProviderRow[]>(CATALOG_INTEGRATION_PROVIDERS);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [busy, setBusy] = useState<{
-    providerId: string;
-    action: 'connect' | 'disconnect';
-  } | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const list = await apiClient.listConnections();
+      const [list, catalog] = await Promise.all([
+        apiClient.listConnections(),
+        apiClient.listIntegrationProviders().catch(() => null),
+      ]);
       setConnections(list);
+      if (catalog?.providers?.length) {
+        const enabledIds = new Set(
+          catalog.providers
+            .filter((p) => {
+              const row = p as { id?: string; isEnabled?: boolean };
+              return row.id && row.isEnabled !== false && row.id !== 'platform';
+            })
+            .map((p) => (p as { id: string }).id)
+        );
+        setProviders(CATALOG_INTEGRATION_PROVIDERS.filter((p) => enabledIds.has(p.id)));
+      } else {
+        setProviders(CATALOG_INTEGRATION_PROVIDERS);
+      }
     } catch {
       setConnections([]);
+      setProviders(CATALOG_INTEGRATION_PROVIDERS);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
+
+  const { busy, connectProvider } = useIntegrationConnect(load);
 
   useFocusEffect(
     useCallback(() => {
@@ -132,45 +143,7 @@ export default function IntegrationsScreen() {
     return `${description} · Available to AI`;
   };
 
-  const handleConnect = async (providerId: string) => {
-    setBusy({ providerId, action: 'connect' });
-    try {
-      const challenge = await apiClient.connectProvider(providerId);
-      if (challenge.type === 'oauth' && challenge.url) {
-        if (Platform.OS === 'web' && typeof window !== 'undefined') {
-          window.location.href = challenge.url;
-        } else {
-          await Linking.openURL(challenge.url);
-        }
-      } else if (providerId === 'whatsapp' && challenge.connectionId) {
-        if (challenge.state === 'ready') {
-          await load();
-          return;
-        }
-        router.push(
-          integrationProviderRoute(providerId, {
-            connectionId: challenge.connectionId,
-          })
-        );
-      } else if (challenge.type === 'local') {
-        await load();
-      }
-    } catch (e) {
-      const message =
-        e instanceof ApiError
-          ? e.message
-          : e instanceof Error
-            ? e.message
-            : 'Could not start connection';
-      if (Platform.OS === 'web') {
-        window.alert(message);
-      } else {
-        Alert.alert('Connect failed', message);
-      }
-    } finally {
-      setBusy(null);
-    }
-  };
+  const handleConnect = (providerId: string) => void connectProvider(providerId);
 
   const handleOfflineAction = (providerId: string, name: string) => {
     const runReconnect = () => void handleConnect(providerId);
@@ -197,7 +170,6 @@ export default function IntegrationsScreen() {
 
     const message = `Disconnect ${name}?`;
     const run = async () => {
-      setBusy({ providerId, action: 'disconnect' });
       try {
         await apiClient.disconnectConnection(connection.id);
         await load();
@@ -213,8 +185,6 @@ export default function IntegrationsScreen() {
         } else {
           Alert.alert('Disconnect failed', message);
         }
-      } finally {
-        setBusy(null);
       }
     };
 
@@ -248,7 +218,7 @@ export default function IntegrationsScreen() {
     <Screen padded={false}>
       <AppHeader title={TITLE} />
       <FlatList
-        data={PROVIDERS}
+        data={providers}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         refreshControl={

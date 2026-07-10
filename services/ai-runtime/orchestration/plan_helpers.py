@@ -58,12 +58,16 @@ async def available_tools(
         connections = list(fetched_connections)
 
     healthy_providers = healthy_provider_ids(connections)
+    healthy_provider_param = ",".join(sorted(healthy_providers)) if healthy_providers else ""
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
+            params: Dict[str, str] = {"userId": user_id}
+            if healthy_provider_param:
+                params["healthyProviderIds"] = healthy_provider_param
             res = await client.get(
                 f"{TOOL_RUNTIME_URL}/v1/tools/available",
-                params={"userId": user_id},
+                params=params,
                 headers=internal_headers(),
             )
             if res.status_code == 200:
@@ -114,6 +118,7 @@ def build_plan_result(
     warnings: List[str],
     model_used: str | None = None,
     user_guidance: str | None = None,
+    integration_actions: List[Dict[str, Any]] | None = None,
     trace: Any = None,
 ) -> Dict[str, Any]:
     from orchestration.types import attach_trace
@@ -132,6 +137,8 @@ def build_plan_result(
     }
     if user_guidance:
         result["user_guidance"] = user_guidance
+    if integration_actions:
+        result["integration_actions"] = integration_actions
     if trace is not None:
         attach_trace(result, trace)
     return result

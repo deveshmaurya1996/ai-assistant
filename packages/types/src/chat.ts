@@ -3,12 +3,14 @@ export type MessageRole = 'USER' | 'ASSISTANT' | 'SYSTEM';
 export type ChatSessionKind = 'text' | 'voice';
 
 import type { ChatAttachmentRef } from './attachments';
+import type { IntegrationAction } from './integration';
 
 export interface ChatMessage {
   id: string;
   role: MessageRole;
   content: string;
   attachments?: ChatAttachmentRef[];
+  integrationActions?: IntegrationAction[];
   personalityId?: string;
   assistantDisplayName?: string;
 }

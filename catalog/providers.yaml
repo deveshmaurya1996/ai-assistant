@@ -3,20 +3,28 @@ providers:
   - id: google
     name: Google Workspace
     displayName: Google Workspace (Gmail, Calendar, Drive)
+    mobileDescription: Grant Gmail, Calendar & Drive access
     authType: oauth2
     scopes: [gmail, calendar, drive]
     implementation: GoogleConnector
     integrationModule: google
     toolNamespaces: [gmail, calendar, email, drive]
+    intentAliases: [google, gmail, email, inbox, mail, calendar, meeting, schedule, drive, google workspace, google drive]
+    connectActionLabel: Connect Google
+    offlineActionLabel: Reconnect Google
     enabled: true
   - id: whatsapp
     name: WhatsApp
     displayName: WhatsApp
+    mobileDescription: Linked device messages
     authType: device_link
     scopes: [messages]
     implementation: WhatsAppConnector
     integrationModule: whatsapp
     toolNamespaces: [whatsapp]
+    intentAliases: [whatsapp, "wa ", " wa", whats app]
+    connectActionLabel: Connect WhatsApp
+    offlineActionLabel: Reconnect WhatsApp
     enabled: true
   - id: platform
     name: Platform

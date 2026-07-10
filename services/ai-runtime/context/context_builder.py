@@ -22,7 +22,7 @@ INTERNAL_SERVICE_TOKEN = os.getenv("INTERNAL_SERVICE_TOKEN", "dev-internal-token
 MAX_HISTORY = 20
 RAG_TIMEOUT = float(os.getenv("RAG_TIMEOUT_SECONDS", "5"))
 MEMORY_FACT_LIMIT = int(os.getenv("MEMORY_FACT_LIMIT", "5"))
-MANIFEST_CACHE_TTL_SECONDS = float(os.getenv("MANIFEST_CACHE_TTL_SECONDS", "60"))
+MANIFEST_CACHE_TTL_SECONDS = float(os.getenv("MANIFEST_CACHE_TTL_SECONDS", "15"))
 _manifest_cache: Dict[str, Tuple[float, str, Set[str], List[Dict], List[Dict]]] = {}
 
 
