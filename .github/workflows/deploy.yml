@@ -125,6 +125,16 @@ jobs:
           username: ${{ secrets.OCI_USERNAME }}
           password: ${{ secrets.OCI_AUTH_TOKEN }}
 
+      - name: OCIR login troubleshooting
+        if: failure()
+        run: |
+          echo "::error::OCIR login failed (Unauthorized). Secrets exist but values are wrong or expired."
+          echo "VM region from your instance: ap-mumbai-1 — OCI_REGION must be exactly ap-mumbai-1"
+          echo "OCI_USERNAME must be: <namespace>/oracleidentitycloudservice/<your-oci-email>"
+          echo "OCI_AUTH_TOKEN must be an Auth Token from OCI Console (Profile → Auth Tokens), NOT your login password"
+          echo "Regenerate the token, update GitHub secrets, or run Deploy with 'Build images on the VM' checked"
+          echo "Local test: infra/deploy/verify-ocir-login.sh"
+
       - name: Build and push gateway
         uses: docker/build-push-action@v6
         with:
