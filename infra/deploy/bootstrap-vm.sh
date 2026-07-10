@@ -17,8 +17,8 @@ chmod +x "$ROOT_DIR/infra/deploy/deploy.sh"
 export GATEWAY_IMAGE="${GATEWAY_IMAGE:-ai-assistant-gateway:latest}"
 export AI_RUNTIME_IMAGE="${AI_RUNTIME_IMAGE:-ai-assistant-ai-runtime:latest}"
 
-echo "[bootstrap] building production images..."
-docker compose -p ai-assistant --env-file "$ENV_FILE" -f infra/docker/compose.production.yml build
+echo "[bootstrap] building production images (this can take 1-3 hours on a small VM)..."
+DOCKER_BUILDKIT=1 docker compose -p ai-assistant --env-file "$ENV_FILE" -f infra/docker/compose.production.yml build --progress=plain
 
 echo "[bootstrap] starting stack..."
 SKIP_PULL=true RUN_MIGRATIONS=true "$ROOT_DIR/infra/deploy/deploy.sh"

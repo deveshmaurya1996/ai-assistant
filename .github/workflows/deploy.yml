@@ -76,7 +76,7 @@ jobs:
           host: ${{ secrets.OCI_VM_HOST }}
           username: ${{ secrets.OCI_VM_USER }}
           key: ${{ secrets.OCI_VM_SSH_KEY }}
-          command_timeout: 90m
+          command_timeout: 180m
           envs: DEPLOY_BRANCH,DEPLOY_HEALTH_URL
           script: |
             set -euo pipefail
@@ -86,6 +86,11 @@ jobs:
             git reset --hard "origin/${DEPLOY_BRANCH}"
             chmod +x infra/deploy/*.sh
             export DEPLOY_HEALTH_URL
+            exec 9>/tmp/ai-assistant-deploy.lock
+            if ! flock -n 9; then
+              echo "Another deploy is already running on this VM. Wait for it to finish or remove /tmp/ai-assistant-deploy.lock"
+              exit 1
+            fi
             ./infra/deploy/bootstrap-vm.sh
 
   build-and-deploy:

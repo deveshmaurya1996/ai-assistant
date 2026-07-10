@@ -171,3 +171,24 @@ curl https://api.aiassistant.dartix.live/health
 curl https://api.aiassistant.dartix.live/health/ready
 docker compose -p ai-assistant -f infra/docker/compose.production.yml ps
 ```
+
+## Troubleshooting
+
+### GitHub Actions `deploy-vm-build` failed after ~90–180 minutes
+
+First VM build often exceeds 90 minutes on small shapes. The workflow allows **180 minutes**; if it still times out, run deploy manually on the VM:
+
+```bash
+ssh ubuntu@<vm-ip>
+cd /opt/ai-assistant && git pull
+chmod +x infra/deploy/*.sh
+./infra/deploy/bootstrap-vm.sh
+```
+
+### SSH connection reset / VM unreachable during deploy
+
+Heavy parallel `docker compose build` can exhaust RAM on 1–4 GB instances. In OCI Console: **Stop** then **Start** the instance, wait 2 minutes, SSH again, run **one** bootstrap (do not start GHA deploy at the same time).
+
+### OCIR `Unauthorized`
+
+See section 4 above — use VM build (default) until OCIR credentials are fixed.
