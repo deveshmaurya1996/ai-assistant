@@ -53,14 +53,24 @@ Update Google OAuth authorized redirect URIs to match.
 In OCI Console → Developer Services → Container Registry:
 
 1. Create repos: `ai-assistant-gateway`, `ai-assistant-ai-runtime`
-2. Note **Tenancy namespace** (Object Storage namespace)
-3. Create an **Auth Token** for your user (Profile → Auth Tokens)
+2. Note **Tenancy namespace** (Object Storage namespace — not tenancy name)
+3. Create an **Auth Token** for your user (Profile → User Settings → Auth Tokens)
 
 Login format:
 
-- Registry: `<region>.ocir.io`
-- Username: `<tenancy-namespace>/oracleidentitycloudservice/<your-email>`
-- Password: auth token (not account password)
+- Registry: `<region>.ocir.io` (e.g. `ap-mumbai-1.ocir.io`)
+- Username: `<tenancy-namespace>/oracleidentitycloudservice/<your-oci-email>`
+- Password: **auth token** (not your OCI account password)
+
+**GitHub secret `OCI_REGION`:** region id only, e.g. `ap-mumbai-1` — do **not** include `.ocir.io` or `https://`.
+
+**If CI fails with `unknown: Unauthorized`:**
+
+1. Regenerate an Auth Token in OCI and update `OCI_AUTH_TOKEN` (no trailing spaces).
+2. Confirm `OCI_USERNAME` is exactly `namespace/oracleidentitycloudservice/email@example.com`.
+3. Confirm repos exist in the **same region** as `OCI_REGION`.
+4. **Workaround (no OCIR):** GitHub → Actions → Deploy → Run workflow → check **Build images on the VM**.  
+   Or set repository variable `DEPLOY_BUILD_ON_VM` = `true` to use VM local builds on every push (slower, no registry needed).
 
 ### 5. GitHub
 
